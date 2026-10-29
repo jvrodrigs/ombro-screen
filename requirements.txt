@@ -1,0 +1,4 @@
+Pillow>=10.0
+psutil>=5.9
+pyserial>=3.5   # só para a tela USB de verdade
+numpy>=1.24          # exigido pela biblioteca da tela (serialize.py)

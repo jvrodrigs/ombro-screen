@@ -1,0 +1,6 @@
+.venv/
+log.log
+.DS_Store
+__pycache__/
+*.pyc
+turing-smart-screen-python/

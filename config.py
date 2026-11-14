@@ -27,8 +27,12 @@ VERSAO = 1  # versão do formato do arquivo
 
 REVISOES = ("A", "B", "C", "D", "WEACT_A")
 TRANSPORTES = ("auto", "usb", "serial")
-LAYOUTS = ("auto", "ombro", "classico", "minimal-v2")
-NOMES_LAYOUT = {"auto": "do Ombro", "ombro": "do Ombro", "classico": "clássico", "minimal-v2": "Minimal v2"}
+LAYOUTS = ("auto", "ombro", "classico", "minimal-v2", "multiagente")
+NOMES_LAYOUT = {"auto": "do Ombro", "ombro": "do Ombro", "classico": "clássico", "minimal-v2": "Minimal v2",
+                "multiagente": "multiagente"}
+PROVIDERS = ("claude", "codex", "cursor")  # na ordem em que aparecem na tela
+VISTAS = ("overview", "focus", "attention")  # visões do layout multiagente
+MIN_ROTACAO = 5.0  # segundos: trocar de visão mais rápido que isso deixa a tela instável
 SO_NA_LINHA_DE_COMANDO = ("demo", "demo_ciclo", "png", "arquivo")  # ações de uma vez, não preferências
 _COR = re.compile(r"#?[0-9a-fA-F]{6}")
 
@@ -69,6 +73,12 @@ class OmbroConfig:
     nao_abrir: bool = False
     # diagnóstico
     debug: bool = False
+    # agentes monitorados e o layout multiagente
+    providers: tuple = PROVIDERS  # os ligados; no arquivo: {"providers": {"codex": {"enabled": false}}}
+    vista: str = "overview"  # no arquivo: {"multi_agent": {"view": ...}}
+    foco: str | None = None  # o provider da visão "focus" ({"multi_agent": {"focus_provider": ...}})
+    rotacao: bool = False  # alternar sozinho entre a visão geral e cada agente ({"auto_rotate": true})
+    intervalo_rotacao: float = 15.0  # segundos em cada visão ({"rotate_interval": 15})
     # só na linha de comando
     demo: bool = False
     demo_ciclo: float = 0.0
@@ -82,7 +92,7 @@ class OmbroConfig:
     @property
     def animado(self) -> bool:
         """Layouts com o cloud: sempre 480x320, 5 quadros por segundo."""
-        return self.layout in ("auto", "ombro", "minimal-v2")
+        return self.layout in ("auto", "ombro", "minimal-v2", "multiagente")
 
     @property
     def paisagem_efetiva(self) -> bool:
@@ -151,7 +161,17 @@ def _caminho(nome, v, base: Path | None):
 
 def validar(nome: str, v, base: Path | None = None):
     """Valor de `nome` conferido e normalizado. `base`: pasta para caminhos relativos do arquivo."""
-    if nome in ("usb", "paisagem", "girar", "sem_macmon", "nao_abrir", "debug", "demo"):
+    if nome == "providers":
+        if isinstance(v, (list, tuple)):
+            return tuple(_escolha("providers", p, PROVIDERS) for p in v)
+        raise ConfigInvalida(f"providers deve ser uma lista (veio {v!r})")
+    if nome == "vista":
+        return _escolha(nome, v, VISTAS)
+    if nome == "foco":
+        return None if v is None else _escolha(nome, v, PROVIDERS)
+    if nome == "intervalo_rotacao":
+        return _numero(nome, v, MIN_ROTACAO)
+    if nome in ("usb", "paisagem", "girar", "sem_macmon", "nao_abrir", "debug", "demo", "rotacao"):
         return _bool(nome, v)
     if nome == "revisao":
         return _escolha(nome, v, REVISOES, maiusculas=True)
@@ -178,6 +198,32 @@ def validar(nome: str, v, base: Path | None = None):
     if nome in ("lib", "png", "arquivo"):
         return None if v is None and nome != "lib" else _caminho(nome, v, base)
     raise ConfigInvalida(f"opção desconhecida: {nome}")
+
+
+def _providers(v) -> dict:
+    """{"claude": {"enabled": true}, "codex": {"enabled": false}} -> providers ligados, na ordem da tela.
+    Um provider que não aparece fica ligado (o padrão)."""
+    if not isinstance(v, dict):
+        raise ConfigInvalida("providers deve ser um objeto, como {\"codex\": {\"enabled\": false}}")
+    desligados = set()
+    for pid, opcoes in v.items():
+        _escolha("providers", pid, PROVIDERS)
+        if not isinstance(opcoes, dict) or set(opcoes) - {"enabled"}:
+            raise ConfigInvalida(f"providers.{pid} deve ser um objeto com \"enabled\" (veio {opcoes!r})")
+        if not _bool(f"providers.{pid}.enabled", opcoes.get("enabled", True)):
+            desligados.add(pid)
+    return {"providers": tuple(p for p in PROVIDERS if p not in desligados)}
+
+
+def _multi_agent(v) -> dict:
+    if not isinstance(v, dict):
+        raise ConfigInvalida("multi_agent deve ser um objeto, como {\"view\": \"overview\"}")
+    nomes = {"view": "vista", "focus_provider": "foco", "auto_rotate": "rotacao", "rotate_interval": "intervalo_rotacao"}
+    desconhecidas = set(v) - set(nomes)
+    if desconhecidas:
+        raise ConfigInvalida(f"multi_agent: opção desconhecida {', '.join(sorted(desconhecidas))} "
+                             f"(use {', '.join(nomes)})")
+    return {nomes[k]: validar(nomes[k], x) for k, x in v.items()}
 
 
 # ---------- arquivo ----------
@@ -209,7 +255,12 @@ def ler_arquivo(arq: Path, obrigatorio: bool = False) -> tuple[dict, list[str]]:
                       "o que ele não conhece fica de fora")
     valores = {}
     for nome, v in dados.items():
-        if nome in SO_NA_LINHA_DE_COMANDO:
+        if nome in ("providers", "multi_agent"):  # os dois blocos aninhados, no formato do README
+            try:
+                valores.update(_providers(v) if nome == "providers" else _multi_agent(v))
+            except ConfigInvalida as e:
+                raise ConfigInvalida(f"{arq}: {e}") from None
+        elif nome in SO_NA_LINHA_DE_COMANDO:
             avisos.append(f"{arq.name}: \"{nome}\" só vale na linha de comando; ignorado")
         elif nome not in PERSISTENTES:
             avisos.append(f"{arq.name}: opção desconhecida \"{nome}\"; ignorada")

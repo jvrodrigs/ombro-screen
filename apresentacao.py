@@ -19,10 +19,11 @@ _Item = namedtuple("_Item", "status desde projeto")
 def status_tela(s: AgentSession) -> str:
     """Estado normalizado -> status de sempre da tela ("busy", "waiting" ou "idle").
 
-    Esperar você vem antes de tudo (a bolinha âmbar e o cloud "esperando"); depois, trabalhando.
-    Desconhecido aparece como ocioso, como um status estranho do Claude Code sempre apareceu.
+    Esperar você (resposta ou aprovação) vem antes de tudo: a bolinha âmbar e o cloud "esperando";
+    depois, trabalhando. Desconhecido e erro aparecem como ocioso, como um status estranho do Claude
+    Code sempre apareceu (o layout multiagente mostra o erro; os outros ficam como eram).
     """
-    if s.attention is Attention.WAITING_USER:
+    if s.attention in (Attention.WAITING_USER, Attention.WAITING_APPROVAL):
         return "waiting"
     if s.activity is Activity.WORKING:
         return "busy"
@@ -50,4 +51,19 @@ def uso_claude(snap: Optional[ProviderSnapshot]) -> UsoClaude:
             u.tokens_por_hora = list(m.hourly_tokens)
     for nome, valor in resumo_sessoes(_Item(status_tela(s), s.status_since, s.project) for s in snap.sessions).items():
         setattr(u, nome, valor)
+    return u
+
+
+def uso_mascote(resumo, snap_claude: Optional[ProviderSnapshot]) -> UsoClaude:
+    """Para o cloud do layout multiagente: os limites do Claude (alerta e reset, como sempre) com as
+    contagens de todos os agentes. Ele espera se qualquer um espera você (ou parou com erro) e trabalha
+    se qualquer um trabalha; a máquina de estados e as animações são as mesmas de sempre."""
+    u = uso_claude(snap_claude)
+    u.sessoes = resumo.total_sessoes
+    u.trabalhando = resumo.trabalhando
+    u.esperando = resumo.aguardando + resumo.erros
+    urg = resumo.mais_urgente
+    if urg is not None and urg.sessao is not None:
+        u.espera_projeto = urg.sessao.project or urg.nome
+        u.espera_desde = urg.sessao.status_since
     return u

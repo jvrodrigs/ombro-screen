@@ -53,7 +53,8 @@ class Contrato(unittest.TestCase):
     def test_capacidades_do_claude(self):
         c = ClaudeProvider.capabilities
         self.assertTrue(c.sessions and c.attention and c.token_usage and c.quota_windows)
-        self.assertFalse(c.context_usage or c.costs or c.events)
+        self.assertTrue(c.events)  # com os hooks opcionais (Fase 3)
+        self.assertFalse(c.context_usage or c.costs)
 
 
 class Registro(unittest.TestCase):

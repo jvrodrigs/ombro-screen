@@ -266,6 +266,42 @@ Os avisos saem no terminal (ou, no LaunchAgent, em `~/Library/Logs/ombro-screen.
 | `macmon falhou` ou `macmon parou` | O Ombro segue com o psutil; reinstale com `brew install macmon` se quiser GPU e temperatura. |
 | `falha ao desenhar o quadro ... o Ombro vai fechar` | É um bug: abra uma issue com o trecho do log (rode com `--debug` para ter o traceback). |
 
+## 9. Vários agentes: Claude Code, Codex e Cursor
+
+<p align="center">
+  <img src="docs/multiagente.png" width="760" alt="O layout multiagente: visão geral e atenção, com dados de demonstração">
+</p>
+
+O Ombro acompanha os três ao mesmo tempo, cada um isolado: funciona com um, dois ou os três instalados.
+
+```bash
+python3 tela.py --layout multiagente               # visão geral (no simulador; acrescente --usb para a tela)
+python3 tela.py --layout multiagente --demo        # com dados inventados, para ver como fica
+```
+
+O Claude Code funciona sem configurar nada. Codex e Cursor precisam dos **hooks do Ombro**, que você liga
+à mão (o Ombro nunca mexe nas suas configurações): veja [Claude Code](docs/providers/claude.md),
+[Codex](docs/providers/codex.md) e [Cursor](docs/providers/cursor.md). Visões, rotação, prioridades e o
+transporte dos eventos: [docs/multi-agent.md](docs/multi-agent.md).
+
+| O que o Ombro mostra | Claude Code | Codex | Cursor |
+| --- | --- | --- | --- |
+| Sessões abertas | sim (arquivos locais) | com os hooks | com os hooks |
+| Trabalhando / ocioso | sim | com os hooks | com os hooks |
+| Esperando sua resposta | sim | não (o fim do turno aparece como ocioso) | não |
+| Esperando aprovação | com os hooks | com os hooks | não (o Cursor não avisa) |
+| Parou com erro | com os hooks | com os hooks (falha no pedido ao modelo) | com os hooks |
+| Tokens de hoje | sim | não | não |
+| Limites de uso e reset | sim (statusline ou `/usage`) | não | não |
+| Validado com a ferramenta real | sim (arquivos; hooks de início e fim de sessão) | não: o Codex não estava instalado | em parte: CLI, início e fim de sessão |
+
+- **Privacidade:** o hook guarda só o provider, a sessão, o evento, o horário, o nome da pasta do projeto e
+  um status. Nunca prompts, respostas, comandos, conteúdo de arquivos, caminhos completos ou credenciais;
+  não usa rede e sempre sai sem bloquear o agente.
+- **Dados que não existem ficam em branco**, nunca inventados: o Codex e o Cursor não informam tokens nem
+  limites aos hooks. O App Server do Codex não serve a um monitor passivo (ver [docs/providers/codex.md](docs/providers/codex.md)).
+- **Conferir os hooks:** rode o Ombro com `--debug` e procure `eventos dos hooks do … chegando`.
+
 ## Arquitetura
 
 Os dados do Claude Code passam por um núcleo que não depende da tela (`core/`): um **provider** por
@@ -278,8 +314,8 @@ O banco guarda só o status das sessões e as mudanças recentes (sem nome de pr
 tokens), apaga o que tem mais de 7 dias e nunca impede o Ombro de rodar: se der problema com ele, o
 Ombro segue em memória e avisa no log. `--demo` e `--png` não usam o banco.
 
-Detalhes, regras e como adicionar um provider: [docs/architecture.md](docs/architecture.md). Codex e
-Cursor ainda não são suportados.
+Detalhes, regras e como adicionar um provider: [docs/architecture.md](docs/architecture.md). Desde a
+Fase 3 há também os providers do Codex e do Cursor (seção 9).
 
 ## Arquivos
 
@@ -289,6 +325,9 @@ Cursor ainda não são suportados.
 | `core/` | Núcleo sem tela: modelos, providers, estado, eventos, banco (ver `docs/architecture.md`) |
 | `providers/claude.py` | O provider do Claude Code, sobre o coletor de sempre |
 | `apresentacao.py` | Do estado do núcleo para o formato que o layout e o cloud usam |
+| `providers/codex.py`, `providers/cursor.py` | Codex e Cursor, pelos hooks (`providers/hooks.py` é a base comum) |
+| `ombro_hook.py` | O hook que Claude Code, Codex e Cursor chamam; grava só o mínimo em `~/.ombro-screen/eventos/` |
+| `layout_multiagente.py` | O layout multiagente (`--layout multiagente`): visão geral, foco e atenção |
 | `config.py` | Padrões, arquivo de configuração e validação das opções, resolvidos num lugar só |
 | `logging_config.py` | Formato dos logs, `--debug` e o filtro que evita repetir o mesmo aviso |
 | `layout_ombro.py` | O layout do Ombro (480×320): texto, barras, curva de tokens, aviso e o cloud |
@@ -326,7 +365,7 @@ Não precisam da tela, da biblioteca da tela, do macmon nem do Claude Code: a `T
 
 ```bash
 python3 scripts/quadros_referencia.py --salvar /tmp/antes.json     # antes de mexer no código
-python3 scripts/quadros_referencia.py --comparar /tmp/antes.json   # depois: "53 quadros idênticos"
+python3 scripts/quadros_referencia.py --comparar /tmp/antes.json   # depois: "60 quadros idênticos"
 ```
 
 **Quanto custa cada parte:** `python3 scripts/benchmark.py` mede desenho, coleta, preparação do envio e o laço completo, com entradas fixas e uma tela falsa (o USB em si não entra). Compare execuções feitas na mesma máquina.

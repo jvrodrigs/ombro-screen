@@ -28,19 +28,26 @@ sys.path.insert(0, str(AQUI))
 
 import psutil  # noqa: E402
 
-from apresentacao import uso_claude  # noqa: E402
+from apresentacao import uso_claude, uso_mascote  # noqa: E402
 from coletores.claude import ColetorClaude  # noqa: E402
 from coletores.demo import Demo  # noqa: E402
 from coletores.hardware import ColetorHardware, Hardware  # noqa: E402
-from config import LAYOUTS, NOMES_LAYOUT, TRANSPORTES, ConfigInvalida, OmbroConfig, pasta_ombro, resolver  # noqa: E402
+from config import (  # noqa: E402
+    LAYOUTS, NOMES_LAYOUT, PROVIDERS, TRANSPORTES, VISTAS, ConfigInvalida, OmbroConfig, pasta_ombro, resolver,
+)
 from core.monitor import Monitor  # noqa: E402
+from core.resumo import resumir  # noqa: E402
 from layout_minimal_v2 import desenhar_minimal  # noqa: E402
+from layout_multiagente import SeletorDeVista, desenhar_multiagente  # noqa: E402
 from layout_ombro import desenhar_ombro  # noqa: E402
 from logging_config import SoQuandoMuda, curto, logger, sem_casa  # noqa: E402
 from logging_config import configurar as configurar_logs  # noqa: E402
 from mascote import Mascote  # noqa: E402
 from providers.claude import PROVIDER_ID as CLAUDE  # noqa: E402
 from providers.claude import ClaudeProvider, FonteDemo  # noqa: E402
+from providers.codex import CodexProvider  # noqa: E402
+from providers.cursor import CursorProvider  # noqa: E402
+from providers.demo import codex_demo, cursor_demo  # noqa: E402
 from render import desenhar  # noqa: E402
 
 log = logger("main")
@@ -72,7 +79,10 @@ def argumentos(argv=None) -> tuple[OmbroConfig, list[str]]:
     p.add_argument("--claude-dir", help="pasta de configuração do Claude Code (padrão: ~/.claude)")
     p.add_argument("--layout", choices=LAYOUTS,
                    help="ombro (480x320 deitada, com o cloud; é o padrão), minimal-v2 (o mesmo conteúdo, mais limpo, "
-                        "com CPU e RAM em barras) ou classico (o painel antigo, que respeita --paisagem)")
+                        "com CPU e RAM em barras), multiagente (Claude Code, Codex e Cursor juntos) "
+                        "ou classico (o painel antigo, que respeita --paisagem)")
+    p.add_argument("--vista", choices=VISTAS, help="no layout multiagente: overview (padrão), focus ou attention")
+    p.add_argument("--foco", choices=PROVIDERS, help="no layout multiagente, com --vista focus: qual agente")
     p.add_argument("--intervalo", type=float, help="segundos entre quadros (padrão: 1 no clássico, 0,2 no ombro)")
     p.add_argument("--demo-ciclo", type=float, metavar="SEG", help="com --demo: troca de cenário a cada SEG segundos")
     p.add_argument("--cor-mascote", metavar="#HEX", help="cor fixa do cloud (padrão: sorteia uma a cada estado)")
@@ -118,6 +128,23 @@ class Estatisticas:
         self._zerar(agora)
 
 
+def montar_providers(cfg: OmbroConfig, demo) -> list:
+    """Os agentes ligados na configuração (todos, por padrão). No --demo, com dados inventados."""
+    feitos = {
+        "claude": lambda: ClaudeProvider(FonteDemo(demo, cfg.demo_ciclo) if demo else ColetorClaude(cfg.claude_dir)),
+        "codex": lambda: codex_demo(cfg.demo_ciclo) if demo else CodexProvider(),
+        "cursor": lambda: cursor_demo(cfg.demo_ciclo) if demo else CursorProvider(),
+    }
+    return [feitos[pid]() for pid in cfg.providers]
+
+
+def pasta_de_eventos(cfg: OmbroConfig) -> Path | None:
+    """Onde os hooks deixam os eventos. Dados inventados e quadros avulsos não leem (nem apagam) eventos."""
+    if cfg.demo or cfg.png:
+        return None
+    return pasta_ombro() / "eventos"
+
+
 def banco_de_estado(cfg: OmbroConfig) -> Path | None:
     """Onde gravar o estado (sessões conhecidas) entre execuções. Dados inventados e quadros avulsos não gravam."""
     if cfg.demo or cfg.png:
@@ -144,9 +171,12 @@ def main(argv=None):
 def rodar(cfg: OmbroConfig) -> None:
     demo = Demo() if cfg.demo else None
     hw = None if demo else ColetorHardware(usar_macmon=not cfg.sem_macmon)
-    # Claude Code -> coletor -> ClaudeProvider -> StateStore (e banco) -> UsoClaude para a tela (apresentacao.py)
-    fonte = FonteDemo(demo, cfg.demo_ciclo) if demo else ColetorClaude(cfg.claude_dir)
-    monitor = Monitor.montar([ClaudeProvider(fonte)], banco=banco_de_estado(cfg))
+    # agentes -> providers -> StateStore (e banco) -> apresentação (UsoClaude, ou o resumo de todos) -> tela
+    monitor = Monitor.montar(montar_providers(cfg, demo), banco=banco_de_estado(cfg), eventos=pasta_de_eventos(cfg))
+    nomes = [(p.provider_id, p.display_name) for p in monitor.registry]
+    multi = cfg.layout == "multiagente"
+    seletor = SeletorDeVista(cfg.vista, cfg.foco, cfg.rotacao, cfg.intervalo_rotacao)
+    resumo, uso_multi = None, None
     avisos_hw = SoQuandoMuda(log_hw)
     ultimo_hw = Hardware(disponivel=False)  # até a primeira leitura boa
 
@@ -165,7 +195,14 @@ def rodar(cfg: OmbroConfig) -> None:
         return ultimo_hw
 
     def ler_claude():
-        return uso_claude(monitor.atualizar(CLAUDE))
+        """Coleta todos os agentes (e os eventos dos hooks); devolve o que os layouts de sempre usam."""
+        nonlocal resumo, uso_multi
+        monitor.atualizar_todos()
+        snap_claude = monitor.store.snapshot(CLAUDE)
+        if multi:
+            resumo = resumir(monitor.store, nomes)
+            uso_multi = uso_mascote(resumo, snap_claude)
+        return uso_claude(snap_claude)
 
     animado, paisagem = cfg.animado, cfg.paisagem_efetiva
     intervalo = cfg.intervalo_efetivo
@@ -175,6 +212,9 @@ def rodar(cfg: OmbroConfig) -> None:
     mascote.inicio = time.monotonic()
 
     def desenhar_animado(h, uso, agora_mono):
+        if multi:
+            vista, foco = seletor.escolher(resumo, agora_mono)
+            return desenhar_multiagente(h, resumo, mascote, datetime.now(), agora_mono, vista, foco)
         if cfg.layout == "minimal-v2":
             return desenhar_minimal(h, uso, mascote, datetime.now(), agora_mono, agente=CLAUDE)
         return desenhar_ombro(h, uso, mascote, datetime.now(), agora_mono)
@@ -182,7 +222,8 @@ def rodar(cfg: OmbroConfig) -> None:
     def quadro(h, uso, agora_mono):
         try:
             if animado:
-                mascote.ir_para(mascote.decidir(uso, agora_mono), agora_mono)
+                base = uso_multi if multi else uso  # no multiagente, o cloud reage a todos os agentes
+                mascote.ir_para(mascote.decidir(base, agora_mono), agora_mono)
                 return desenhar_animado(h, uso, agora_mono)
             return desenhar(h, uso, paisagem_=paisagem)
         except Exception:

@@ -14,7 +14,7 @@ from coletores.claude import Janela, UsoClaude
 from coletores.hardware import Hardware
 from mascote import COL_X, COL_Y, Mascote
 from render import (
-    AMBAR, APAGADO, AZUL, CORAL, FRACO, S, TEXTO, VERDE, Tela, br, cor_uso, gb, quando_reseta, tokens,
+    AMBAR, APAGADO, AZUL, CORAL, FRACO, S, TEXTO, VERDE, Tela, cor_uso, gb, quando_reseta, tokens,
 )
 
 LARGURA, ALTURA = 480, 320

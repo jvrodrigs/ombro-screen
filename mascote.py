@@ -182,8 +182,9 @@ def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float) -> Non
     elif estado == "trabalhando":
         for i in range(3):
             w = max(0.0, _sn(TAU * t / 1.2 - i * 1.1))
-            cx, cy, r = _pt(CX - 44 + i * 44, topo - 34 - 10 * w), None, (9 + 6 * w) * ESC * S
-            d.ellipse((cx[0] - r, cx[1] - r, cx[0] + r, cx[1] + r), fill=_com_alpha(cor, (.35 + .65 * w) * a))
+            px, py = _pt(CX - 44 + i * 44, topo - 34 - 10 * w)
+            r = (9 + 6 * w) * ESC * S
+            d.ellipse((px - r, py - r, px + r, py + r), fill=_com_alpha(cor, (.35 + .65 * w) * a))
     elif estado == "esperando":
         p = .5 + .5 * _sn(TAU * t / 1.9)
         sc, op = .9 + .25 * p, (.6 + .4 * p) * a
@@ -256,8 +257,7 @@ class Mascote:
     inicio: float = 0.0
     anterior: tuple[str, float] | None = None  # (estado, quando começou) enquanto mistura
     cor: tuple[int, int, int] = field(default_factory=cor_sorteada)
-    _pct_ant: float | None = None
-    _reseta_ant: datetime | None = None
+    _reseta_ant: dict[str, datetime] = field(default_factory=dict)  # último horário de reset visto, por janela
     _reset_ate: float = 0.0
     _calmo_desde: float | None = None
 
@@ -271,11 +271,14 @@ class Mascote:
     def decidir(self, u, agora: float) -> str:
         """Estado do cloud a partir do que o Claude Code está fazendo."""
         j5, js = u.cinco_horas, u.semana
-        # janela do plano que reiniciou: o horário de reset avançou mais de uma hora
-        if j5 and j5.reseta_em and self._reseta_ant and (j5.reseta_em - self._reseta_ant) > timedelta(hours=1):
-            self._reset_ate = agora + 3.0
-        if j5:
-            self._pct_ant, self._reseta_ant = j5.pct, j5.reseta_em
+        # janela do plano (5h ou semana) que reiniciou: o horário de reset avançou mais de uma hora
+        for nome, j in (("5h", j5), ("semana", js)):
+            if not (j and j.reseta_em):
+                continue
+            ant = self._reseta_ant.get(nome)
+            if ant and j.reseta_em - ant > timedelta(hours=1):
+                self._reset_ate = agora + 3.0
+            self._reseta_ant[nome] = j.reseta_em
         if agora < self._reset_ate:
             return "reset"
         if u.esperando:

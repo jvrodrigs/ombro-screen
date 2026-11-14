@@ -35,6 +35,9 @@ def argumentos():
     p.add_argument("--usb", action="store_true", help="usar a tela USB (sem isto, abre o simulador)")
     p.add_argument("--revisao", default="A", help="revisão do hardware da tela: A, B, C, D ou WEACT_A (padrão: A)")
     p.add_argument("--porta", default="AUTO", help="porta serial, ex.: /dev/cu.usbmodem1101 (padrão: AUTO)")
+    p.add_argument("--transporte", choices=("auto", "usb", "serial"), default="auto",
+                   help="usb: direto no endpoint USB (revisão A; precisa de pyusb e libusb); serial: pela biblioteca; "
+                        "auto (padrão): usb no Mac com revisão A, serial nos outros casos")
     p.add_argument("--brilho", type=int, default=30, help="brilho em %% (padrão 30; a revisão A esquenta acima de 50)")
     p.add_argument("--lib", type=Path, default=AQUI / "turing-smart-screen-python", help="pasta da turing-smart-screen-python")
     p.add_argument("--paisagem", action="store_true", help="tela deitada, 480x320 (padrão: em pé, 320x480)")
@@ -93,10 +96,14 @@ def main():
         return
 
     if a.usb:
-        from saida import TelaUSB
+        from saida import TelaUSB, escolher_transporte
 
-        saida = TelaUSB(a.revisao.upper(), a.porta, a.brilho, a.lib, paisagem=a.paisagem, girar=a.girar)
-        print("mandando para a tela USB. Ctrl+C para sair.")
+        revisao = a.revisao.upper()
+        transporte, aviso = escolher_transporte(a.transporte, revisao)
+        if aviso:
+            print(aviso, file=sys.stderr)
+        saida = TelaUSB(revisao, a.porta, a.brilho, a.lib, paisagem=a.paisagem, girar=a.girar, transporte=transporte)
+        print(f"mandando para a tela ({'USB direto' if transporte == 'usb' else 'porta serial'}). Ctrl+C para sair.")
     else:
         from saida import Simulador
 

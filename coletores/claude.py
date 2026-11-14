@@ -11,13 +11,19 @@ Sessões abertas: <config>/sessions/<pid>.json (só as com processo vivo).
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from config import pasta_ombro
+from logging_config import SoQuandoMuda, curto, logger, sem_casa
+
+log = logger("claude")
+
 DESATUALIZADO_MS = 30 * 60_000
-PASTA_TELA = Path(os.environ.get("OMBRO_SCREEN_DIR", "~/.ombro-screen")).expanduser()
+PASTA_TELA = pasta_ombro()  # ~/.ombro-screen ou OMBRO_SCREEN_DIR; o statusline_tap.py grava o uso.json aqui
 
 
 @dataclass
@@ -85,11 +91,20 @@ def _janela(raw, agora_ms: int) -> Janela | None:
     return Janela(max(0.0, min(100.0, pct)), datetime.fromtimestamp(reset / 1000) if reset else None)
 
 
+_ignorados = SoQuandoMuda(log)  # arquivos estranhos: um aviso de depuração por arquivo, não um a cada leitura
+
+
 def _ler_json(p: Path):
+    """O JSON do arquivo, ou None se ele não existe, não abre ou não é JSON (o Claude Code pode estar escrevendo)."""
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
+        dados = json.loads(p.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         return None
+    except (OSError, ValueError, RecursionError) as e:  # ValueError inclui JSON e UTF-8 inválidos
+        _ignorados.registrar(str(p), logging.DEBUG, "%s ignorado (%s)", curto(p), type(e).__name__)
+        return None
+    _ignorados.resolver(str(p))
+    return dados
 
 
 class ColetorClaude:
@@ -103,6 +118,9 @@ class ColetorClaude:
         self._offsets: dict[Path, int] = {}
         self._por_msg: dict[str, tuple[int, int, int, int]] = {}  # entrada, saída, cache, hora do dia
         self._dia = None
+        self._avisos = SoQuandoMuda(log)
+        self._fonte_ant: str | None | bool = False  # False = ainda não leu
+        log.debug("pasta do Claude Code: %s (conta %s)", curto(self.config), self.conta)
 
     # ---------- uso do plano ----------
     def _fontes_uso(self):
@@ -242,6 +260,27 @@ class ColetorClaude:
         for nome, etapa in etapas:
             try:
                 etapa()
-            except Exception as e:  # nunca derruba a tela por causa de um arquivo estranho
+            except Exception as e:  # noqa: BLE001 - nunca derruba a tela por causa de um arquivo estranho
                 u.erros.append(f"{nome}: {e}")
+                if self._avisos.registrar(f"etapa:{nome}", logging.WARNING, "não consegui ler %s do Claude Code (%s: %s)",
+                                          nome, type(e).__name__, sem_casa(e)):
+                    log.debug("detalhes da falha em %s", nome, exc_info=True)
+            else:
+                self._avisos.resolver(f"etapa:{nome}", "leitura de %s do Claude Code voltou ao normal", nome)
+        self._registrar_estado(u)
         return u
+
+    def _registrar_estado(self, u: UsoClaude) -> None:
+        """Só as mudanças: fonte do uso do plano e números velhos (nunca nomes de projeto ou conteúdo)."""
+        fonte = u.fonte if u.configurado else None
+        if fonte != self._fonte_ant:
+            if fonte:
+                log.info("uso do plano (5 h e semana): fonte %s", fonte)
+            else:
+                log.info("sem dados do uso do plano (5 h e semana); veja a seção 4 do README")
+            self._fonte_ant = fonte
+        if u.desatualizado:
+            self._avisos.registrar("desatualizado", logging.WARNING, "o uso do plano (%s) tem mais de %d min",
+                                   u.fonte, DESATUALIZADO_MS // 60_000)
+        else:
+            self._avisos.resolver("desatualizado", "o uso do plano voltou a ser atual (%s)", u.fonte)

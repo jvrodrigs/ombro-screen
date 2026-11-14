@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import sys
 import threading
 import time
@@ -9,6 +10,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from PIL import Image, ImageChops
+
+from logging_config import SoQuandoMuda, logger
+
+log = logger("usb")
+log_sim = logger("simulador")
 
 FAIXA = 40  # altura das faixas comparadas entre quadros
 RETENTAR_S = 3.0  # segundos entre tentativas de reconectar a tela USB
@@ -37,7 +43,7 @@ def escolher_transporte(pedido: str, revisao: str, plataforma: str | None = None
         return "usb", ""
     if pedido == "usb":
         raise SystemExit(f"--transporte usb indisponível: {falta}")
-    return "serial", (f"aviso: usando a porta serial, que no macOS costuma embaralhar a imagem desta tela; "
+    return "serial", (f"usando a porta serial, que no macOS costuma embaralhar a imagem desta tela; "
                       f"para o envio direto pelo USB, {falta}")
 
 
@@ -71,15 +77,21 @@ setInterval(()=>{const n=new Image();n.onload=()=>q.src=n.src;n.src='/quadro.png
                         corpo, tipo = sim.png, "image/png"
                 else:
                     corpo, tipo = pagina, "text/html; charset=utf-8"
-                self.send_response(200)
-                self.send_header("Content-Type", tipo)
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(corpo)
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", tipo)
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(corpo)
+                except (BrokenPipeError, ConnectionResetError):  # a aba do navegador fechou no meio do envio
+                    log_sim.debug("o navegador fechou a conexão no meio do envio")
 
         self.servidor = ThreadingHTTPServer(("127.0.0.1", porta), Handler)
         threading.Thread(target=self.servidor.serve_forever, daemon=True).start()
         self.url = f"http://localhost:{porta}"
+
+    def pronta(self) -> bool:
+        return True
 
     def mostrar(self, img: Image.Image) -> None:
         buf = io.BytesIO()
@@ -89,6 +101,7 @@ setInterval(()=>{const n=new Image();n.onload=()=>q.src=n.src;n.src='/quadro.png
 
     def fechar(self) -> None:
         self.servidor.shutdown()
+        self.servidor.server_close()  # solta a porta
 
 
 class TelaUSB:
@@ -137,16 +150,22 @@ class TelaUSB:
             self._orientacao = Orientation.REVERSE_LANDSCAPE if girar else Orientation.LANDSCAPE
         else:
             self._orientacao = Orientation.REVERSE_PORTRAIT if girar else Orientation.PORTRAIT
+        self.revisao = revisao
         self.lcd = None
         self._serial = None  # a porta aberta, para notar quando a biblioteca a reabre sozinha
         self.anterior: Image.Image | None = None
         self._proxima_tentativa = 0.0
-        if not self._conectar():
-            self._avisar(f"tela USB não encontrada; tentando de novo a cada {RETENTAR_S:.0f} s (Ctrl+C para sair)")
+        self._avisos = SoQuandoMuda(log)
+        self._ja_conectou = False
+        self.bytes_enviados = 0  # pixels mandados à tela desde o início (para medir; ver o log em --debug)
+        self._conectar()
 
-    @staticmethod
-    def _avisar(msg: str) -> None:
-        print(msg, file=sys.stderr, flush=True)
+    def _descricao(self) -> str:
+        return "USB direto" if self.usb_direto else f"porta serial, revisão {self.revisao}"
+
+    def pronta(self) -> bool:
+        """Vale a pena desenhar um quadro agora? Não, se a tela está fora e ainda não é hora de tentar de novo."""
+        return self.lcd is not None or time.monotonic() >= self._proxima_tentativa
 
     @staticmethod
     def _motivo(e: BaseException) -> str:
@@ -166,6 +185,9 @@ class TelaUSB:
 
     def _conectar(self) -> bool:
         if not self._porta_presente():
+            self._avisos.registrar("conexao", logging.WARNING,
+                                   "tela USB não encontrada; tentando de novo a cada %.0f s (Ctrl+C para sair)", RETENTAR_S)
+            self._proxima_tentativa = time.monotonic() + RETENTAR_S
             return False
         lcd = None
         try:
@@ -175,55 +197,64 @@ class TelaUSB:
             lcd.Reset()
             lcd.InitializeComm()
             self._configurar()
-        except (Exception, SystemExit) as e:
-            self._avisar(f"aviso: não consegui iniciar a tela USB ({self._motivo(e)})")
+        except (Exception, SystemExit) as e:  # a biblioteca chama sys.exit() quando desiste da porta
+            if self._avisos.registrar("conexao", logging.WARNING, "não consegui iniciar a tela USB (%s); "
+                                      "tentando de novo a cada %.0f s", self._motivo(e), RETENTAR_S):
+                log.debug("detalhes da falha ao iniciar a tela", exc_info=True)
             self._desconectar()
             return False
         self._serial = lcd.lcd_serial
         self.anterior = None  # a tela foi reiniciada: o próximo quadro vai inteiro
+        self._avisos.resolver("conexao")
+        log.info("tela USB %s (%s)", "reconectada" if self._ja_conectou else "conectada", self._descricao())
+        self._ja_conectou = True
         return True
 
     def _desconectar(self) -> None:
         if self.lcd is not None:
             try:
                 self.lcd.closeSerial()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - a conexão já estava perdida; fechar é só arrumação
+                log.debug("erro ao fechar a tela USB (ignorado)", exc_info=True)
         self.lcd, self._serial, self.anterior = None, None, None
         self._proxima_tentativa = time.monotonic() + RETENTAR_S
 
+    def _pedaco(self, img: Image.Image, x: int, y: int) -> None:
+        self.lcd.DisplayPILImage(img, x, y)
+        self.bytes_enviados += img.width * img.height * 2  # RGB565
+
     def _enviar(self, img: Image.Image) -> None:
         if self.anterior is None:
-            self.lcd.DisplayPILImage(img, 0, 0)
+            self._pedaco(img, 0, 0)
             return
         for y in range(0, img.height, FAIXA):
             caixa = (0, y, img.width, min(y + FAIXA, img.height))
             bbox = ImageChops.difference(img.crop(caixa), self.anterior.crop(caixa)).getbbox()
             if bbox:
                 x0, y0, x1, y1 = bbox
-                pedaco = img.crop((x0, y + y0, x1, y + y1))
-                self.lcd.DisplayPILImage(pedaco, x0, y + y0)
+                self._pedaco(img.crop((x0, y + y0, x1, y + y1)), x0, y + y0)
 
     def mostrar(self, img: Image.Image) -> None:
         if self.lcd is None:
             if time.monotonic() < self._proxima_tentativa:
                 return
             if not self._conectar():
-                self._proxima_tentativa = time.monotonic() + RETENTAR_S
                 return
-            self._avisar("tela USB conectada")
         try:
             self._enviar(img)
             if self.lcd.lcd_serial is not self._serial:
                 # A biblioteca reabriu a porta no meio do envio (a tela pode ter reiniciado):
                 # reconfigura e manda o quadro inteiro na próxima vez.
+                log.info("a biblioteca reabriu a porta serial; reconfigurando a tela")
                 self._serial = self.lcd.lcd_serial
                 self._configurar()
                 self.anterior = None
                 return
         except (Exception, SystemExit) as e:
-            self._avisar(f"aviso: a tela USB parou de responder ({self._motivo(e)}); "
-                         f"tentando reconectar a cada {RETENTAR_S:.0f} s")
+            # Sem o cabo, a biblioteca da tela levanta de tudo (até SystemExit): qualquer erro aqui vira
+            # reconexão, para o Ombro não cair. O traceback fica no log de depuração.
+            log.warning("a tela USB parou de responder (%s); tentando reconectar a cada %.0f s", self._motivo(e), RETENTAR_S)
+            log.debug("detalhes da falha no envio", exc_info=True)
             self._desconectar()
             return
         self.anterior = img

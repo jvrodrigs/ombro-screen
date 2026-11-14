@@ -102,6 +102,32 @@ class Protocolo(unittest.TestCase):
         with self.assertRaises(OSError):
             LcdFalso()
 
+    def test_posicao_fora_da_tela_e_erro_de_programacao(self):
+        self.lcd.SetOrientation(Orientation.LANDSCAPE)
+        with self.assertRaises(ValueError):
+            self.lcd.DisplayPILImage(Image.new("RGB", (10, 10)), 480, 0)
+
+    def test_retrato_por_padrao(self):
+        self.assertEqual((self.lcd.get_width(), self.lcd.get_height()), (320, 480))
+        self.lcd.SetOrientation(Orientation.REVERSE_PORTRAIT)
+        self.assertEqual(self.envios()[-1][6:], bytes([101, 1, 64, 1, 224]))
+
+    def test_reset_desiste_se_a_tela_nao_voltar(self):
+        relogio = [0.0]
+        with mock.patch.object(usb_direto.time, "monotonic", lambda: relogio[0]), \
+                mock.patch.object(usb_direto.time, "sleep", lambda s: relogio.__setitem__(0, relogio[0] + s)):
+            LcdFalso.presente = False  # depois do reset, a tela some de vez
+            with self.assertRaises(OSError):
+                self.lcd.Reset()
+        self.assertGreater(relogio[0], 5)
+        self.assertIsNone(self.lcd.lcd_serial)
+
+    def test_fechar_duas_vezes_e_falha_ao_soltar(self):
+        with mock.patch.object(LcdFalso, "_soltar", side_effect=RuntimeError("libusb")):
+            self.lcd.closeSerial()  # não levanta
+        self.assertIsNone(self.lcd.lcd_serial)
+        self.lcd.closeSerial()
+
 
 class EscolherTransporte(unittest.TestCase):
     def test_auto_no_mac_com_revisao_a_usa_usb(self):

@@ -78,7 +78,7 @@ def _desde(quando: datetime | None, agora: datetime) -> str:
     return f"há {m} min" if m < 60 else f"há {m // 60}h{m % 60:02d}"
 
 
-def _grafico_tokens(t: Tela, por_hora: list, x: float, y: float, w: float, h: float) -> tuple[str, float]:
+def _grafico_tokens(t: Tela, por_hora: list, x: float, y: float, w: float, h: float, cor=CORAL, cor_ponto=TEXTO) -> tuple[str, float]:
     """Gráfico de linha do dia: uma linha fina e um ponto branco na hora atual."""
     vals = [(hora, v) for hora, v in enumerate(por_hora) if v is not None]
     pico = max((v for _, v in vals), default=0)
@@ -86,13 +86,13 @@ def _grafico_tokens(t: Tela, por_hora: list, x: float, y: float, w: float, h: fl
         return "—", 0
     passo, pad = w / 24, 4
     pts = [((x + hora * passo + passo / 2) * S, (y + h - pad - v / pico * (h - 2 * pad)) * S) for hora, v in vals]
-    t.d.line(pts, fill=CORAL, width=int(1.7 * S), joint="curve")
+    t.d.line(pts, fill=cor, width=int(1.7 * S), joint="curve")
     for px, py in (pts[0], pts[-1]):  # pontas arredondadas
         r = .85 * S
-        t.d.ellipse((px - r, py - r, px + r, py + r), fill=CORAL)
+        t.d.ellipse((px - r, py - r, px + r, py + r), fill=cor)
     ux, uy = pts[-1]
     r = 2.6 * S
-    t.d.ellipse((ux - r, uy - r, ux + r, uy + r), fill=TEXTO)
+    t.d.ellipse((ux - r, uy - r, ux + r, uy + r), fill=cor_ponto)
     hora_pico = max(vals, key=lambda hv: hv[1])[0]
     return f"pico {hora_pico}h", pico
 

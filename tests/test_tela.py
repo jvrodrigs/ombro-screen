@@ -1,5 +1,6 @@
 """tela.py de ponta a ponta, como o usuário roda: sem tela USB, sem Claude Code e sem macmon."""
 import os
+from contextlib import closing
 import signal
 import socket
 import sqlite3
@@ -16,6 +17,11 @@ from PIL import Image
 RAIZ = Path(__file__).resolve().parent.parent
 
 
+def tamanho(arq):
+    with Image.open(arq) as im:
+        return im.size
+
+
 class Tela(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -30,12 +36,13 @@ class Tela(unittest.TestCase):
                               capture_output=True, text=True, timeout=60)
 
     def test_png_nos_tres_layouts(self):
-        for args, tamanho in ((["--demo"], (480, 320)), (["--demo", "--layout", "classico"], (320, 480)),
+        for args, esperado in ((["--demo"], (480, 320)), (["--demo", "--layout", "classico"], (320, 480)),
+                              (["--demo", "--layout", "minimal-v2", "--no-paisagem"], (480, 320)),
                               (["--layout", "classico", "--paisagem", "--sem-macmon"], (480, 320))):
             arq = self.pasta / "q.png"
             r = self.rodar(*args, "--png", str(arq))
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(Image.open(arq).size, tamanho, args)
+            self.assertEqual(tamanho(arq), esperado, args)
             arq.unlink()
 
     def test_opcao_invalida_sai_com_erro_do_argparse(self):
@@ -49,9 +56,9 @@ class Tela(unittest.TestCase):
         (self.pasta / "ombro" / "config.json").write_text('{"layout": "classico", "paisagem": true}')
         arq = self.pasta / "q.png"
         self.assertEqual(self.rodar("--demo", "--png", str(arq)).returncode, 0)
-        self.assertEqual(Image.open(arq).size, (480, 320))
+        self.assertEqual(tamanho(arq), (480, 320))
         self.assertEqual(self.rodar("--demo", "--no-paisagem", "--png", str(arq)).returncode, 0)
-        self.assertEqual(Image.open(arq).size, (320, 480))
+        self.assertEqual(tamanho(arq), (320, 480))
 
     def test_configuracao_invalida_nao_inicia(self):
         (self.pasta / "ombro").mkdir()
@@ -78,7 +85,7 @@ class Tela(unittest.TestCase):
             self.assertEqual(p.returncode, 0, err)
             banco = self.pasta / "ombro" / "state.db"
             self.assertEqual(banco.exists(), grava, args)
-        with sqlite3.connect(str(banco)) as c:
+        with closing(sqlite3.connect(str(banco))) as c:
             self.assertEqual(c.execute("SELECT provider_id, session_id, activity FROM sessions").fetchall(),
                              [("claude", "s1", "working")])
 

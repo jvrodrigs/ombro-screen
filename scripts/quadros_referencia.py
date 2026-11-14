@@ -24,8 +24,11 @@ sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "scripts"))
 
 from benchmark import AGORA, GB, hardware_fixo, mascote_animando, uso_fixo  # noqa: E402
+from dataclasses import replace  # noqa: E402
+
 from coletores.claude import Janela, UsoClaude  # noqa: E402
 from coletores.hardware import Hardware  # noqa: E402
+from layout_minimal_v2 import desenhar_minimal, reiniciar_niveis  # noqa: E402
 from layout_ombro import desenhar_ombro  # noqa: E402
 from mascote import ESTADOS  # noqa: E402
 from render import desenhar  # noqa: E402
@@ -43,6 +46,36 @@ def extremos() -> tuple[Hardware, UsoClaude]:
     return h, u
 
 
+def cenarios_minimal():
+    """Os estados que o Minimal v2 precisa mostrar bem, inclusive os difíceis (nome: (hardware, uso, estado do cloud))."""
+    h, hx, ux = hardware_fixo(), *extremos()
+    longo = replace(uso_fixo("esperando"), espera_projeto="um-projeto-com-um-nome-comprido-demais-para-caber-na-linha")
+    varias = replace(uso_fixo("trabalhando"), sessoes=6, trabalhando=3, esperando=2,
+                     status_sessoes=["busy", "waiting", "busy", "idle", "waiting", "busy"])
+    return {
+        "trabalhando": (h, uso_fixo("trabalhando"), "trabalhando"),
+        "ocioso": (h, uso_fixo("ocioso"), "ocioso"),
+        "esperando": (h, uso_fixo("esperando"), "esperando"),
+        "alerta-quota": (h, uso_fixo("alerta"), "alerta"),
+        "reset": (h, uso_fixo("reset"), "reset"),
+        "concluido": (h, uso_fixo("concluido"), "concluido"),
+        "cpu-alta": (replace(h, cpu_pct=92.0), uso_fixo("trabalhando"), "trabalhando"),
+        "ram-alta": (replace(h, ram_total=16 * GB, ram_usada=int(14.1 * GB)), uso_fixo("trabalhando"), "trabalhando"),
+        "ram-critica-32gb": (replace(h, ram_total=32 * GB, ram_usada=int(30.5 * GB)), uso_fixo("ocioso"), "ocioso"),
+        "pressao-critica": (replace(h, pressao_memoria="critico"), uso_fixo("trabalhando"), "trabalhando"),
+        "sem-dados": (Hardware(disponivel=False), UsoClaude(), "ocioso"),
+        "sessoes-simultaneas": (h, varias, "esperando"),
+        "nome-longo": (h, longo, "esperando"),
+        "extremos": (hx, ux, "esperando"),
+    }
+
+
+def quadros_minimal():
+    for nome, (h, u, estado) in cenarios_minimal().items():
+        reiniciar_niveis()  # cada quadro sem a histerese do anterior
+        yield f"minimal-{nome}", desenhar_minimal(h, u, mascote_animando(estado), AGORA, 11.1)
+
+
 def quadros():
     h = hardware_fixo()
     for estado in ESTADOS:
@@ -55,6 +88,7 @@ def quadros():
     yield "ombro-vazio", desenhar_ombro(Hardware(), UsoClaude(), mascote_animando("ocioso"), AGORA, 10)
     hx, ux = extremos()
     yield "ombro-extremos", desenhar_ombro(hx, ux, mascote_animando("esperando"), AGORA, 10)
+    yield from quadros_minimal()
     for paisagem in (False, True):
         nome = "paisagem" if paisagem else "retrato"
         yield f"classico-{nome}", desenhar(h, uso_fixo("trabalhando"), AGORA, paisagem_=paisagem)

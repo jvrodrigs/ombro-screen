@@ -7,10 +7,13 @@
 """
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import json
 import logging
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -44,6 +47,33 @@ class Hardware:
     hist_cpu: list[float] = field(default_factory=list)
     hist_gpu: list[float] = field(default_factory=list)
     macmon: bool = False
+    disponivel: bool = True  # False = ainda não houve uma leitura boa (a tela mostra "—", não 0 %)
+    pressao_memoria: str | None = None  # "normal", "atencao" ou "critico" (Memory Pressure do macOS); None = não se sabe
+
+
+_PRESSAO = {1: "normal", 2: "atencao", 4: "critico"}  # valores de kern.memorystatus_vm_pressure_level
+_libc = None
+
+
+def pressao_memoria() -> str | None:
+    """Memory Pressure do macOS, a mesma do Monitor de Atividade, lida direto do kernel (sysctl via ctypes).
+
+    Sem processo externo e sem dependência nova: custa microssegundos. Fora do macOS, ou se a leitura
+    falhar, devolve None, e quem usa fica só com a ocupação da RAM.
+    """
+    global _libc
+    if sys.platform != "darwin":
+        return None
+    try:
+        if _libc is None:
+            _libc = ctypes.CDLL(ctypes.util.find_library("c"))
+        valor = ctypes.c_int(0)
+        tamanho = ctypes.c_size_t(ctypes.sizeof(valor))
+        if _libc.sysctlbyname(b"kern.memorystatus_vm_pressure_level", ctypes.byref(valor), ctypes.byref(tamanho), None, 0):
+            return None
+    except (OSError, AttributeError, TypeError, ValueError):
+        return None
+    return _PRESSAO.get(valor.value)
 
 
 class LeitorMacmon(threading.Thread):
@@ -169,6 +199,7 @@ class ColetorHardware:
         vm = psutil.virtual_memory()
         h.ram_total = vm.total
         h.ram_usada = vm.total - vm.available
+        h.pressao_memoria = pressao_memoria()
         h.swap_usada = psutil.swap_memory().used
 
         du = psutil.disk_usage(self.disco)

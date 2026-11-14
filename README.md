@@ -6,18 +6,19 @@
 <p align="center">O uso do Claude Code e do seu Mac numa telinha USB, com um cloud que reage ao que o Claude está fazendo.</p>
 
 <p align="center">
-  <img src="docs/tela.png" width="480" alt="A tela do Ombro Screen, com dados de demonstração">
+  <img src="docs/tela.png" width="480" alt="A tela do Ombro Screen no layout Minimal v2, com dados de demonstração">
 </p>
 
 ---
 
-O uso do Claude Code, o CPU e a RAM do Mac numa telinha USB de 3,5" deitada (480×320), com um mascote, o **cloud**, que reage ao que o Claude está fazendo. A imagem acima usa dados de demonstração (`--demo`).
+O uso do Claude Code, o CPU e a RAM do Mac numa telinha USB de 3,5" deitada (480×320), com um mascote, o **cloud**, que reage ao que o Claude está fazendo. A imagem acima é o layout **Minimal v2** (`--layout minimal-v2`) com dados de demonstração (`--demo`); o layout do Ombro continua sendo o padrão (os dois lado a lado na [seção 2](#layout-minimal-v2)).
 
 - **Uso do plano**: sessão de 5 h e semana, com o horário em que cada uma reinicia
-- **Hoje**: tokens gastos, tokens de saída, sessões abertas (uma bolinha por sessão) e a curva de tokens por hora
-- **Hardware**: CPU e RAM
-- **Aviso**: qual projeto espera você e há quanto tempo (ou "nenhuma sessão esperando")
+- **Hoje**: tokens gastos, tokens de saída, sessões abertas e a curva de tokens por hora
+- **Sistema**: CPU e RAM; no Minimal v2, em barras proporcionais à RAM total real do Mac, com cores por nível e a Memory Pressure do macOS
+- **Aviso**: qual projeto espera você e há quanto tempo (ou "nenhuma sessão aguardando")
 - **Cloud**: ocioso, trabalhando, esperando, alerta, reset ou concluído, cada um com a sua animação
+- **Três layouts**: o do Ombro (padrão), o Minimal v2 e o clássico (o painel antigo, com GPU, rede e disco)
 
 Tudo sai de arquivos locais: não usa a API nem lê credenciais.
 
@@ -58,6 +59,37 @@ python3 tela.py --demo --demo-ciclo 7    # o cloud passa por todos os estados, 7
 Abre `http://localhost:5680` no navegador. Para salvar um quadro: `python3 tela.py --png quadro.png`.
 
 O layout do Ombro é o padrão e é sempre 480×320. O painel antigo (anéis, GPU, rede, disco) continua disponível com `--layout classico`; nele, `--paisagem` deita a tela.
+
+### Layout Minimal v2
+
+```bash
+python3 tela.py --layout minimal-v2              # no simulador
+python3 tela.py --usb --layout minimal-v2        # na tela
+```
+
+<p align="center">
+  <img src="docs/layouts.png" width="760" alt="O layout do Ombro e o Minimal v2 lado a lado, com os mesmos dados de demonstração">
+</p>
+
+O mesmo conteúdo do layout do Ombro, mais limpo: cabeçalho com o estado (o mesmo do cloud), as duas barras de uso alinhadas, tokens hoje, saída e sessões em três colunas com ícones, a seção **Sistema** (com o macOS e a RAM total do seu Mac) com **CPU e RAM em barras proporcionais**, tokens por hora e quem espera você. O layout do Ombro continua sendo o padrão; para deixar o Minimal v2 fixo, use `"layout": "minimal-v2"` no arquivo de configuração (seção 7).
+
+- É desenhado direto em 480×320 (o do Ombro desenha em 960×640 e reduz), então o texto sai nítido no tamanho real. Só o cloud e a linha de tokens por hora são desenhados maiores e reduzidos, para as curvas não serrilharem.
+- A RAM é a usada sobre o **total real do seu Mac** (8, 16, 18, 24, 32, 36, 64 GB…), lido do sistema. O nome e a versão do sistema ("macOS 27.0") também vêm do próprio Python, sem programa externo.
+- Os ícones (tokens, saída, sessões e sistema) são desenhados em traço fino pelo próprio Ombro: não dependem de a fonte ter emoji.
+- Custo: desenhar um quadro leva ≈ 1,8 ms (o do Ombro, ≈ 4,3 ms), porque a parte que não muda é reaproveitada entre quadros. Na tela de verdade, o processo usou ≈ 3,4 % de um núcleo (o layout do Ombro, ≈ 5,1 %, medidos do mesmo jeito).
+- Cores das barras (o texto também muda, para não depender só da cor):
+
+| Barra | Normal | Atenção (amarelo) | Crítico (vermelho) |
+| --- | --- | --- | --- |
+| CPU | laranja, abaixo de 75 % | de 75 % a 89 % | 90 % ou mais |
+| RAM | azul, abaixo de 85 % | de 85 % a 93 % | 94 % ou mais |
+| Uso de 5 h e da semana | laranja / azul, abaixo de 75 % | de 75 % a 89 % | 90 % ou mais |
+
+- **Memory Pressure:** no macOS, o Ombro também lê a pressão de memória (a mesma do Monitor de Atividade), direto do sistema e sem programa externo. Se ela estiver em atenção ou crítica, a barra de RAM fica amarela ou vermelha mesmo com a ocupação baixa, e o canto direito mostra `pressão` em vez do percentual. A ocupação sozinha nunca é tratada como pressão.
+- Para não piscar perto de um limite, a cor sobe na hora, mas só desce quando o valor cai 2 pontos abaixo dele.
+- Sem leitura de CPU ou RAM, aparece "—" e a barra vazia (nunca um 0 % inventado).
+
+Limitações: em outros sistemas que não o macOS, a pressão de memória não existe e vale só a ocupação. O texto de 10 px é o menor usado; confira se lê bem na distância em que a sua tela fica.
 
 ## 3. Os estados do cloud
 
@@ -260,6 +292,7 @@ Cursor ainda não são suportados.
 | `config.py` | Padrões, arquivo de configuração e validação das opções, resolvidos num lugar só |
 | `logging_config.py` | Formato dos logs, `--debug` e o filtro que evita repetir o mesmo aviso |
 | `layout_ombro.py` | O layout do Ombro (480×320): texto, barras, curva de tokens, aviso e o cloud |
+| `layout_minimal_v2.py` | O layout Minimal v2 (`--layout minimal-v2`), com CPU e RAM em barras e a política de cores |
 | `mascote.py` | O cloud: animação por estado, extras (zZ, "?", pontinhos, suor, confete) e a máquina de estados |
 | `dados_cloud.py` | Contorno e olhos do cloud, extraídos da KEY de formas |
 | `render.py` | Cores, fontes, formatação pt-BR e o painel clássico |
@@ -293,7 +326,7 @@ Não precisam da tela, da biblioteca da tela, do macmon nem do Claude Code: a `T
 
 ```bash
 python3 scripts/quadros_referencia.py --salvar /tmp/antes.json     # antes de mexer no código
-python3 scripts/quadros_referencia.py --comparar /tmp/antes.json   # depois: "34 quadros idênticos"
+python3 scripts/quadros_referencia.py --comparar /tmp/antes.json   # depois: "53 quadros idênticos"
 ```
 
 **Quanto custa cada parte:** `python3 scripts/benchmark.py` mede desenho, coleta, preparação do envio e o laço completo, com entradas fixas e uma tela falsa (o USB em si não entra). Compare execuções feitas na mesma máquina.

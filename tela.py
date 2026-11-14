@@ -32,8 +32,9 @@ from apresentacao import uso_claude  # noqa: E402
 from coletores.claude import ColetorClaude  # noqa: E402
 from coletores.demo import Demo  # noqa: E402
 from coletores.hardware import ColetorHardware, Hardware  # noqa: E402
-from config import LAYOUTS, TRANSPORTES, ConfigInvalida, OmbroConfig, pasta_ombro, resolver  # noqa: E402
+from config import LAYOUTS, NOMES_LAYOUT, TRANSPORTES, ConfigInvalida, OmbroConfig, pasta_ombro, resolver  # noqa: E402
 from core.monitor import Monitor  # noqa: E402
+from layout_minimal_v2 import desenhar_minimal  # noqa: E402
 from layout_ombro import desenhar_ombro  # noqa: E402
 from logging_config import SoQuandoMuda, curto, logger, sem_casa  # noqa: E402
 from logging_config import configurar as configurar_logs  # noqa: E402
@@ -70,7 +71,8 @@ def argumentos(argv=None) -> tuple[OmbroConfig, list[str]]:
     p.add_argument("--sem-macmon", action=sim_nao, help="não usar o macmon (só psutil)")
     p.add_argument("--claude-dir", help="pasta de configuração do Claude Code (padrão: ~/.claude)")
     p.add_argument("--layout", choices=LAYOUTS,
-                   help="ombro (480x320 deitada, com o cloud; é o padrão) ou classico (o painel antigo, que respeita --paisagem)")
+                   help="ombro (480x320 deitada, com o cloud; é o padrão), minimal-v2 (o mesmo conteúdo, mais limpo, "
+                        "com CPU e RAM em barras) ou classico (o painel antigo, que respeita --paisagem)")
     p.add_argument("--intervalo", type=float, help="segundos entre quadros (padrão: 1 no clássico, 0,2 no ombro)")
     p.add_argument("--demo-ciclo", type=float, metavar="SEG", help="com --demo: troca de cenário a cada SEG segundos")
     p.add_argument("--cor-mascote", metavar="#HEX", help="cor fixa do cloud (padrão: sorteia uma a cada estado)")
@@ -129,7 +131,7 @@ def main(argv=None):
     for aviso in avisos:
         log_cfg.warning(aviso)
     log.info("Ombro Screen iniciando (Python %s, layout %s%s)", platform.python_version(),
-             "do Ombro" if cfg.ombro else "clássico", ", dados de demonstração" if cfg.demo else "")
+             NOMES_LAYOUT[cfg.layout], ", dados de demonstração" if cfg.demo else "")
     log_cfg.info("configuração: %s", curto(cfg.arquivo) if cfg.arquivo else "padrões e linha de comando (sem arquivo)")
     log_cfg.debug("configuração resolvida: %s", {k: sem_casa(v) if isinstance(v, str) else v for k, v in cfg.resumo().items()})
     try:
@@ -146,7 +148,7 @@ def rodar(cfg: OmbroConfig) -> None:
     fonte = FonteDemo(demo, cfg.demo_ciclo) if demo else ColetorClaude(cfg.claude_dir)
     monitor = Monitor.montar([ClaudeProvider(fonte)], banco=banco_de_estado(cfg))
     avisos_hw = SoQuandoMuda(log_hw)
-    ultimo_hw = Hardware()
+    ultimo_hw = Hardware(disponivel=False)  # até a primeira leitura boa
 
     def ler_hw():
         nonlocal ultimo_hw
@@ -165,23 +167,28 @@ def rodar(cfg: OmbroConfig) -> None:
     def ler_claude():
         return uso_claude(monitor.atualizar(CLAUDE))
 
-    ombro, paisagem = cfg.ombro, cfg.paisagem_efetiva
+    animado, paisagem = cfg.animado, cfg.paisagem_efetiva
     intervalo = cfg.intervalo_efetivo
     mascote = Mascote(cor_fixa=cfg.cor_mascote_rgb)
     if demo and cfg.demo_ciclo > 0:  # no ciclo de demonstração, o "concluído" dura um cenário, não 5 min
         mascote.duracao_concluido = cfg.demo_ciclo
     mascote.inicio = time.monotonic()
 
+    def desenhar_animado(h, uso, agora_mono):
+        if cfg.layout == "minimal-v2":
+            return desenhar_minimal(h, uso, mascote, datetime.now(), agora_mono, agente=CLAUDE)
+        return desenhar_ombro(h, uso, mascote, datetime.now(), agora_mono)
+
     def quadro(h, uso, agora_mono):
         try:
-            if ombro:
+            if animado:
                 mascote.ir_para(mascote.decidir(uso, agora_mono), agora_mono)
-                return desenhar_ombro(h, uso, mascote, datetime.now(), agora_mono)
+                return desenhar_animado(h, uso, agora_mono)
             return desenhar(h, uso, paisagem_=paisagem)
         except Exception:
             # Um erro no desenho é bug, não falha recuperável: registra com o contexto e fecha.
             log_render.critical("falha ao desenhar o quadro (layout %s, cloud %s); o Ombro vai fechar",
-                                "do Ombro" if ombro else "clássico", mascote.estado, exc_info=True)
+                                NOMES_LAYOUT[cfg.layout], mascote.estado, exc_info=True)
             raise SystemExit(1) from None
 
     if cfg.png:
@@ -191,9 +198,9 @@ def rodar(cfg: OmbroConfig) -> None:
         time.sleep(0.5)
         agora = time.monotonic()
         img = quadro(ler_hw(), ler_claude(), agora)
-        if ombro:  # sem mistura com o estado anterior, e já no meio do movimento
+        if animado:  # sem mistura com o estado anterior, e já no meio do movimento
             mascote.anterior = None
-            img = desenhar_ombro(ler_hw(), ler_claude(), mascote, datetime.now(), agora + 1.0)
+            img = desenhar_animado(ler_hw(), ler_claude(), agora + 1.0)
         img.save(cfg.png)
         log.info("quadro salvo em %s", curto(cfg.png))
         return

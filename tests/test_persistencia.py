@@ -1,6 +1,7 @@
 """SQLite: formato, gravação, recuperação, retenção, migração e falhas. Só bancos temporários."""
 import sqlite3
 import stat
+from contextlib import closing
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -40,7 +41,7 @@ class Base(unittest.TestCase):
         return db
 
     def linhas(self, sql):
-        with sqlite3.connect(str(self.caminho)) as c:
+        with closing(sqlite3.connect(str(self.caminho))) as c:
             return c.execute(sql).fetchall()
 
 
@@ -72,7 +73,7 @@ class Formato(Base):
 
     def test_banco_de_versao_mais_nova_fica_intocado(self):
         self.caminho.parent.mkdir(parents=True)
-        with sqlite3.connect(str(self.caminho)) as c:
+        with closing(sqlite3.connect(str(self.caminho))) as c:
             c.execute("PRAGMA user_version = 99")
         antes = self.caminho.read_bytes()
         with self.assertLogs("ombro.persistencia", "WARNING") as logs:

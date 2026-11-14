@@ -30,10 +30,6 @@ def _yc(i: float) -> float:
     return Y0 + LINHA * (i + .5)
 
 
-def _largura(segs) -> float:
-    return sum(len(s) * PASSO for s, _, _ in segs)
-
-
 def _linha(t: Tela, x: float, y: float, segs) -> float:
     """Escreve segmentos (texto, cor, peso) um caractere por vez, no passo fixo; devolve o x final."""
     for s, cor, peso in segs:

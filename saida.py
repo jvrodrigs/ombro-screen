@@ -18,7 +18,6 @@ log_sim = logger("simulador")
 
 FAIXA = 40  # altura das faixas comparadas entre quadros
 RETENTAR_S = 3.0  # segundos entre tentativas de reconectar a tela USB
-TRANSPORTES = ("auto", "usb", "serial")
 
 
 def escolher_transporte(pedido: str, revisao: str, plataforma: str | None = None) -> tuple[str, str]:

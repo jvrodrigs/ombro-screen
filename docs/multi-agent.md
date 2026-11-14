@@ -1,4 +1,4 @@
-# Vários agentes no Ombro (Fase 3)
+# Vários agentes no Ombro
 
 O Ombro acompanha o **Claude Code**, o **OpenAI Codex** e o **Cursor** ao mesmo tempo, cada um por um
 *provider* isolado: uma falha no Codex não afeta o Claude, e o Ombro funciona com um, dois ou os três.

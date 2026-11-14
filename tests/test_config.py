@@ -56,7 +56,11 @@ class Padroes(Base):
         import saida
 
         self.assertEqual(set(config.REVISOES), set(saida.TelaUSB.REVISOES))
-        self.assertEqual(config.TRANSPORTES, saida.TRANSPORTES)
+        import usb_direto
+
+        with mock.patch.object(usb_direto, "problema", return_value=None):
+            for transporte in config.TRANSPORTES:  # a saída entende todos os transportes que a configuração aceita
+                self.assertIn(saida.escolher_transporte(transporte, "A", "darwin")[0], ("usb", "serial"))
 
 
 class Precedencia(Base):

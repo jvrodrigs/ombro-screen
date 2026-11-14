@@ -4,3 +4,17 @@ log.log
 __pycache__/
 *.pyc
 turing-smart-screen-python/
+# caches e artefatos gerados
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+*.log
+*.tmp
+# estado local do Ombro, se OMBRO_SCREEN_DIR apontar para o projeto
+state.db
+eventos/

@@ -155,6 +155,8 @@ def rodar(cfg: OmbroConfig) -> None:
     ombro, paisagem = cfg.ombro, cfg.paisagem_efetiva
     intervalo = cfg.intervalo_efetivo
     mascote = Mascote(cor_fixa=cfg.cor_mascote_rgb)
+    if demo and cfg.demo_ciclo > 0:  # no ciclo de demonstração, o "concluído" dura um cenário, não 5 min
+        mascote.duracao_concluido = cfg.demo_ciclo
     mascote.inicio = time.monotonic()
 
     def quadro(h, uso, agora_mono):

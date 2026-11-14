@@ -52,7 +52,8 @@ def hardware_fixo() -> Hardware:
 
 def uso_fixo(estado: str = "esperando") -> UsoClaude:
     status = {"ocioso": ["idle"], "trabalhando": ["busy", "idle"], "esperando": ["busy", "waiting", "idle"],
-              "alerta": ["busy"], "reset": ["idle"]}[estado]
+              "alerta": ["busy"], "reset": ["idle"],
+              "concluido": ["idle", "idle"]}[estado]
     pct5 = 93 if estado == "alerta" else 42
     curva = [0, 0, 0, 0, 0, 0, 0, .1, .6, 1.4, 2.2, 1.8, .9, 1.2, 2.6, 3.1, 2.4, 1.6, .8, 1.1, 1.9, 1.3, .4, .2]
     return UsoClaude(

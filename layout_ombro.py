@@ -64,6 +64,7 @@ def rotulo_estado(estado: str, u: UsoClaude) -> str:
         "esperando": f"{u.esperando} esperando resposta",
         "alerta": "plano quase no fim",
         "reset": "plano resetou",
+        "concluido": "concluído",
     }[estado]
 
 

@@ -76,6 +76,27 @@ def quadros_minimal():
         yield f"minimal-{nome}", desenhar_minimal(h, u, mascote_animando(estado), AGORA, 11.1)
 
 
+def quadros_multiagente():
+    import sys as _sys
+    _sys.path.insert(0, str(RAIZ / "tests"))
+    from test_multiagente import NOMES, resumo_demo  # os mesmos dados dos testes do layout
+
+    import layout_multiagente as lm
+    from core.resumo import resumir
+    from core.state import StateStore
+
+    h = hardware_fixo()
+    for nome, (vista, foco, urgente) in {"overview": ("overview", None, True), "overview-calmo": ("overview", None, False),
+                                         "attention": ("attention", None, True), "focus-claude": ("focus", "claude", True),
+                                         "focus-codex": ("focus", "codex", True), "focus-cursor": ("focus", "cursor", True)}.items():
+        reiniciar_niveis()
+        yield f"multi-{nome}", lm.desenhar_multiagente(h, resumo_demo(urgente), mascote_animando("esperando"), AGORA, 11.1,
+                                                       vista, foco, usar_cache=False)
+    reiniciar_niveis()
+    yield "multi-vazio", lm.desenhar_multiagente(Hardware(disponivel=False), resumir(StateStore(), NOMES),
+                                                 mascote_animando("ocioso"), AGORA, 11.1, usar_cache=False)
+
+
 def quadros():
     h = hardware_fixo()
     for estado in ESTADOS:
@@ -89,6 +110,7 @@ def quadros():
     hx, ux = extremos()
     yield "ombro-extremos", desenhar_ombro(hx, ux, mascote_animando("esperando"), AGORA, 10)
     yield from quadros_minimal()
+    yield from quadros_multiagente()
     for paisagem in (False, True):
         nome = "paisagem" if paisagem else "retrato"
         yield f"classico-{nome}", desenhar(h, uso_fixo("trabalhando"), AGORA, paisagem_=paisagem)

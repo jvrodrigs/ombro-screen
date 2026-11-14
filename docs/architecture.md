@@ -124,9 +124,21 @@ para reler.
 O que ainda falta para outro provider aparecer **na tela**: o layout atual mostra só o Claude
 (`apresentacao.uso_claude`). Um layout multiagente vai ler o `StateStore` direto, de todos os providers.
 
+## Fase 3: Codex, Cursor e os hooks
+
+- `ombro_hook.py` grava cada evento de hook num arquivo pequeno em `~/.ombro-screen/eventos/`;
+  `core/caixa.py` (`CaixaDeEventos`) lê, valida e apaga depois de aplicar.
+- `Monitor.atualizar_todos()` entrega os eventos a cada provider que tem `receber()` e depois coleta todos.
+- `core/rastreador.py` (`RastreadorDeSessoes`) monta as sessões de quem só avisa por eventos, com as regras
+  de atraso, repetição e tempo; `providers/hooks.py` é a base do Codex e do Cursor.
+- O `ClaudeProvider` usa os hooks só para refinar o que os arquivos dizem (aprovação e erro).
+- `Attention` ganhou `waiting_approval` e `error`; `ProviderSnapshot.integration` diz se a ferramenta está
+  instalada e configurada.
+- `core/resumo.py` resume todos os agentes para o layout multiagente. Detalhes em [multi-agent.md](multi-agent.md).
+
 ## Limitações conhecidas
 
-- Só o Claude Code tem provider. O `apply_event` existe e é testado, mas nenhum provider produz eventos ainda.
+- Codex e Cursor entram como snapshots montados a partir dos eventos (não pelo `apply_event`), para todos os providers seguirem o mesmo caminho.
 - Os horários são locais e sem fuso, como no resto do Ombro.
 - O Claude Code não diz se uma sessão parada espera uma resposta ou uma permissão: as duas viram `waiting_user`.
 - A ordem entre snapshots e eventos do mesmo provider é decidida pelo horário de cada um; não há relógio

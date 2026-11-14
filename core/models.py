@@ -28,7 +28,12 @@ class Attention(str, Enum):
     """Se a sessão precisa de você. Separado de Activity: uma sessão parada pode ou não esperar você."""
     UNKNOWN = "unknown"
     NONE = "none"
-    WAITING_USER = "waiting_user"  # resposta ou permissão (o Claude Code não diz qual das duas)
+    WAITING_USER = "waiting_user"  # espera você (uma resposta, ou uma permissão quando a fonte não diz qual)
+    WAITING_APPROVAL = "waiting_approval"  # espera você aprovar uma ação (quando a fonte distingue)
+    ERROR = "error"  # parou por erro e vale a pena olhar
+
+
+INTEGRACOES = ("ok", "not_installed", "not_configured")  # a ferramenta está instalada? a integração está ligada?
 
 
 class SnapshotStatus(str, Enum):
@@ -183,6 +188,7 @@ class ProviderSnapshot:
     quotas: Optional[QuotaReport] = None
     failed: FrozenSet[str] = frozenset()
     errors: Tuple[str, ...] = ()  # mensagens curtas, sem conteúdo de arquivos
+    integration: str = "ok"  # "not_installed" (a ferramenta não está aqui) ou "not_configured" (sem hooks do Ombro)
 
     def __post_init__(self):
         _texto("provider_id", self.provider_id)
@@ -191,6 +197,8 @@ class ProviderSnapshot:
         _definir(self, "sessions", tuple(self.sessions))
         _definir(self, "failed", frozenset(self.failed))
         _definir(self, "errors", tuple(self.errors))
+        if self.integration not in INTEGRACOES:
+            raise ValueError(f"integration deve ser um de: {', '.join(INTEGRACOES)} (veio {self.integration!r})")
         desconhecidas = self.failed - set(PARTES)
         if desconhecidas:
             raise ValueError(f"partes desconhecidas em failed: {sorted(desconhecidas)}")

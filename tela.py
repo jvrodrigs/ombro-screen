@@ -28,14 +28,18 @@ sys.path.insert(0, str(AQUI))
 
 import psutil  # noqa: E402
 
+from apresentacao import uso_claude  # noqa: E402
 from coletores.claude import ColetorClaude  # noqa: E402
 from coletores.demo import Demo  # noqa: E402
 from coletores.hardware import ColetorHardware, Hardware  # noqa: E402
-from config import LAYOUTS, TRANSPORTES, ConfigInvalida, OmbroConfig, resolver  # noqa: E402
+from config import LAYOUTS, TRANSPORTES, ConfigInvalida, OmbroConfig, pasta_ombro, resolver  # noqa: E402
+from core.monitor import Monitor  # noqa: E402
 from layout_ombro import desenhar_ombro  # noqa: E402
 from logging_config import SoQuandoMuda, curto, logger, sem_casa  # noqa: E402
 from logging_config import configurar as configurar_logs  # noqa: E402
 from mascote import Mascote  # noqa: E402
+from providers.claude import PROVIDER_ID as CLAUDE  # noqa: E402
+from providers.claude import ClaudeProvider, FonteDemo  # noqa: E402
 from render import desenhar  # noqa: E402
 
 log = logger("main")
@@ -112,6 +116,13 @@ class Estatisticas:
         self._zerar(agora)
 
 
+def banco_de_estado(cfg: OmbroConfig) -> Path | None:
+    """Onde gravar o estado (sessões conhecidas) entre execuções. Dados inventados e quadros avulsos não gravam."""
+    if cfg.demo or cfg.png:
+        return None
+    return pasta_ombro() / "state.db"
+
+
 def main(argv=None):
     cfg, avisos = argumentos(argv)
     configurar_logs(debug=cfg.debug)
@@ -131,7 +142,9 @@ def main(argv=None):
 def rodar(cfg: OmbroConfig) -> None:
     demo = Demo() if cfg.demo else None
     hw = None if demo else ColetorHardware(usar_macmon=not cfg.sem_macmon)
-    cl = None if demo else ColetorClaude(cfg.claude_dir)
+    # Claude Code -> coletor -> ClaudeProvider -> StateStore (e banco) -> UsoClaude para a tela (apresentacao.py)
+    fonte = FonteDemo(demo, cfg.demo_ciclo) if demo else ColetorClaude(cfg.claude_dir)
+    monitor = Monitor.montar([ClaudeProvider(fonte)], banco=banco_de_estado(cfg))
     avisos_hw = SoQuandoMuda(log_hw)
     ultimo_hw = Hardware()
 
@@ -150,7 +163,7 @@ def rodar(cfg: OmbroConfig) -> None:
         return ultimo_hw
 
     def ler_claude():
-        return demo.claude(cfg.demo_ciclo) if demo else cl.ler()
+        return uso_claude(monitor.atualizar(CLAUDE))
 
     ombro, paisagem = cfg.ombro, cfg.paisagem_efetiva
     intervalo = cfg.intervalo_efetivo
@@ -227,6 +240,7 @@ def rodar(cfg: OmbroConfig) -> None:
     finally:
         log.info("encerrando%s", f" ({motivo})" if motivo else "")
         saida.fechar()
+        monitor.fechar()
         if hw:
             hw.parar()
 

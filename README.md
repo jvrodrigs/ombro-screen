@@ -220,7 +220,7 @@ Os avisos saem no terminal (ou, no LaunchAgent, em `~/Library/Logs/ombro-screen.
 ```
 
 - `python3 tela.py --usb --debug` mostra também os detalhes (nível DEBUG): a configuração resolvida, o traceback de cada falha e, a cada minuto, um resumo do laço (quadros por segundo, tempo de desenho e quantos KiB foram para a tela).
-- Cada parte tem o seu nome: `ombro.main`, `ombro.config`, `ombro.claude`, `ombro.hardware`, `ombro.render`, `ombro.usb` e `ombro.simulador`.
+- Cada parte tem o seu nome: `ombro.main`, `ombro.config`, `ombro.claude`, `ombro.hardware`, `ombro.render`, `ombro.usb`, `ombro.simulador`, e, no núcleo, `ombro.providers`, `ombro.estado`, `ombro.eventos` e `ombro.persistencia`.
 - Um problema que se repete (porta ocupada, arquivo estranho, macmon fora) entra no log uma vez, e a volta ao normal entra uma vez; nada é registrado a cada quadro.
 - O log não guarda conteúdo de prompts, respostas ou arquivos do Claude Code, nomes de projeto nem credenciais; a sua pasta pessoal aparece como `~`.
 
@@ -234,11 +234,29 @@ Os avisos saem no terminal (ou, no LaunchAgent, em `~/Library/Logs/ombro-screen.
 | `macmon falhou` ou `macmon parou` | O Ombro segue com o psutil; reinstale com `brew install macmon` se quiser GPU e temperatura. |
 | `falha ao desenhar o quadro ... o Ombro vai fechar` | É um bug: abra uma issue com o trecho do log (rode com `--debug` para ter o traceback). |
 
+## Arquitetura
+
+Os dados do Claude Code passam por um núcleo que não depende da tela (`core/`): um **provider** por
+ferramenta monitorada (hoje só o Claude Code, em `providers/claude.py`), um modelo comum de sessões,
+uso e limites, um estado consolidado (`StateStore`), um barramento de eventos (`EventBus`) e um banco
+SQLite pequeno (`~/.ombro-screen/state.db`) para lembrar das sessões ao reiniciar. A tela continua
+recebendo os mesmos dados de antes, por `apresentacao.py`, então nada visual muda.
+
+O banco guarda só o status das sessões e as mudanças recentes (sem nome de projeto, conversas ou
+tokens), apaga o que tem mais de 7 dias e nunca impede o Ombro de rodar: se der problema com ele, o
+Ombro segue em memória e avisa no log. `--demo` e `--png` não usam o banco.
+
+Detalhes, regras e como adicionar um provider: [docs/architecture.md](docs/architecture.md). Codex e
+Cursor ainda não são suportados.
+
 ## Arquivos
 
 | Arquivo | O que faz |
 | --- | --- |
 | `tela.py` | Ponto de entrada: laço, opções, simulador ou USB |
+| `core/` | Núcleo sem tela: modelos, providers, estado, eventos, banco (ver `docs/architecture.md`) |
+| `providers/claude.py` | O provider do Claude Code, sobre o coletor de sempre |
+| `apresentacao.py` | Do estado do núcleo para o formato que o layout e o cloud usam |
 | `config.py` | Padrões, arquivo de configuração e validação das opções, resolvidos num lugar só |
 | `logging_config.py` | Formato dos logs, `--debug` e o filtro que evita repetir o mesmo aviso |
 | `layout_ombro.py` | O layout do Ombro (480×320): texto, barras, curva de tokens, aviso e o cloud |

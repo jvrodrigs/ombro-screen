@@ -130,6 +130,17 @@ def medir_coleta(n: int, claude_dir: str | None) -> dict:
             c.ler()
             res["claude_primeira_leitura_ms"] = round((time.perf_counter() - t0) * 1000, 2)
             res["claude_leituras_seguintes"] = cronometrar(c.ler, n)
+            # o caminho do tela.py: coletor -> provider -> estado (com banco) -> UsoClaude da tela
+            from apresentacao import uso_claude
+            from core.monitor import Monitor
+            from providers.claude import ClaudeProvider, snapshot_de_uso
+
+            m = Monitor.montar([ClaudeProvider(ColetorClaude(claude_dir))], banco=tmp / "state.db")
+            m.atualizar("claude")
+            res["claude_pelo_core"] = cronometrar(lambda: uso_claude(m.atualizar("claude")), n)
+            u = c.ler()
+            res["so_o_core_sem_coleta"] = cronometrar(lambda: uso_claude(snapshot_de_uso(u, datetime.now())), n)
+            m.fechar()
     hw = ColetorHardware(usar_macmon=False)
     res["hardware_psutil"] = cronometrar(hw.ler, n)
     hw.parar()

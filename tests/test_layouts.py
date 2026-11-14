@@ -59,6 +59,11 @@ class Layouts(unittest.TestCase):
             img = desenhar_ombro(demo.hardware(), u, m, datetime.now(), i + .5)
             self.assertEqual(img.size, (480, 320))
 
+    def test_demo_sem_ciclo_fica_esperando(self):
+        u = Demo().claude()  # o README promete: com --demo, o cloud fica em "esperando"
+        self.assertEqual((u.esperando, u.espera_projeto), (1, "ombro-screen"))
+        self.assertEqual(Mascote().decidir(u, 0), "esperando")
+
     def test_ombro_sem_dados(self):
         m = Mascote()
         for estado in ESTADOS:

@@ -33,6 +33,36 @@ class Janela:
 
 
 @dataclass
+class SessaoClaude:
+    """Uma sessão viva do Claude Code, como está em <config>/sessions/<pid>.json (só o que o Ombro usa)."""
+    id: str  # o sessionId; sem ele, "pid-<pid>". Estável enquanto o processo vive.
+    status: str  # "busy", "waiting" ou "idle" (qualquer outro valor conta como "idle", como sempre)
+    status_bruto: str | None = None  # o valor original, para o core distinguir um status desconhecido
+    desde: datetime | None = None  # statusUpdatedAt: desde quando está nesse status
+    projeto: str | None = None  # só o nome da pasta (cwd)
+    iniciada: datetime | None = None  # startedAt
+    atualizada: datetime | None = None  # updatedAt
+
+
+def resumo_sessoes(sessoes) -> dict:
+    """Contagens e quem espera você há mais tempo, a partir de itens com .status, .desde e .projeto.
+
+    Uma função só para o coletor e para a camada de apresentação, para as duas contarem igual.
+    """
+    r = dict(sessoes=0, trabalhando=0, esperando=0, status_sessoes=[], espera_projeto="", espera_desde=None)
+    for s in sessoes:
+        r["sessoes"] += 1
+        r["status_sessoes"].append(s.status)
+        if s.status == "busy":
+            r["trabalhando"] += 1
+        elif s.status == "waiting":
+            r["esperando"] += 1
+            if s.desde is not None and (r["espera_desde"] is None or s.desde < r["espera_desde"]):  # a que espera há mais tempo
+                r["espera_desde"], r["espera_projeto"] = s.desde, s.projeto or "sessão"
+    return r
+
+
+@dataclass
 class UsoClaude:
     cinco_horas: Janela | None = None
     semana: Janela | None = None
@@ -52,6 +82,8 @@ class UsoClaude:
     tokens_por_hora: list[int | None] = field(default_factory=lambda: [None] * 24)  # hoje, 0h..23h; None = hora que não chegou
     configurado: bool = False  # existe alguma fonte de uso do plano?
     erros: list[str] = field(default_factory=list)
+    falhas: list[str] = field(default_factory=list)  # etapas que falharam: "uso do plano", "tokens", "sessões"
+    lista_sessoes: list[SessaoClaude] = field(default_factory=list)  # uma por sessão viva, na ordem dos arquivos
 
 
 def _num(v) -> float | None:
@@ -77,6 +109,17 @@ def _epoch_ms(v) -> int | None:
         except ValueError:
             return None
     return None
+
+
+def _data(v) -> datetime | None:
+    """Horário local de um epoch (s ou ms) ou texto ISO; None se não der para ler."""
+    ms = _epoch_ms(v)
+    if ms is None:
+        return None
+    try:
+        return datetime.fromtimestamp(ms / 1000)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _janela(raw, agora_ms: int) -> Janela | None:
@@ -225,6 +268,7 @@ class ColetorClaude:
         pasta = self.config / "sessions"
         if not pasta.is_dir():
             return
+        vistos: set[str] = set()
         for arq in pasta.glob("*.json"):
             j = _ler_json(arq)
             if not isinstance(j, dict) or not isinstance(j.get("pid"), int):
@@ -235,19 +279,22 @@ class ColetorClaude:
                 continue  # sobrou de um processo que já morreu
             except PermissionError:
                 pass
-            u.sessoes += 1
             st = j.get("status")
-            u.status_sessoes.append(st if st in ("busy", "waiting") else "idle")
-            if st == "busy":
-                u.trabalhando += 1
-            elif st == "waiting":
-                u.esperando += 1
-                desde = _epoch_ms(j.get("statusUpdatedAt"))
-                if desde is not None:
-                    quando = datetime.fromtimestamp(desde / 1000)
-                    if u.espera_desde is None or quando < u.espera_desde:  # a que espera há mais tempo
-                        u.espera_desde = quando
-                        u.espera_projeto = Path(str(j.get("cwd") or "")).name or "sessão"
+            sid = j.get("sessionId") if isinstance(j.get("sessionId"), str) and j.get("sessionId") else f"pid-{j['pid']}"
+            if sid in vistos:  # a mesma conversa aberta em dois processos: cada processo é uma sessão
+                sid = f"{sid}#{j['pid']}"
+            vistos.add(sid)
+            u.lista_sessoes.append(SessaoClaude(
+                id=sid,
+                status=st if st in ("busy", "waiting") else "idle",
+                status_bruto=st if isinstance(st, str) else None,
+                desde=_data(j.get("statusUpdatedAt")),
+                projeto=Path(str(j.get("cwd") or "")).name or None,
+                iniciada=_data(j.get("startedAt")),
+                atualizada=_data(j.get("updatedAt")),
+            ))
+        for nome, valor in resumo_sessoes(u.lista_sessoes).items():
+            setattr(u, nome, valor)
 
     def ler(self) -> UsoClaude:
         u = UsoClaude()
@@ -262,6 +309,7 @@ class ColetorClaude:
                 etapa()
             except Exception as e:  # noqa: BLE001 - nunca derruba a tela por causa de um arquivo estranho
                 u.erros.append(f"{nome}: {e}")
+                u.falhas.append(nome)
                 if self._avisos.registrar(f"etapa:{nome}", logging.WARNING, "não consegui ler %s do Claude Code (%s: %s)",
                                           nome, type(e).__name__, sem_casa(e)):
                     log.debug("detalhes da falha em %s", nome, exc_info=True)

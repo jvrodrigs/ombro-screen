@@ -48,21 +48,17 @@ def misturar(a, b, t: float):
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
-def cor_uso(pct: float):
-    """Coral no uso normal; âmbar e vermelho perto do limite."""
-    if pct >= 90:
-        return VERMELHO
-    if pct >= 75:
-        return AMBAR
-    return CORAL
-
-
 def cor_carga(pct: float, base):
+    """A cor `base` no uso normal; âmbar e vermelho perto do limite."""
     if pct >= 90:
         return VERMELHO
     if pct >= 75:
         return AMBAR
     return base
+
+
+def cor_uso(pct: float):
+    return cor_carga(pct, CORAL)
 
 
 # ---------- formatação (pt-BR) ----------
@@ -181,36 +177,18 @@ def cabecalho(t: Tela, u: UsoClaude, agora: datetime):
 def bloco_uso(t: Tela, u: UsoClaude, agora: datetime):
     y_anel = 90
     for cx, rotulo, j in ((84, "SESSÃO 5H", u.cinco_horas), (236, "SEMANA", u.semana)):
-        if j:
-            cor = cor_uso(j.pct)
-            t.anel(cx, y_anel, 46, 8, j.pct, cor)
-            num = f"{j.pct:.0f}"
-            wn, wp = t.largura(num, "Bold", 28), t.largura("%", "Medium", 12)
-            x = cx - (wn + wp + 1) / 2
-            t.texto(x, y_anel + 10, num, "Bold", 28, TEXTO, ancora="ls")
-            t.texto(x + wn + 1, y_anel + 10, "%", "Medium", 12, APAGADO, ancora="ls")
-        else:
-            t.anel(cx, y_anel, 46, 8, 0, FRACO)
-            t.texto(cx, y_anel, "—", "Bold", 24, FRACO, ancora="mm")
+        anel_uso(t, cx, y_anel, 46, 8, j, 28, base_num=y_anel + 10)
         t.texto(cx, y_anel + 62, rotulo, "Bold", 10, APAGADO, ancora="mm")
         t.texto(cx, y_anel + 76, quando_reseta(j, agora), "Regular", 10, FRACO, ancora="mm")
 
-    y = 182
-    if not u.configurado:
-        t.texto(LARGURA / 2, y, "sem dados de uso: veja o README", "Regular", 9, AMBAR, ancora="mm")
-    elif u.desatualizado and u.coletado_em:
-        mins = int((agora - u.coletado_em).total_seconds() // 60)
-        idade = f"{mins} min" if mins < 120 else f"{mins // 60} h"
-        t.texto(LARGURA / 2, y, f"números de {idade} atrás", "Regular", 9, AMBAR, ancora="mm")
+    aviso = aviso_uso(u, agora)
+    if aviso:
+        t.texto(LARGURA / 2, 182, aviso, "Regular", 9, AMBAR, ancora="mm")
 
     # cartão "hoje"
     y0 = 192
     t.ret(12, y0, LARGURA - 12, y0 + 42, PAINEL, raio=8)
-    if u.esperando and agora.second % 2 == 0:
-        sess, cor_sess = f"{u.esperando} espera você", AMBAR  # pisca quando alguém precisa de você
-    else:
-        sess = f"{u.sessoes}" + (f" · {u.trabalhando} ativ." if u.trabalhando else "")
-        cor_sess = TEXTO
+    sess, cor_sess = texto_sessoes(u, agora)
     colunas = [
         ("TOKENS HOJE", tokens(u.tokens_entrada + u.tokens_saida), TEXTO),
         ("SAÍDA", tokens(u.tokens_saida), TEXTO),
@@ -249,19 +227,7 @@ def bloco_hardware(t: Tela, h: Hardware):
     # mosaico 2x2
     yt = yr + 30
     w, hh, gap = (LARGURA - 24 - 8) / 2, 34, 6
-    temp = "—"
-    if h.temp_cpu is not None:
-        temp = f"{h.temp_cpu:.0f}°"
-        if h.temp_gpu is not None:
-            temp += f" / {h.temp_gpu:.0f}°"
-    watts = f"{br(h.watts_soc)} W" if h.watts_soc is not None else "—"
-    blocos = [
-        ("TEMP CPU/GPU", temp),
-        ("CHIP", watts),
-        ("REDE ↓ / ↑", f"{taxa(h.rede_down)} / {taxa(h.rede_up)}"),
-        ("DISCO LIVRE", f"{gb(h.disco_livre, 0)} GB · {h.disco_pct:.0f}% uso"),
-    ]
-    for i, (rot, val) in enumerate(blocos):
+    for i, (rot, val) in enumerate(mosaico(h, sufixo_disco=" uso")):
         x = 12 + (i % 2) * (w + 8)
         yy = yt + (i // 2) * (hh + gap)
         t.ret(x, yy, x + w, yy + hh, PAINEL, raio=6)
@@ -271,14 +237,15 @@ def bloco_hardware(t: Tela, h: Hardware):
 
 
 # ---------- partes reaproveitadas pelas duas orientações ----------
-def anel_uso(t: Tela, cx, cy, r, esp, j: Janela | None, tam_num: int):
+def anel_uso(t: Tela, cx, cy, r, esp, j: Janela | None, tam_num: int, base_num: float | None = None):
+    """Anel de uso com o número no meio; `base_num` fixa a linha de base do número."""
     if j:
         t.anel(cx, cy, r, esp, j.pct, cor_uso(j.pct))
         num = f"{j.pct:.0f}"
         tam_p = max(9, tam_num * 3 // 7)
         wn, wp = t.largura(num, "Bold", tam_num), t.largura("%", "Medium", tam_p)
         x = cx - (wn + wp + 1) / 2
-        base = cy + tam_num * 0.36
+        base = base_num if base_num is not None else cy + tam_num * 0.36
         t.texto(x, base, num, "Bold", tam_num, TEXTO, ancora="ls")
         t.texto(x + wn + 1, base, "%", "Medium", tam_p, APAGADO, ancora="ls")
     else:
@@ -301,7 +268,7 @@ def texto_sessoes(u: UsoClaude, agora: datetime):
     return f"{u.sessoes}" + (f" · {u.trabalhando} ativ." if u.trabalhando else ""), TEXTO
 
 
-def mosaico(h: Hardware):
+def mosaico(h: Hardware, sufixo_disco: str = ""):
     temp = "—"
     if h.temp_cpu is not None:
         temp = f"{h.temp_cpu:.0f}°"
@@ -311,7 +278,7 @@ def mosaico(h: Hardware):
         ("TEMP CPU/GPU", temp),
         ("CHIP", f"{br(h.watts_soc)} W" if h.watts_soc is not None else "—"),
         ("REDE ↓ / ↑", f"{taxa(h.rede_down)} / {taxa(h.rede_up)}"),
-        ("DISCO LIVRE", f"{gb(h.disco_livre, 0)} GB · {h.disco_pct:.0f}%"),
+        ("DISCO LIVRE", f"{gb(h.disco_livre, 0)} GB · {h.disco_pct:.0f}%{sufixo_disco}"),
     ]
 
 

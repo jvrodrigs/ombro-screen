@@ -34,6 +34,7 @@ import saida  # noqa: E402
 import usb_direto  # noqa: E402
 from coletores.claude import ColetorClaude, Janela, UsoClaude  # noqa: E402
 from coletores.hardware import ColetorHardware, Hardware  # noqa: E402
+from layout_minimal_v2 import desenhar_minimal  # noqa: E402
 from layout_ombro import desenhar_ombro  # noqa: E402
 from mascote import ESTADOS, Mascote  # noqa: E402
 from render import desenhar  # noqa: E402
@@ -88,6 +89,7 @@ def medir_render(n: int) -> dict:
     m = mascote_animando("esperando")
     passo = iter(i * .2 for i in range(10**9))
     res = {"ombro": cronometrar(lambda: desenhar_ombro(h, u, m, AGORA, next(passo)), n)}
+    res["minimal_v2"] = cronometrar(lambda: desenhar_minimal(h, u, m, AGORA, next(passo)), n)
     res["cloud_sozinho"] = cronometrar(lambda: m.camada(next(passo)), n)
     res["classico_retrato"] = cronometrar(lambda: desenhar(h, u, AGORA, paisagem_=False), max(10, n // 4))
     res["classico_paisagem"] = cronometrar(lambda: desenhar(h, u, AGORA, paisagem_=True), max(10, n // 4))
@@ -215,7 +217,7 @@ def medir_envio(n: int) -> dict:
 
 
 # ---------- laço completo ----------
-def medir_laco(segundos: float, intervalo: float = .2) -> dict:
+def medir_laco(segundos: float, intervalo: float = .2, desenhar_quadro=desenhar_ombro) -> dict:
     """O mesmo trabalho do laço do tela.py (coleta, cloud, desenho, envio), com a tela falsa."""
     hw = ColetorHardware(usar_macmon=False)
     u = uso_fixo("trabalhando")
@@ -227,7 +229,7 @@ def medir_laco(segundos: float, intervalo: float = .2) -> dict:
     while time.monotonic() - inicio < segundos:
         t0 = time.monotonic()
         m.ir_para(m.decidir(u, t0), t0)
-        t.mostrar(desenhar_ombro(hw.ler(), u, m, datetime.now(), t0))
+        t.mostrar(desenhar_quadro(hw.ler(), u, m, datetime.now(), t0))
         quadros += 1
         time.sleep(max(.05, intervalo - (time.monotonic() - t0)))
     duracao = time.monotonic() - inicio
@@ -250,6 +252,7 @@ def main():
     res["envio"] = medir_envio(min(a.n, 30))
     if a.segundos > 0:
         res["laco"] = medir_laco(a.segundos)
+        res["laco_minimal_v2"] = medir_laco(a.segundos, desenhar_quadro=desenhar_minimal)
     if a.json:
         print(json.dumps(res, ensure_ascii=False, indent=2))
         return

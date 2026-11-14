@@ -27,7 +27,8 @@ VERSAO = 1  # versão do formato do arquivo
 
 REVISOES = ("A", "B", "C", "D", "WEACT_A")
 TRANSPORTES = ("auto", "usb", "serial")
-LAYOUTS = ("auto", "ombro", "classico")
+LAYOUTS = ("auto", "ombro", "classico", "minimal-v2")
+NOMES_LAYOUT = {"auto": "do Ombro", "ombro": "do Ombro", "classico": "clássico", "minimal-v2": "Minimal v2"}
 SO_NA_LINHA_DE_COMANDO = ("demo", "demo_ciclo", "png", "arquivo")  # ações de uma vez, não preferências
 _COR = re.compile(r"#?[0-9a-fA-F]{6}")
 
@@ -79,14 +80,19 @@ class OmbroConfig:
         return self.layout in ("auto", "ombro")
 
     @property
+    def animado(self) -> bool:
+        """Layouts com o cloud: sempre 480x320, 5 quadros por segundo."""
+        return self.layout in ("auto", "ombro", "minimal-v2")
+
+    @property
     def paisagem_efetiva(self) -> bool:
-        return True if self.ombro else self.paisagem  # o layout do Ombro é sempre 480x320
+        return True if self.animado else self.paisagem  # os layouts com o cloud são sempre 480x320
 
     @property
     def intervalo_efetivo(self) -> float:
         if self.intervalo is not None:
             return self.intervalo
-        return 0.2 if self.ombro else 1.0
+        return 0.2 if self.animado else 1.0
 
     @property
     def cor_mascote_rgb(self) -> tuple[int, int, int] | None:

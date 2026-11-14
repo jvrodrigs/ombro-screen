@@ -1,0 +1,50 @@
+name: testes
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    name: Python ${{ matrix.python }}
+    # Fixo no 24.04: o setup-python não tem Python 3.9 para o Ubuntu 26.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false  # uma versão que falha não esconde o resultado das outras
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      # Só o requirements.txt: sem tela USB, sem a biblioteca da tela, sem macmon e sem Claude Code.
+      - name: Instalar dependências
+        run: python -m pip install -r requirements.txt
+      - name: Testes
+        run: python -m unittest discover -s tests -t . -v
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Instalar o ruff
+        run: python -m pip install "ruff==0.17.*"
+      # F: nomes e imports sem uso, nomes indefinidos; E9: erros de sintaxe.
+      - name: Lint
+        run: ruff check --select F,E9 --output-format=github .

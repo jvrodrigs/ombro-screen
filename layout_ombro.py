@@ -6,6 +6,7 @@ passo da fonte no navegador (7,8 px a 13 px) para os blocos das barras emendarem
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import datetime
 
 from PIL import Image
@@ -95,75 +96,134 @@ def _grafico_tokens(t: Tela, por_hora: list, x: float, y: float, w: float, h: fl
     return f"pico {hora_pico}h", pico
 
 
-def _aviso(t: Tela, u: UsoClaude, agora: datetime, agora_mono: float) -> None:
-    """Uma linha, centralizada: quem espera você e há quanto tempo; senão, um 'tudo certo' discreto."""
+def _x_aviso(msg: str) -> float:
+    return (LARGURA - (2 + len(msg)) * PASSO) / 2
+
+
+def _aviso(t: Tela, espera: str | None) -> None:
+    """Uma linha, centralizada: quem espera você e há quanto tempo; senão, um 'tudo certo' discreto.
+
+    O ▲ de quem espera pulsa a cada quadro: ele é desenhado à parte, em `_triangulo`.
+    """
     y = 304
-    if u.esperando:
-        proj = u.espera_projeto or "sessão"
-        msg = f"{proj} espera {_desde(u.espera_desde, agora)}".replace("espera há instantes", "espera agora")
-        largura = (2 + len(msg)) * PASSO
-        x = (LARGURA - largura) / 2
-        pulso = .675 + .325 * math.cos(math.tau * agora_mono / 1.8)  # o ▲ pulsa devagar (opacidade 0,35 a 1)
-        cor = tuple(int(AMBAR[i] * pulso + 18 * (1 - pulso)) for i in range(3))
-        # triângulo desenhado à mão (não depende de a fonte ter o glifo)
-        tx, ty, s = x + PASSO / 2, y, 3.6
-        t.d.polygon([(tx * S, (ty - s) * S), ((tx - s) * S, (ty + s * .8) * S), ((tx + s) * S, (ty + s * .8) * S)], fill=cor)
-        _linha(t, x + 2 * PASSO, y, [(msg, AMBAR, "Regular")])
+    if espera:
+        _linha(t, _x_aviso(espera) + 2 * PASSO, y, [(espera, AMBAR, "Regular")])
     else:
         msg = "nenhuma sessão esperando"
-        x = (LARGURA - (2 + len(msg)) * PASSO) / 2
+        x = _x_aviso(msg)
         cx, cy = x + PASSO / 2, y  # ✓ desenhado à mão
         t.d.line([((cx - 3.2) * S, cy * S), ((cx - 1) * S, (cy + 2.6) * S), ((cx + 3.4) * S, (cy - 3) * S)], fill=FRACO, width=int(1.4 * S), joint="curve")
         _linha(t, x + 2 * PASSO, y, [(msg, FRACO, "Regular")])
 
 
-def desenhar_ombro(h: Hardware, u: UsoClaude, mascote: Mascote, agora: datetime, agora_mono: float) -> Image.Image:
-    t = Tela(LARGURA, ALTURA)
-    j5, js = u.cinco_horas, u.semana
+def _triangulo(t: Tela, espera: str, agora_mono: float) -> None:
+    """O ▲ antes de quem espera você, pulsando devagar (opacidade 0,35 a 1)."""
+    pulso = .675 + .325 * math.cos(math.tau * agora_mono / 1.8)
+    cor = tuple(int(AMBAR[i] * pulso + 18 * (1 - pulso)) for i in range(3))
+    tx, ty, s = _x_aviso(espera) + PASSO / 2, 304, 3.6  # desenhado à mão: não depende de a fonte ter o glifo
+    t.d.polygon([(tx * S, (ty - s) * S), ((tx - s) * S, (ty + s * .8) * S), ((tx + s) * S, (ty + s * .8) * S)], fill=cor)
 
+
+# ---------- a parte da tela que não anima ----------
+@dataclass(frozen=True)
+class Fixo:
+    """Tudo o que a parte parada da tela mostra, já como texto e números.
+
+    É a única entrada de `_desenhar_fixo`: se o do quadro novo é igual ao do anterior, a imagem
+    também é, e não precisa desenhar as ~200 letras de novo. Só a linha de CPU e RAM, o ▲ que
+    pulsa e o cloud mudam a cada quadro.
+    """
+    janelas: tuple  # 5h e semana: (pct, texto do reset) ou None
+    aviso: str
+    tokens_total: int
+    tokens_saida: int
+    sessoes: int
+    status: tuple
+    rotulo: str
+    por_hora: tuple
+    espera: str | None  # "projeto espera há 12 min", ou None
+
+
+def fixo(u: UsoClaude, estado: str, agora: datetime) -> Fixo:
+    janelas = tuple((j.pct, _reseta(j, agora)) if j else None for j in (u.cinco_horas, u.semana))
+    aviso = ("sem dados de uso: veja o README" if not u.configurado
+             else (f"números de {int((agora - u.coletado_em).total_seconds() // 60)} min atrás" if u.desatualizado and u.coletado_em else ""))
+    espera = None
+    if u.esperando:
+        proj = u.espera_projeto or "sessão"
+        espera = f"{proj} espera {_desde(u.espera_desde, agora)}".replace("espera há instantes", "espera agora")
+    return Fixo(janelas, aviso, u.tokens_entrada + u.tokens_saida, u.tokens_saida, u.sessoes, tuple(u.status_sessoes[:6]),
+                rotulo_estado(estado, u), tuple(u.tokens_por_hora), espera)
+
+
+def _desenhar_fixo(t: Tela, f: Fixo) -> None:
     # cabeçalho
     _linha(t, X0, _yc(0), [("claude@ombro", CORAL, "Regular"), (" ~ uso", APAGADO, "Regular")])
 
     # sessão de 5h e semana
-    for i, (rot, j, base) in enumerate((("sessão 5h", j5, None), ("semana   ", js, AZUL))):
+    for i, (rot, jan, base) in enumerate((("sessão 5h", f.janelas[0], None), ("semana   ", f.janelas[1], AZUL))):
         y = _yc(2 + 2 * i)
-        cor = (cor_uso(j.pct) if base is None else (cor_uso(j.pct) if j.pct >= 75 else base)) if j else FRACO
-        pct = f"{j.pct:.0f}%" if j else "—"
-        _linha(t, X0, y, [(rot + "  ", APAGADO, "Regular"), (_barra(j.pct if j else 0, 20), cor, "Regular"), (" ", TEXTO, "Regular"), (pct, TEXTO, "Bold")])
-        _linha(t, X0 + 12 * PASSO, _yc(3 + 2 * i), [(_reseta(j, agora), FRACO, "Regular")])
-    aviso = ("sem dados de uso: veja o README" if not u.configurado
-             else (f"números de {int((agora - u.coletado_em).total_seconds() // 60)} min atrás" if u.desatualizado and u.coletado_em else ""))
-    if aviso:
-        _linha(t, X0, _yc(6), [(aviso, AMBAR, "Regular")])
+        pct = jan[0] if jan else 0
+        cor = (cor_uso(pct) if base is None else (cor_uso(pct) if pct >= 75 else base)) if jan else FRACO
+        _linha(t, X0, y, [(rot + "  ", APAGADO, "Regular"), (_barra(pct, 20), cor, "Regular"), (" ", TEXTO, "Regular"),
+                          (f"{pct:.0f}%" if jan else "—", TEXTO, "Bold")])
+        _linha(t, X0 + 12 * PASSO, _yc(3 + 2 * i), [(jan[1] if jan else "—", FRACO, "Regular")])
+    if f.aviso:
+        _linha(t, X0, _yc(6), [(f.aviso, AMBAR, "Regular")])
 
     # tokens e sessões
-    _linha(t, X0, _yc(7), [("tokens hoje", APAGADO, "Regular"), (" " + tokens(u.tokens_entrada + u.tokens_saida) + "   ", TEXTO, "Regular"),
-                           ("saída", APAGADO, "Regular"), (" " + tokens(u.tokens_saida), TEXTO, "Regular")])
+    _linha(t, X0, _yc(7), [("tokens hoje", APAGADO, "Regular"), (" " + tokens(f.tokens_total) + "   ", TEXTO, "Regular"),
+                           ("saída", APAGADO, "Regular"), (" " + tokens(f.tokens_saida), TEXTO, "Regular")])
     y = _yc(8)
-    x = _linha(t, X0, y, [("sessões", APAGADO, "Regular"), (f"     {u.sessoes} ", TEXTO, "Regular")])
+    x = _linha(t, X0, y, [("sessões", APAGADO, "Regular"), (f"     {f.sessoes} ", TEXTO, "Regular")])
     cores_status = {"busy": CORAL, "waiting": AMBAR, "idle": VERDE}
-    for st in u.status_sessoes[:6]:  # uma bolinha por sessão, uma célula cada
+    for st in f.status:  # uma bolinha por sessão, uma célula cada
         r = 3.3
         cx = x + PASSO / 2
         t.d.ellipse(((cx - r) * S, (y - r) * S, (cx + r) * S, (y + r) * S), fill=cores_status.get(st, FRACO))
         x += PASSO
-    _linha(t, x + PASSO, y, [(rotulo_estado(mascote.estado, u), CORAL, "Regular")])
+    _linha(t, x + PASSO, y, [(f.rotulo, CORAL, "Regular")])
 
-    # separador e CPU / RAM
+    # separador
     t.ret(X0, _yc(10) - .75, X0 + 45 * PASSO, _yc(10) + .75, (74, 70, 66))
+
+    # tokens por hora: rótulo à esquerda, linha do dia à direita
+    pico_txt, _ = _grafico_tokens(t, list(f.por_hora), 90, 257, 374, 32)
+    _linha(t, X0, _yc(12), [("tokens/h", APAGADO, "Regular")])
+    _linha(t, X0, _yc(13), [(pico_txt, FRACO, "Regular")])
+
+    _aviso(t, f.espera)
+
+
+def _cpu_ram(t: Tela, h: Hardware) -> None:
     pct_ram = 100 * h.ram_usada / h.ram_total if h.ram_total else 0
     _linha(t, X0, _yc(11), [("cpu", APAGADO, "Regular"), (" ", TEXTO, "Regular"), (_barra(h.cpu_pct, 10), CORAL, "Regular"), (f" {h.cpu_pct:.0f}%   ", TEXTO, "Regular"),
                             ("ram", APAGADO, "Regular"), (" ", TEXTO, "Regular"), (_barra(pct_ram, 10), AZUL, "Regular"),
                             (f" {gb(h.ram_usada)}/{gb(h.ram_total, 0)}G", TEXTO, "Regular")])
 
-    # tokens por hora: rótulo à esquerda, linha do dia à direita
-    pico_txt, _ = _grafico_tokens(t, u.tokens_por_hora, 90, 257, 374, 32)
-    _linha(t, X0, _yc(12), [("tokens/h", APAGADO, "Regular")])
-    _linha(t, X0, _yc(13), [(pico_txt, FRACO, "Regular")])
 
-    _aviso(t, u, agora, agora_mono)
+_ultimo_fixo: tuple[Fixo, Image.Image] | None = None  # a parte parada do último quadro, em 2x
 
-    # o cloud, na coluna reservada à direita
-    cam = mascote.camada(agora_mono)
+
+def desenhar_ombro(h: Hardware, u: UsoClaude, mascote: Mascote, agora: datetime, agora_mono: float,
+                   usar_cache: bool = True) -> Image.Image:
+    """O quadro inteiro. A parte parada sai do quadro anterior quando nada nela mudou (ver `Fixo`).
+
+    As partes que mudam a cada quadro (CPU e RAM, o ▲, o cloud) não se sobrepõem às paradas, então
+    desenhá-las por cima da parte parada dá os mesmos pixels que desenhar tudo de uma vez.
+    """
+    global _ultimo_fixo
+    f = fixo(u, mascote.estado, agora)
+    if usar_cache and _ultimo_fixo is not None and _ultimo_fixo[0] == f:
+        t = Tela(LARGURA, ALTURA, img=_ultimo_fixo[1].copy())
+    else:
+        t = Tela(LARGURA, ALTURA)
+        _desenhar_fixo(t, f)
+        if usar_cache:
+            _ultimo_fixo = (f, t.img.copy())
+    _cpu_ram(t, h)
+    if f.espera:
+        _triangulo(t, f.espera, agora_mono)
+    cam = mascote.camada(agora_mono)  # o cloud, na coluna reservada à direita
     t.img.paste(cam, (COL_X * S, COL_Y * S), cam)
     return t.final()

@@ -141,7 +141,7 @@ python3 tela.py --usb --revisao A
 
 **Velocidade medida** (revisão A): a ligação serial leva cerca de 244 KiB/s. Um quadro inteiro demora 1,25 s e, na animação, só os trechos que mudam são reenviados (cerca de 21 KiB por quadro, ≈ 86 ms). Desenhar leva ≈ 33 ms, então o limite é de uns 8 quadros por segundo. O processo usa cerca de 24 % de um núcleo do Mac.
 
-No USB direto (Mac Apple Silicon, tela ligada por hub) o envio medido foi de ≈ 150 KiB/s: um quadro inteiro leva ≈ 2 s, e com a animação do cloud o processo usa cerca de 11 % de um núcleo.
+No USB direto (Mac Apple Silicon, tela ligada por hub) o envio medido foi de ≈ 150 KiB/s: um quadro inteiro leva ≈ 2 s. Com a animação do cloud, o processo usa cerca de 3 % de um núcleo (medido em 120 s; antes de a parte parada da tela ser reaproveitada entre quadros, eram 5 %). Com a tela desconectada, o Ombro para de desenhar até a próxima tentativa de reconexão e fica abaixo de 1 %.
 
 ## 6. Deixar rodando sempre (opcional)
 
@@ -183,11 +183,61 @@ launchctl bootout gui/$(id -u)/com.ombro-screen                                 
 
 Só um Ombro pode falar com a tela por vez: desligue o LaunchAgent antes de rodar `tela.py --usb` no terminal. Ele roda o código que estiver na pasta (inclusive o branch atual) e o `.venv` dela; se o Homebrew trocar a versão do Python, recrie o `.venv`.
 
+Opções do Ombro (brilho, cor do cloud etc.) podem ficar no arquivo de configuração (seção 7), em vez de mais linhas `<string>` no `ProgramArguments`. Para investigar um problema, acrescente `<string>--debug</string>` ao `ProgramArguments` e reinicie com o `kickstart` (seção 8).
+
+## 7. Arquivo de configuração (opcional)
+
+Tudo funciona sem ele. Se quiser deixar opções fixas sem repetir na linha de comando, crie `~/.ombro-screen/config.json` (o Ombro não cria esse arquivo sozinho):
+
+```json
+{
+  "versao": 1,
+  "usb": true,
+  "brilho": 40,
+  "cor_mascote": "#3D7A4F"
+}
+```
+
+- As chaves têm o nome das opções da linha de comando, com `_` no lugar de `-`: `usb`, `revisao`, `porta`, `transporte`, `brilho`, `lib`, `paisagem`, `girar`, `sem_macmon`, `claude_dir`, `layout`, `intervalo`, `cor_mascote`, `porta_sim`, `nao_abrir` e `debug`. `--demo`, `--demo-ciclo` e `--png` só valem na linha de comando.
+- **Precedência:** opção dada na linha de comando > arquivo > padrão. Uma opção que você não deu na linha de comando não apaga a do arquivo.
+- As opções de ligar e desligar têm a forma negativa, para a linha de comando desfazer o arquivo: `--no-usb`, `--no-paisagem`, `--no-girar`, `--no-sem-macmon`, `--no-nao-abrir`, `--no-debug`.
+- Outro arquivo: `--config /caminho/arquivo.json`. A pasta segue a variável `OMBRO_SCREEN_DIR`, a mesma do `uso.json` do `statusline_tap.py`.
+- Caminhos relativos no arquivo (como `lib`) são relativos à pasta do arquivo; `~` funciona.
+- Valores inválidos impedem o Ombro de iniciar e a mensagem diz qual opção e por quê, por exemplo `cor_mascote deve ser uma cor como "#3D7A4F"` ou `brilho deve ser de 0 a 100`. Chaves desconhecidas viram um aviso e são ignoradas; `versao` existe para o formato poder mudar no futuro.
+- Não coloque credenciais: o Ombro não usa nenhuma.
+
+## 8. Diagnóstico de problemas
+
+Os avisos saem no terminal (ou, no LaunchAgent, em `~/Library/Logs/ombro-screen.log`), um por linha:
+
+```
+2026-11-14 12:30:00 INFO [ombro.usb] tela USB conectada (USB direto)
+2026-11-14 12:31:10 WARNING [ombro.usb] a tela USB parou de responder ([Errno 19] No such device); tentando reconectar a cada 3 s
+2026-11-14 12:31:16 INFO [ombro.usb] tela USB reconectada (USB direto)
+```
+
+- `python3 tela.py --usb --debug` mostra também os detalhes (nível DEBUG): a configuração resolvida, o traceback de cada falha e, a cada minuto, um resumo do laço (quadros por segundo, tempo de desenho e quantos KiB foram para a tela).
+- Cada parte tem o seu nome: `ombro.main`, `ombro.config`, `ombro.claude`, `ombro.hardware`, `ombro.render`, `ombro.usb` e `ombro.simulador`.
+- Um problema que se repete (porta ocupada, arquivo estranho, macmon fora) entra no log uma vez, e a volta ao normal entra uma vez; nada é registrado a cada quadro.
+- O log não guarda conteúdo de prompts, respostas ou arquivos do Claude Code, nomes de projeto nem credenciais; a sua pasta pessoal aparece como `~`.
+
+| O que aparece | O que fazer |
+| --- | --- |
+| `tela USB não encontrada` | Confira o cabo e o hub (`ls /dev/cu.*`); o Ombro tenta de novo sozinho a cada 3 s. |
+| `não consegui iniciar a tela USB (... busy ...)` | Outro programa está com a tela: o app do fabricante ou outro Ombro (o LaunchAgent, por exemplo). |
+| `usando a porta serial, que no macOS costuma embaralhar a imagem` | Falta o `pyusb` ou o `libusb` (seção 5). |
+| `sem dados do uso do plano` | Nenhuma fonte de uso de 5 h e da semana ainda (seção 4). |
+| `o uso do plano (/usage) tem mais de 30 min` | Rode `/usage` no Claude Code ou ligue o `statusline_tap.py` (seção 4). |
+| `macmon falhou` ou `macmon parou` | O Ombro segue com o psutil; reinstale com `brew install macmon` se quiser GPU e temperatura. |
+| `falha ao desenhar o quadro ... o Ombro vai fechar` | É um bug: abra uma issue com o trecho do log (rode com `--debug` para ter o traceback). |
+
 ## Arquivos
 
 | Arquivo | O que faz |
 | --- | --- |
 | `tela.py` | Ponto de entrada: laço, opções, simulador ou USB |
+| `config.py` | Padrões, arquivo de configuração e validação das opções, resolvidos num lugar só |
+| `logging_config.py` | Formato dos logs, `--debug` e o filtro que evita repetir o mesmo aviso |
 | `layout_ombro.py` | O layout do Ombro (480×320): texto, barras, curva de tokens, aviso e o cloud |
 | `mascote.py` | O cloud: animação por estado, extras (zZ, "?", pontinhos, suor, confete) e a máquina de estados |
 | `dados_cloud.py` | Contorno e olhos do cloud, extraídos da KEY de formas |
@@ -199,6 +249,8 @@ Só um Ombro pode falar com a tela por vez: desligue o LaunchAgent antes de roda
 | `coletores/demo.py` | Dados inventados para `--demo` e `--demo-ciclo` |
 | `statusline_tap.py` | Captura o uso de 5 h e semanal do statusline (opcional) |
 | `tests/` | Testes (`unittest`, sem dependências extras) |
+| `scripts/` | `benchmark.py` (quanto custa cada parte) e `quadros_referencia.py` (confere que nenhum pixel mudou) |
+| `.github/workflows/tests.yml` | CI: os testes do Python 3.9 ao 3.14 e o lint, a cada push e pull request |
 
 Se algum arquivo do Claude Code estiver estranho, o erro vira um aviso no terminal e a tela segue; campos sem dado aparecem como "—".
 
@@ -212,4 +264,15 @@ Fonte: JetBrains Mono (licença OFL, em `fontes/`). A biblioteca da tela (turing
 python3 -m unittest discover -s tests -t .
 ```
 
-Não precisam da tela nem da biblioteca da tela: a `TelaUSB` é testada com uma biblioteca falsa.
+Não precisam da tela, da biblioteca da tela, do macmon nem do Claude Code: a `TelaUSB` e o envio direto pelo USB são testados com dispositivos falsos, o hardware com um psutil falso, e o coletor do Claude com pastas temporárias. Nada lê os seus arquivos de verdade.
+
+**CI:** o GitHub Actions (`.github/workflows/tests.yml`) roda os testes no Python 3.9, 3.10, 3.11, 3.12, 3.13 e 3.14 (Ubuntu, sem hardware) e o lint (`ruff check --select F,E9 .`) a cada push e pull request.
+
+**Nenhum pixel mudou?** Os testes não comparam imagens pixel a pixel, porque outra versão do Pillow ou do FreeType desenha as letras um pouco diferente. Para conferir uma mudança na sua máquina:
+
+```bash
+python3 scripts/quadros_referencia.py --salvar /tmp/antes.json     # antes de mexer no código
+python3 scripts/quadros_referencia.py --comparar /tmp/antes.json   # depois: "34 quadros idênticos"
+```
+
+**Quanto custa cada parte:** `python3 scripts/benchmark.py` mede desenho, coleta, preparação do envio e o laço completo, com entradas fixas e uma tela falsa (o USB em si não entra). Compare execuções feitas na mesma máquina.

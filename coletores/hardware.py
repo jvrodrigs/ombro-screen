@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 import threading
@@ -16,6 +17,10 @@ from collections import deque
 from dataclasses import dataclass, field
 
 import psutil
+
+from logging_config import SoQuandoMuda, logger
+
+log = logger("hardware")
 
 HISTORICO = 60  # amostras guardadas para os gráficos (1 por segundo)
 
@@ -44,48 +49,113 @@ class Hardware:
 class LeitorMacmon(threading.Thread):
     """Roda `macmon pipe` em segundo plano e guarda a última amostra."""
 
+    ESPERA_REINICIO = 5.0  # segundos antes de rodar o macmon de novo quando ele sai ou falha
+
     def __init__(self, intervalo_ms: int = 1000):
         super().__init__(daemon=True)
         self.intervalo_ms = intervalo_ms
         self.ultimo: dict | None = None
         self.erro: str | None = None
         self._proc: subprocess.Popen | None = None
+        self._parar = threading.Event()
+        self._avisos = SoQuandoMuda(log)
 
     @staticmethod
     def disponivel() -> bool:
         return shutil.which("macmon") is not None
 
     def run(self) -> None:
-        while True:
-            try:
-                self._proc = subprocess.Popen(
-                    ["macmon", "pipe", "-i", str(self.intervalo_ms)],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                )
-                assert self._proc.stdout
-                for linha in self._proc.stdout:
-                    try:
-                        self.ultimo = json.loads(linha)
-                    except json.JSONDecodeError:
-                        continue
-            except Exception as e:  # macmon sumiu, falhou etc.
-                self.erro = str(e)
-            time.sleep(5)  # tenta de novo
+        while not self._parar.is_set():
+            self._rodar_uma_vez()
+            self._parar.wait(self.ESPERA_REINICIO)
+
+    def _rodar_uma_vez(self) -> None:
+        """Roda o macmon até ele sair; guarda a última amostra válida."""
+        try:
+            self._proc = subprocess.Popen(
+                ["macmon", "pipe", "-i", str(self.intervalo_ms)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            assert self._proc.stdout
+            for linha in self._proc.stdout:
+                try:
+                    amostra = json.loads(linha)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(amostra, dict):
+                    self.ultimo, self.erro = amostra, None
+                    self._avisos.resolver("macmon", "macmon voltou")
+            if not self._parar.is_set():
+                try:
+                    codigo = self._proc.wait(timeout=2)  # a saída fechou: o processo está terminando
+                except subprocess.TimeoutExpired:
+                    codigo = None
+                self._avisos.registrar("macmon", logging.WARNING, "macmon parou (código %s); tentando de novo a cada %.0f s",
+                                       codigo, self.ESPERA_REINICIO)
+        except Exception as e:  # noqa: BLE001 - a thread não pode morrer: o macmon é opcional
+            self.erro = str(e) or type(e).__name__
+            if self._avisos.registrar("macmon", logging.WARNING, "macmon falhou (%s); tentando de novo a cada %.0f s",
+                                      self.erro, self.ESPERA_REINICIO):
+                log.debug("detalhes da falha do macmon", exc_info=True)
+        # O macmon saiu: a última amostra vai envelhecer, então a tela volta ao psutil até ele voltar.
+        self.ultimo = None
 
     def parar(self) -> None:
+        self._parar.set()
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
+
+
+def _float(v) -> float | None:
+    return None if v is None else float(v)
+
+
+def campos_macmon(m: dict, cpu_psutil: float, ram: tuple[int, int, int]) -> dict:
+    """Campos do Hardware a partir de uma amostra do `macmon pipe`.
+
+    Levanta TypeError, ValueError ou AttributeError se a amostra vier estranha (um campo nulo
+    ou de outro tipo); quem chama fica então com os números do psutil.
+    """
+    nucleos = [(str(t.get("label", "?")), float(t.get("scaled_ratio", 0)) * 100) for t in m.get("cpu_tiers") or []]
+    if not nucleos:  # macmon antigo, sem cpu_tiers
+        nucleos = [("E", float(m.get("ecpu_scaled_ratio", 0)) * 100), ("P", float(m.get("pcpu_scaled_ratio", 0)) * 100)]
+    temp = m.get("temp") or {}
+    mem = m.get("memory") or {}
+    ram_total, ram_usada, swap_usada = ram
+    if mem.get("ram_total"):
+        ram_total = int(mem["ram_total"])
+        ram_usada = int(mem.get("ram_usage", ram_usada))
+        swap_usada = int(mem.get("swap_usage", swap_usada))
+    return dict(
+        macmon=True,
+        cpu_pct=float(m.get("cpu_scaled_ratio", cpu_psutil / 100)) * 100,
+        nucleos=nucleos,
+        gpu_pct=float(m.get("gpu_scaled_ratio", 0)) * 100,
+        temp_cpu=_float(temp.get("cpu_temp_avg")),
+        temp_gpu=_float(temp.get("gpu_temp_avg")),
+        watts_soc=_float(m.get("all_power")),
+        watts_sistema=_float(m.get("sys_power")) or None,
+        ram_total=ram_total,
+        ram_usada=ram_usada,
+        swap_usada=swap_usada,
+    )
 
 
 class ColetorHardware:
     def __init__(self, usar_macmon: bool = True, disco: str = "/"):
         self.disco = disco
         self.macmon: LeitorMacmon | None = None
+        self._avisos = SoQuandoMuda(log)
         if usar_macmon and LeitorMacmon.disponivel():
             self.macmon = LeitorMacmon()
             self.macmon.start()
+            log.info("macmon encontrado: uso por núcleo, GPU, temperatura e consumo vêm dele")
+        elif usar_macmon:
+            log.info("macmon não instalado: CPU e RAM vêm do psutil (GPU e temperatura ficam em branco)")
+        else:
+            log.debug("macmon desligado (--sem-macmon): só psutil")
         self._rede_ant = psutil.net_io_counters()
         self._t_ant = time.monotonic()
         self._hist_cpu: deque[float] = deque(maxlen=HISTORICO)
@@ -114,26 +184,16 @@ class ColetorHardware:
 
         m = self.macmon.ultimo if self.macmon else None
         if m:
-            h.macmon = True
-            h.cpu_pct = float(m.get("cpu_scaled_ratio", h.cpu_pct / 100)) * 100
-            for tier in m.get("cpu_tiers") or []:
-                h.nucleos.append((str(tier.get("label", "?")), float(tier.get("scaled_ratio", 0)) * 100))
-            if not h.nucleos:  # macmon antigo, sem cpu_tiers
-                h.nucleos = [
-                    ("E", float(m.get("ecpu_scaled_ratio", 0)) * 100),
-                    ("P", float(m.get("pcpu_scaled_ratio", 0)) * 100),
-                ]
-            h.gpu_pct = float(m.get("gpu_scaled_ratio", 0)) * 100
-            temp = m.get("temp") or {}
-            h.temp_cpu = temp.get("cpu_temp_avg")
-            h.temp_gpu = temp.get("gpu_temp_avg")
-            h.watts_soc = m.get("all_power")
-            h.watts_sistema = m.get("sys_power") or None
-            mem = m.get("memory") or {}
-            if mem.get("ram_total"):
-                h.ram_total = int(mem["ram_total"])
-                h.ram_usada = int(mem.get("ram_usage", h.ram_usada))
-                h.swap_usada = int(mem.get("swap_usage", h.swap_usada))
+            try:
+                campos = campos_macmon(m, h.cpu_pct, (h.ram_total, h.ram_usada, h.swap_usada))
+            except (TypeError, ValueError, AttributeError) as e:
+                campos = {}  # amostra estranha: fica com o psutil nesta leitura
+                self._avisos.registrar("amostra", logging.WARNING, "amostra do macmon ignorada (%s: %s); usando o psutil",
+                                       type(e).__name__, e)
+            else:
+                self._avisos.resolver("amostra", "amostras do macmon voltaram ao normal")
+            for nome, valor in campos.items():
+                setattr(h, nome, valor)
 
         self._hist_cpu.append(h.cpu_pct)
         if h.gpu_pct is not None:

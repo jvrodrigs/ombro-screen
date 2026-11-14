@@ -261,6 +261,10 @@ class Mascote:
     _reset_ate: float = 0.0
     _calmo_desde: float | None = None
 
+    def __post_init__(self) -> None:
+        if self.cor_fixa:  # --cor-mascote vale desde o primeiro quadro, não só depois da primeira troca de estado
+            self.cor = self.cor_fixa
+
     def ir_para(self, novo: str, agora: float) -> None:
         if novo == self.estado:
             return

@@ -104,9 +104,10 @@ def quando_reseta(j: Janela | None, agora: datetime) -> str:
 
 # ---------- primitivas (coordenadas em pixels da tela; multiplicadas por S aqui) ----------
 class Tela:
-    def __init__(self, largura: int = LARGURA, altura: int = ALTURA):
+    def __init__(self, largura: int = LARGURA, altura: int = ALTURA, img: Image.Image | None = None):
+        """`img`: desenhar por cima de uma imagem já pronta (em 2x), em vez de começar do fundo liso."""
         self.w, self.h = largura, altura
-        self.img = Image.new("RGB", (largura * S, altura * S), FUNDO)
+        self.img = img if img is not None else Image.new("RGB", (largura * S, altura * S), FUNDO)
         self.d = ImageDraw.Draw(self.img)
 
     def texto(self, x, y, s, peso="Regular", tam=12, cor=TEXTO, ancora="la"):

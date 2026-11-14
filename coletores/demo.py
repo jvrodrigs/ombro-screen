@@ -6,7 +6,7 @@ import random
 import time
 from datetime import datetime, timedelta
 
-from .claude import Janela, UsoClaude
+from .claude import Janela, SessaoClaude, UsoClaude, resumo_sessoes
 from .hardware import Hardware
 
 GB = 1024**3
@@ -58,13 +58,20 @@ class Demo:
         ("reset", 4, timedelta(hours=5), ["idle"]),  # o horário de reset avança: o cloud comemora
     ]
 
+    _PADRAO = next(c for c in _CENARIOS if c[0] == "esperando")  # sem --demo-ciclo: pelo nome, não pela posição
+
     def claude(self, ciclo: float = 0) -> UsoClaude:
         """`ciclo` > 0: troca de cenário a cada tantos segundos (para ver todos os estados do cloud)."""
         agora = datetime.now()
         nome, pct5, reset5, status = (
-            self._CENARIOS[int((time.time() - self.t0) // ciclo) % len(self._CENARIOS)] if ciclo > 0 else self._CENARIOS[2]
+            self._CENARIOS[int((time.time() - self.t0) // ciclo) % len(self._CENARIOS)] if ciclo > 0 else self._PADRAO
         )
         por_hora = [int(v * 1e6) if h <= agora.hour else None for h, v in enumerate(self._CURVA)]
+        espera_desde = agora - timedelta(minutes=12)
+        sessoes = [SessaoClaude(id=f"demo-{i + 1}", status=st, status_bruto=st,
+                                desde=espera_desde if st == "waiting" else None,
+                                projeto="ombro-screen" if st == "waiting" else None)
+                   for i, st in enumerate(status)]
         return UsoClaude(
             cinco_horas=Janela(pct5, agora + reset5),
             semana=Janela(67, agora + timedelta(days=2, hours=5)),
@@ -74,12 +81,8 @@ class Demo:
             tokens_saida=212_000,
             tokens_cache=17_900_000,
             mensagens_hoje=486,
-            sessoes=len(status),
-            trabalhando=status.count("busy"),
-            esperando=status.count("waiting"),
-            status_sessoes=status,
-            espera_projeto="ombro-screen" if "waiting" in status else "",
-            espera_desde=agora - timedelta(minutes=12) if "waiting" in status else None,
             tokens_por_hora=por_hora,
             configurado=True,
+            lista_sessoes=sessoes,
+            **resumo_sessoes(sessoes),
         )

@@ -91,8 +91,8 @@ class Monitor:
 
     def atualizar_todos(self) -> None:
         self.entregar_eventos()
-        for pid in self.registry.ids():
-            self.store.apply_snapshot(self.registry.collect(pid))
+        for snap in self.registry.collect_all():
+            self.store.apply_snapshot(snap)
         if self.banco is not None and self.banco.ativo:
             self.banco.limpar()
 

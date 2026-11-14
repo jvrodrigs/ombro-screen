@@ -1,61 +1,62 @@
 # Arquitetura do Ombro Screen
 
 O Ombro lê o que as ferramentas de IA gravam no seu Mac e mostra numa telinha USB (ou no simulador).
-Desde a Fase 2, os dados passam por um núcleo (`core/`) que não sabe nada da tela: ele fala de
-**providers** (cada ferramenta monitorada), **sessões**, **limites de uso** e **eventos**. Hoje há um
-provider só, o do Claude Code. Codex e Cursor ainda **não** são suportados.
+Os dados passam por um núcleo (`core/`) que não sabe nada da tela: ele fala de **providers** (cada
+ferramenta monitorada: Claude Code, Codex e Cursor), **sessões**, **limites de uso** e **eventos**.
 
 ## O caminho dos dados
 
 ```
-Arquivos locais do Claude Code (~/.claude, ~/.claude.json, ~/.ombro-screen/uso.json)
-        │  a cada 5 s
+Claude Code: ~/.claude, ~/.claude.json, ~/.ombro-screen/uso.json ──► coletores/claude.py
+Claude Code, Codex, Cursor: hooks ──► ombro_hook.py ──► ~/.ombro-screen/eventos/ ──► core/caixa.py
+        │  a cada 5 s, Monitor.atualizar_todos(): entrega os eventos e coleta cada provider
         ▼
-coletores/claude.py        lê e interpreta os arquivos (a única parte que conhece o formato deles)
-        ▼
-providers/claude.py        ClaudeProvider: converte para o modelo do core ──► ProviderSnapshot
+providers/claude.py · codex.py · cursor.py       convertem para o modelo do core ──► ProviderSnapshot
         ▼
 core/state.py              StateStore: consolida, separa por provider, descobre o que mudou
         ├──► core/events.py        EventBus: avisa as mudanças ──► log de depuração
         │                                                     └──► core/persistence.py (SQLite)
         ▼
-apresentacao.py            o estado do Claude no formato de sempre da tela (UsoClaude)
+apresentacao.py            o estado do Claude no formato dos layouts Ombro, Minimal v2 e clássico (UsoClaude)
+core/resumo.py             o resumo de todos os agentes, para o layout multiagente
         ▼
-mascote.py + layout_ombro.py / render.py      decidem o estado do cloud e desenham
+mascote.py + layout_*.py / render.py      decidem o estado do cloud e desenham
         ▼
 saida.py                   tela USB (direto ou serial) ou simulador HTTP
 ```
 
-Antes da Fase 2, o `tela.py` chamava o coletor e entregava o resultado direto ao layout. Agora
-`core/monitor.py` (o `Monitor`) junta registro, estado, eventos e banco, e o `tela.py` chama
-`monitor.atualizar("claude")` no ritmo da coleta, nunca a cada quadro. O `--demo` passa pelo mesmo
-caminho (`FonteDemo`), só que sem banco.
+`core/monitor.py` (o `Monitor`) junta registro, estado, eventos e banco; o `tela.py` chama
+`monitor.atualizar_todos()` no ritmo da coleta, nunca a cada quadro. O `--demo` passa pelo mesmo caminho
+(`FonteDemo` e `providers/demo.py`), só que sem banco e sem eventos.
 
 O núcleo (`core/`) usa só a biblioteca padrão: não importa Pillow, USB, numpy nem psutil (há um teste
-que confere). A tela não conhece o formato dos arquivos do Claude, e um provider não conhece outro.
+que confere). A tela não conhece o formato dos arquivos de nenhum agente, e um provider não conhece outro.
 
 ## Peças
 
 | Peça | Arquivo | O que faz |
 | --- | --- | --- |
-| `ProviderAdapter` | `core/providers.py` | Contrato de um provider: `provider_id`, `display_name`, `capabilities` e `collect()`. `close()` é opcional. |
+| `ProviderAdapter` | `core/providers.py` | Contrato de um provider: `provider_id`, `display_name`, `capabilities` e `collect()`. `close()` é opcional; `receber()` e `restaurar()`, para quem recebe eventos. |
 | `ProviderCapabilities` | `core/providers.py` | O que o provider informa: sessões, atenção, tokens, limites, contexto, custo, eventos. Falso = não informa. |
 | `ProviderRegistry` | `core/providers.py` | Providers ativos, na ordem do registro. Id repetido ou inválido é erro. Uma coleta que levanta exceção vira um snapshot `ERROR` (registrado uma vez no log), para um provider com defeito não derrubar os outros. |
-| `ClaudeProvider` | `providers/claude.py` | Usa o `ColetorClaude` de sempre e converte o resultado. Não lê arquivo nenhum por conta própria. |
-| `AgentSession` | `core/models.py` | Uma sessão. Chave `(provider_id, session_id)`. Atividade (`unknown`, `idle`, `working`) separada de atenção (`unknown`, `none`, `waiting_user`). |
+| `ClaudeProvider` | `providers/claude.py` | Usa o `ColetorClaude` e converte o resultado; os hooks (opcionais) só refinam aprovação e erro. |
+| `CodexProvider`, `CursorProvider` | `providers/codex.py`, `providers/cursor.py` | Montam as sessões a partir dos eventos dos hooks (base comum em `providers/hooks.py`). |
+| `AgentSession` | `core/models.py` | Uma sessão. Chave `(provider_id, session_id)`. Atividade (`unknown`, `idle`, `working`) separada de atenção (`unknown`, `none`, `waiting_user`, `waiting_approval`, `error`). |
 | `UsageMetrics` | `core/models.py` | Tokens num período (`scope`, hoje só `"today"`). `None` = não informado, nunca zero inventado. |
 | `QuotaWindow` / `QuotaReport` | `core/models.py` | Janelas de limite genéricas (`window_id`, rótulo, %, quando reinicia) e de onde vieram (fonte, horário, se estão velhas). `quotas=None` = sem fonte; janelas vazias = fonte sem janelas. |
-| `ProviderSnapshot` | `core/models.py` | O que um provider sabia num instante: sessões, uso, limites, `status` (`ok`, `partial`, `error`) e `failed` (as partes que falharam). |
+| `ProviderSnapshot` | `core/models.py` | O que um provider sabia num instante: sessões, uso, limites, `status` (`ok`, `partial`, `error`), `failed` (as partes que falharam) e `integration` (`ok`, `not_installed`, `not_configured`). |
 | `AgentEvent` / `EventBus` | `core/events.py` | Mudanças (`session_started`, `session_changed`, `session_ended`, `provider_changed`) e o barramento local, síncrono e em ordem que as entrega. |
 | `StateStore` | `core/state.py` | O estado consolidado: o último snapshot efetivo de cada provider e as sessões que ele conhece. |
 | `StateDB` | `core/persistence.py` | O SQLite em `~/.ombro-screen/state.db`. |
+| `CaixaDeEventos` | `core/caixa.py` | Lê, valida e apaga os eventos que os hooks deixam em `~/.ombro-screen/eventos/`. |
+| `RastreadorDeSessoes` | `core/rastreador.py` | Sessões de quem só avisa por eventos, com as regras de atraso, repetição e tempo. |
+| `resumir` | `core/resumo.py` | Quantos agentes trabalham e quem mais precisa de você (para o layout multiagente). |
 | `Monitor` | `core/monitor.py` | Monta tudo e é o que o laço principal usa. |
-| `uso_claude`, `status_tela` | `apresentacao.py` | Do estado normalizado para o formato da tela; `status_tela` é o mapa de compatibilidade (esperar você > trabalhando > ocioso; desconhecido aparece como ocioso). |
+| `uso_claude`, `status_tela`, `uso_mascote` | `apresentacao.py` | Do estado normalizado para o formato da tela; `status_tela` é o mapa de compatibilidade (esperar você ou aprovação > trabalhando > ocioso; desconhecido e erro aparecem como ocioso nos layouts de sempre). |
 
-Os nomes das classes do núcleo estão em inglês, como na especificação da arquitetura, para quem vem
-de outros projetos reconhecer; mensagens, comentários e documentação seguem em português, como o
-resto do repositório. O id de um provider é um texto (`"claude"`), não um `Enum`: assim um provider
-novo não precisa mexer no núcleo.
+Os nomes das classes do núcleo estão em inglês, para quem vem de outros projetos reconhecer; mensagens,
+comentários e documentação seguem em português, como o resto do repositório. O id de um provider é um
+texto (`"claude"`), não um `Enum`: assim um provider novo não precisa mexer no núcleo.
 
 ## Regras do estado (StateStore)
 
@@ -66,11 +67,18 @@ novo não precisa mexer no núcleo.
 - **Falha parcial:** se uma parte da coleta falhou (por exemplo, a pasta de sessões ficou ilegível),
   o estado repete o último valor bom dessa parte por até 30 s e marca em `partes_velhas`. Depois
   disso, as sessões ficam com estado desconhecido, e não "encerradas", porque não se sabe se
-  acabaram; uso e limites ficam sem dado. Antes da Fase 2, a parte que falhava aparecia vazia na
-  hora: essa é a única mudança de comportamento, e só acontece quando algo dá errado.
-- **Eventos** (`apply_event`, para providers que avisam na hora): um evento repetido não muda nada;
-  um evento mais velho que o último aplicado à mesma sessão é ignorado; um evento de uma sessão já
-  encerrada, com horário de antes do fim, também.
+  acabaram; uso e limites ficam sem dado.
+- **Eventos** (`apply_event`): um evento repetido não muda nada; um evento mais velho que o último
+  aplicado à mesma sessão é ignorado; um evento de uma sessão já encerrada, com horário de antes do fim,
+  também. Codex e Cursor usam as mesmas regras no `RastreadorDeSessoes` e entram no estado como
+  snapshots, para todos os providers seguirem o mesmo caminho.
+
+## Eventos dos hooks
+
+`ombro_hook.py` grava cada evento num arquivo pequeno (só agente, sessão, evento, horário, nome da pasta
+e um status de uma lista fechada) e sai sem bloquear o agente. O transporte, as regras de tempo das
+sessões e a privacidade estão em [multi-agent.md](multi-agent.md); a configuração de cada agente, em
+[providers/](providers/).
 
 ## Persistência (SQLite)
 
@@ -100,46 +108,29 @@ novo não precisa mexer no núcleo.
 1. Abre o banco e põe o formato em dia.
 2. Limpa o que passou do prazo.
 3. Recupera as sessões que estavam abertas, **com estado desconhecido**: uma sessão salva como
-   "trabalhando" não é considerada trabalhando só porque estava assim quando o Ombro fechou.
-4. Coleta o Claude Code.
+   "trabalhando" não é considerada trabalhando só porque estava assim quando o Ombro fechou. Os
+   providers que só avisam por eventos (Codex e Cursor) também recebem essas sessões.
+4. Lê os eventos pendentes e coleta os providers.
 5. Concilia: as sessões que continuam voltam com o estado da coleta (`session_changed`); as que
    sumiram são encerradas (`session_ended`). Nenhuma sessão é duplicada.
 
-Para o Claude Code, que tem tudo em arquivos, isso pouco muda na tela: a primeira coleta acontece antes
-do primeiro quadro. A recuperação existe para providers que só avisam por eventos e não têm um arquivo
-para reler.
-
-## Como adicionar um provider (Fase 3)
+## Como adicionar um provider
 
 1. Crie `providers/<nome>.py` com uma classe que herda de `ProviderAdapter`:
    - `provider_id = "<nome>"` (minúsculas; vira parte da chave das sessões e do banco);
    - `capabilities = ProviderCapabilities(...)` só com o que a ferramenta realmente informa;
    - `collect()` devolvendo um `ProviderSnapshot` (use `status="partial"` e `failed={...}` quando uma
      parte falhar, em vez de devolver vazio como se não houvesse nada).
-2. Se a ferramenta avisa mudanças na hora (hooks), entregue `AgentEvent`s ao `StateStore.apply_event`;
-   as regras de repetição e atraso já valem.
-3. Registre o provider onde o `Monitor` é montado (`tela.py`).
-4. Testes: um snapshot com e sem dados, sessões simultâneas, partes que falham, ids estáveis entre coletas.
-
-O que ainda falta para outro provider aparecer **na tela**: o layout atual mostra só o Claude
-(`apresentacao.uso_claude`). Um layout multiagente vai ler o `StateStore` direto, de todos os providers.
-
-## Fase 3: Codex, Cursor e os hooks
-
-- `ombro_hook.py` grava cada evento de hook num arquivo pequeno em `~/.ombro-screen/eventos/`;
-  `core/caixa.py` (`CaixaDeEventos`) lê, valida e apaga depois de aplicar.
-- `Monitor.atualizar_todos()` entrega os eventos a cada provider que tem `receber()` e depois coleta todos.
-- `core/rastreador.py` (`RastreadorDeSessoes`) monta as sessões de quem só avisa por eventos, com as regras
-  de atraso, repetição e tempo; `providers/hooks.py` é a base do Codex e do Cursor.
-- O `ClaudeProvider` usa os hooks só para refinar o que os arquivos dizem (aprovação e erro).
-- `Attention` ganhou `waiting_approval` e `error`; `ProviderSnapshot.integration` diz se a ferramenta está
-  instalada e configurada.
-- `core/resumo.py` resume todos os agentes para o layout multiagente. Detalhes em [multi-agent.md](multi-agent.md).
+2. Se a ferramenta só avisa por hooks, herde de `ProviderPorHooks` (`providers/hooks.py`) e escreva só o
+   `mapear()` dos eventos; acrescente os eventos aceitos em `EVENTOS` do `ombro_hook.py`.
+3. Acrescente o id em `PROVIDERS` (`config.py`) e em `montar_providers` (`tela.py`).
+4. Testes: um snapshot com e sem dados, sessões simultâneas, partes que falham, ids estáveis entre
+   coletas, eventos repetidos e atrasados.
 
 ## Limitações conhecidas
 
-- Codex e Cursor entram como snapshots montados a partir dos eventos (não pelo `apply_event`), para todos os providers seguirem o mesmo caminho.
 - Os horários são locais e sem fuso, como no resto do Ombro.
-- O Claude Code não diz se uma sessão parada espera uma resposta ou uma permissão: as duas viram `waiting_user`.
+- Sem os hooks, o Claude Code não diz se uma sessão parada espera uma resposta ou uma aprovação: as duas
+  viram `waiting_user`.
 - A ordem entre snapshots e eventos do mesmo provider é decidida pelo horário de cada um; não há relógio
   comum entre fontes diferentes.

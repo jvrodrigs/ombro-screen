@@ -313,11 +313,6 @@ def cor_sorteada() -> tuple[int, int, int]:
     return int(r * 255), int(g * 255), int(b * 255)
 
 
-def cor_de_hex(h: str) -> tuple[int, int, int]:
-    h = h.lstrip("#")
-    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-
-
 @dataclass
 class Mascote:
     cor_fixa: tuple[int, int, int] | None = None

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from coletores.claude import Janela, UsoClaude
 import colorsys
 
-from mascote import CAMPOS, DURACAO_MISTURA, ESTADOS, Mascote, cor_de_hex, cor_sorteada, desenhar_cloud, parametros
+from mascote import CAMPOS, DURACAO_MISTURA, ESTADOS, Mascote, cor_sorteada, desenhar_cloud, parametros
 
 AGORA = datetime(2026, 11, 13, 15, 0)
 
@@ -209,9 +209,6 @@ class Transicoes(unittest.TestCase):
             _, luz, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
             self.assertTrue(.49 <= luz <= .61 and .56 <= sat <= .73, (r, g, b))
 
-    def test_cor_de_hex(self):
-        self.assertEqual(cor_de_hex("#3D7A4F"), (61, 122, 79))
-        self.assertEqual(cor_de_hex("ff0000"), (255, 0, 0))
 
 
 class Animacao(unittest.TestCase):

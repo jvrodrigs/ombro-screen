@@ -304,18 +304,18 @@ transporte dos eventos: [docs/multi-agent.md](docs/multi-agent.md).
 
 ## Arquitetura
 
-Os dados do Claude Code passam por um núcleo que não depende da tela (`core/`): um **provider** por
-ferramenta monitorada (hoje só o Claude Code, em `providers/claude.py`), um modelo comum de sessões,
+Os dados dos agentes passam por um núcleo que não depende da tela (`core/`): um **provider** por
+ferramenta monitorada (Claude Code, Codex e Cursor, em `providers/`), um modelo comum de sessões,
 uso e limites, um estado consolidado (`StateStore`), um barramento de eventos (`EventBus`) e um banco
-SQLite pequeno (`~/.ombro-screen/state.db`) para lembrar das sessões ao reiniciar. A tela continua
-recebendo os mesmos dados de antes, por `apresentacao.py`, então nada visual muda.
+SQLite pequeno (`~/.ombro-screen/state.db`) para lembrar das sessões ao reiniciar. Os layouts recebem
+os dados por `apresentacao.py` (só o Claude) ou por `core/resumo.py` (todos os agentes).
 
 O banco guarda só o status das sessões e as mudanças recentes (sem nome de projeto, conversas ou
 tokens), apaga o que tem mais de 7 dias e nunca impede o Ombro de rodar: se der problema com ele, o
 Ombro segue em memória e avisa no log. `--demo` e `--png` não usam o banco.
 
-Detalhes, regras e como adicionar um provider: [docs/architecture.md](docs/architecture.md). Desde a
-Fase 3 há também os providers do Codex e do Cursor (seção 9).
+Detalhes, regras e como adicionar um provider: [docs/architecture.md](docs/architecture.md). Os
+agentes, os hooks e o layout multiagente estão na seção 9.
 
 ## Arquivos
 

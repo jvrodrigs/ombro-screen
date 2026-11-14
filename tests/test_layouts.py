@@ -175,7 +175,8 @@ class Textos(unittest.TestCase):
     def test_rotulos_de_estado(self):
         u = uso(trabalhando=2, esperando=1)
         self.assertEqual([rotulo_estado(e, u) for e in ESTADOS],
-                         ["nenhuma ativa", "2 trabalhando", "1 esperando resposta", "plano quase no fim", "plano resetou"])
+                         ["nenhuma ativa", "2 trabalhando", "1 esperando resposta", "plano quase no fim", "plano resetou",
+                          "concluído"])
 
     def test_aviso_de_uso(self):
         self.assertEqual(aviso_uso(UsoClaude(), AGORA), "sem dados de uso: veja o README")

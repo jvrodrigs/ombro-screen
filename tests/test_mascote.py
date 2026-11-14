@@ -23,12 +23,12 @@ class Decidir(unittest.TestCase):
         self.assertEqual(m.decidir(uso(pct_sem=91), 3), "alerta")
         self.assertEqual(m.decidir(uso(pct5=95, esperando=1), 4), "esperando")
 
-    def test_so_volta_a_ocioso_depois_de_3_segundos(self):
+    def test_so_sossega_depois_de_3_segundos(self):
         m = Mascote()
         m.ir_para(m.decidir(uso(trabalhando=1), 0), 0)
         self.assertEqual(m.decidir(uso(), 1.0), "trabalhando")
         self.assertEqual(m.decidir(uso(), 3.5), "trabalhando")
-        self.assertEqual(m.decidir(uso(), 4.1), "ocioso")
+        self.assertEqual(m.decidir(uso(), 4.1), "concluido")  # terminou de trabalhar
 
     def test_reset_da_janela_de_5h(self):
         m = Mascote()
@@ -83,12 +83,98 @@ class Decidir(unittest.TestCase):
         self.assertEqual(m.decidir(uso(trabalhando=1), 2.5), "trabalhando")  # voltou a trabalhar
         self.assertEqual(m.decidir(uso(), 3), "trabalhando")  # calmo de novo, desde 3 s
         self.assertEqual(m.decidir(uso(), 5.5), "trabalhando")
-        self.assertEqual(m.decidir(uso(), 6.1), "ocioso")
+        self.assertEqual(m.decidir(uso(), 6.1), "concluido")
 
     def test_esperando_volta_para_trabalhando_na_hora(self):
         m = Mascote()
         m.ir_para("esperando", 0)
         self.assertEqual(m.decidir(uso(trabalhando=1), 0.1), "trabalhando")  # só a volta ao ocioso espera
+
+
+def passo(m, u, t):
+    """Um quadro do laço do tela.py: decide e troca de estado."""
+    m.ir_para(m.decidir(u, t), t)
+    return m.estado
+
+
+class Concluido(unittest.TestCase):
+    """Quando o Claude termina, o cloud fica em "concluido" por até 5 min e depois volta a dormir."""
+
+    def test_dura_5_minutos_e_depois_dorme(self):
+        m = Mascote()
+        self.assertEqual(passo(m, uso(trabalhando=1), 0), "trabalhando")
+        self.assertEqual(passo(m, uso(), 10), "trabalhando")  # terminou às 10 s, mas espera o status assentar
+        self.assertEqual(passo(m, uso(), 13.1), "concluido")
+        self.assertEqual(passo(m, uso(), 10 + 299), "concluido")
+        self.assertEqual(passo(m, uso(), 10 + 300.1), "ocioso")
+        self.assertEqual(passo(m, uso(), 2000), "ocioso")
+
+    def test_nova_atividade_interrompe_e_recomeca_a_contagem(self):
+        m = Mascote()
+        passo(m, uso(trabalhando=1), 0)
+        passo(m, uso(), 10)
+        self.assertEqual(passo(m, uso(), 100), "concluido")
+        self.assertEqual(passo(m, uso(trabalhando=1), 200), "trabalhando")  # nova mensagem: volta na hora
+        passo(m, uso(), 250)  # terminou de novo
+        self.assertEqual(passo(m, uso(), 253.1), "concluido")
+        self.assertEqual(passo(m, uso(), 250 + 299), "concluido")  # os 5 min contam do último término
+        self.assertEqual(passo(m, uso(), 250 + 300.1), "ocioso")
+
+    def test_cancelar_quando_ele_espera_voce_nao_e_concluir(self):
+        m = Mascote()
+        passo(m, uso(trabalhando=1), 0)
+        self.assertEqual(passo(m, uso(esperando=1), 1), "esperando")
+        passo(m, uso(), 2)
+        self.assertEqual(passo(m, uso(), 5.1), "ocioso")
+
+    def test_responder_e_ele_terminar_e_concluir(self):
+        m = Mascote()
+        passo(m, uso(trabalhando=1), 0)
+        passo(m, uso(esperando=1), 1)
+        passo(m, uso(trabalhando=1), 2)  # você respondeu, ele seguiu
+        passo(m, uso(), 3)
+        self.assertEqual(passo(m, uso(), 6.1), "concluido")
+
+    def test_quem_espera_voce_e_o_plano_no_limite_vem_antes(self):
+        m = Mascote()
+        passo(m, uso(trabalhando=1), 0)
+        passo(m, uso(), 1)
+        self.assertEqual(passo(m, uso(), 4.1), "concluido")
+        self.assertEqual(passo(m, uso(esperando=1), 5), "esperando")
+        m = Mascote()
+        passo(m, uso(trabalhando=1), 0)
+        passo(m, uso(pct5=95), 1)
+        self.assertEqual(passo(m, uso(pct5=95), 4.1), "alerta")
+
+    def test_ao_abrir_sem_nada_rodando_dorme(self):
+        m = Mascote()
+        self.assertEqual(passo(m, uso(), 0), "ocioso")
+        self.assertEqual(passo(m, uso(), 10), "ocioso")
+
+    def test_duracao_ajustavel(self):
+        m = Mascote(duracao_concluido=7)
+        passo(m, uso(trabalhando=1), 0)
+        passo(m, uso(), 1)
+        self.assertEqual(passo(m, uso(), 4.1), "concluido")
+        self.assertEqual(passo(m, uso(), 8.1), "ocioso")
+
+    def test_ciclo_de_demonstracao_mostra_todos_os_estados(self):
+        from coletores.demo import Demo
+
+        ciclo = 7.0
+        m = Mascote(duracao_concluido=ciclo)  # o que o tela.py faz com --demo-ciclo
+        vistos = {}
+        t = 0.0
+        for volta in range(2):
+            for nome, pct5, reset5, status in Demo._CENARIOS:
+                u = uso(pct5=pct5, reset5=reset5, trabalhando=status.count("busy"), esperando=status.count("waiting"))
+                fim = t + ciclo
+                while t < fim:
+                    vistos.setdefault(nome, set()).add(passo(m, u, t))
+                    t += .2
+        for nome in vistos:
+            self.assertIn(nome, vistos[nome], f"o cenário {nome} não mostrou o estado {nome}: {vistos[nome]}")
+        self.assertEqual(set(vistos), set(ESTADOS))
 
 
 class Transicoes(unittest.TestCase):
@@ -138,6 +224,11 @@ class Animacao(unittest.TestCase):
         self.assertEqual(parametros("ocioso", 0.05)["pisca"], 1.0)
         self.assertEqual(parametros("ocioso", 1.0)["pisca"], 0.0)
         self.assertEqual(parametros("ocioso", 4.25)["pisca"], 1.0)
+
+    def test_concluido_pula_uma_vez_e_depois_so_respira(self):
+        self.assertLess(parametros("concluido", .6)["dy"], -20)  # o pulinho de satisfação
+        respiro = [abs(parametros("concluido", 1.1 + i * .37)["dy"]) for i in range(100)]
+        self.assertLessEqual(max(respiro), 1.2 + 1e-9)  # nos 5 min seguintes, nada agitado
 
     def test_pulos(self):
         self.assertLess(parametros("esperando", .36)["dy"], -20)  # no ar

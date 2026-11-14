@@ -80,15 +80,18 @@ def main():
         print(f"{len(hashes)} quadros salvos em {a.salvar}")
     elif a.comparar:
         antes = json.loads(a.comparar.read_text())
-        diferentes = [n for n in hashes if antes.get(n) != hashes[n]]
+        diferentes = [n for n in hashes if n in antes and antes[n] != hashes[n]]
         faltando = sorted(set(antes) - set(hashes))
+        novos = sorted(set(hashes) - set(antes))
         for n in diferentes:
             print(f"diferente: {n}")
         for n in faltando:
             print(f"sumiu: {n}")
+        if novos:
+            print(f"{len(novos)} quadros novos (sem referência para comparar): {', '.join(novos)}")
         if diferentes or faltando:
             sys.exit(1)
-        print(f"{len(hashes)} quadros idênticos")
+        print(f"{len(hashes) - len(novos)} quadros idênticos")
     else:
         print(f"{len(hashes)} quadros em {a.png}")
 

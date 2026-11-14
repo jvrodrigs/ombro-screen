@@ -4,7 +4,8 @@ A forma e os olhos vêm da KEY de formas (ver dados_cloud.py). O movimento é o 
 aprovado (cloud-v3): troca de estado suave, pulos com antecipação e aterrissagem, olhos com
 atraso em relação ao corpo, e extras (zZ, “?”, três pontinhos, gota de suor, confete).
 
-Estados: ocioso, trabalhando, esperando, alerta, reset.
+Estados: ocioso, trabalhando, esperando, alerta, reset e concluido (o Claude terminou o que fazia;
+dura até 5 min, ou até começar outra coisa, e depois o cloud volta a dormir).
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from datetime import datetime, timedelta
 from PIL import Image, ImageDraw
 
 from dados_cloud import BBOX, OLHOS, PONTOS
-from render import S, fonte
+from render import S, VERDE, fonte
 
 TAU = math.tau
 
@@ -31,7 +32,9 @@ ESC = min(COL_W / _VBW, 168 / _VBH)  # a janela cabe em 156x168, centrada
 _OFF_X = (COL_W - _VBW * ESC) / 2
 _OFF_Y = (168 - _VBH * ESC) / 2
 
-ESTADOS = ("ocioso", "trabalhando", "esperando", "alerta", "reset")
+ESTADOS = ("ocioso", "trabalhando", "esperando", "alerta", "reset", "concluido")
+DURACAO_CONCLUIDO = 300.0  # segundos mostrando "concluído" depois que o Claude termina; depois, dorme
+CALMOS = ("ocioso", "concluido")  # estados sem nenhuma sessão ativa
 CAMPOS = ("dx", "dy", "sx", "sy", "rot", "kL", "kW", "olhaX", "olhaY", "pisca")
 DURACAO_MISTURA = 0.5  # segundos para passar de um estado ao outro
 
@@ -102,6 +105,23 @@ def parametros(estado: str, t: float) -> dict[str, float]:
             d = math.exp(-q * 5) * _sn(TAU * q * 2.5)
             o["sy"], o["sx"] = 1 + .12 * d, 1 - .07 * d
         o["kL"], o["kW"], o["olhaY"] = .6, 1.05, -6
+    elif estado == "concluido":
+        if t < 1.1:  # um pulinho de satisfação quando o Claude termina
+            if t < .16:
+                q = _ss(t / .16)
+                o["sy"], o["sx"] = 1 - .08 * q, 1 + .06 * q
+            else:
+                q = (t - .16) / .94
+                e = _sn(math.pi * q)
+                o["dy"] = -24 * e
+                o["sy"] = _lerp(.92, 1, _ss(q * 2)) + .06 * e
+                o["sx"] = _lerp(1.06, 1, _ss(q * 2)) - .03 * e
+        else:  # depois, respira devagar e balança de leve: fica assim até 5 min, então nada agitado
+            u = t - 1.1
+            a = _sn(TAU * u / 3.4)
+            o["sy"], o["sx"], o["dy"] = 1 + .025 * a, 1 - .015 * a, -1.2 * a
+            o["rot"] = 2.5 * _sn(TAU * u / 6.8)
+        o["olhaY"] = -3  # os olhos em arco (^ ^) são desenhados em _olhos_felizes
     return o
 
 
@@ -222,6 +242,29 @@ def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float) -> Non
                 quad = [(-meio, -meio), (meio, -meio), (meio, meio), (-meio, meio)]
                 pts = [_pt(x + qx * math.cos(giro) - qy * math.sin(giro), y + qx * math.sin(giro) + qy * math.cos(giro)) for qx, qy in quad]
                 d.polygon(pts, fill=_com_alpha(cores[i % 4], max(0.0, min(1.0, 1 - q * 1.05)) * a))
+    elif estado == "concluido":
+        # ✓ acima da cabeça: cresce no pulinho e depois flutua devagar
+        cresce = 1.0 if t >= .6 else _ss(t / .6) * (1 + .25 * _sn(math.pi * t / .6))  # passa um pouco e volta
+        flut = _sn(TAU * t / 2.6)
+        op = (.8 + .2 * _sn(TAU * t / 2.6 + 1)) * a
+        pulo = parametros("concluido", t)["dy"]  # acompanha o pulinho do corpo, para não encostar nele
+        cx, cy, esc = CX, topo - 60 - 5 * flut + pulo, 26 * cresce
+        if esc > .5:
+            pts = [_pt(cx + x * esc, cy + y * esc) for x, y in ((-1, 0), (-.35, .62), (1, -.75))]
+            larg = max(1.0, 12 * cresce * ESC * S)
+            cor_v = _com_alpha(VERDE, op)
+            d.line(pts, fill=cor_v, width=int(larg), joint="curve")
+            for px, py in (pts[0], pts[-1]):  # pontas redondas
+                d.ellipse((px - larg / 2, py - larg / 2, px + larg / 2, py + larg / 2), fill=cor_v)
+        # dois brilhinhos que piscam alternados, nos lados de cima
+        for i, (bx, by) in enumerate(((BX0 + 40, topo + 10), (BX1 - 30, topo - 12))):
+            w = _sn(TAU * t / 3.0 - i * math.pi)
+            if w <= 0:
+                continue
+            fora, dentro = 15 * w, 4 * w
+            estrela = [(bx + (fora if k % 2 == 0 else dentro) * math.cos(k * math.pi / 4 - math.pi / 2),
+                        by + (fora if k % 2 == 0 else dentro) * math.sin(k * math.pi / 4 - math.pi / 2)) for k in range(8)]
+            d.polygon([_pt(x, y) for x, y in estrela], fill=_com_alpha(branco, w * a))
 
 
 def desenhar_cloud(p: dict, estado: str, t: float, cor: tuple[int, int, int], alpha_extras: float = 1.0) -> Image.Image:
@@ -229,13 +272,38 @@ def desenhar_cloud(p: dict, estado: str, t: float, cor: tuple[int, int, int], al
     camada = Image.new("RGBA", (COL_W * S, COL_H * S), (0, 0, 0, 0))
     d = ImageDraw.Draw(camada)
     d.polygon([_pt(*_corpo(p, x, y)) for x, y in PONTOS], fill=cor + (255,))
+    if estado == "concluido":
+        _olhos_felizes(d, p)
+    else:
+        _olhos(d, p)
+    _extras(d, estado, t, cor, alpha_extras)
+    return camada
+
+
+def _olhos_felizes(d: ImageDraw.ImageDraw, p: dict) -> None:
+    """Olhos em arco (^ ^), de satisfação, no lugar das pílulas."""
+    preto = (26, 27, 29, 255)
+    for e in OLHOS:
+        r = e["larg"] * .62
+        a = math.radians(e["ang"])
+        cx, cy = e["cx"] + p["olhaX"], e["cy"] + p["olhaY"] + r * .35
+        arco = []
+        for i in range(13):  # meia-volta por cima, de um lado ao outro
+            ang = math.pi + math.pi * i / 12
+            x, y = r * math.cos(ang), r * .9 * math.sin(ang)
+            arco.append(_pt(*_corpo(p, cx + x * math.cos(a) - y * math.sin(a), cy + x * math.sin(a) + y * math.cos(a))))
+        larg = e["larg"] * .34 * ESC * S
+        d.line(arco, fill=preto, width=max(1, int(larg)), joint="curve")
+        for px, py in (arco[0], arco[-1]):  # pontas redondas
+            d.ellipse((px - larg / 2, py - larg / 2, px + larg / 2, py + larg / 2), fill=preto)
+
+
+def _olhos(d: ImageDraw.ImageDraw, p: dict) -> None:
     for e in OLHOS:
         comp = max(10.0, e["comp"] * p["kL"] * (1 - .9 * p["pisca"]))
         larg = e["larg"] * p["kW"]
         pts = _capsula(e["cx"] + p["olhaX"], e["cy"] + p["olhaY"], larg, comp, e["ang"])
         d.polygon([_pt(*_corpo(p, x, y)) for x, y in pts], fill=(26, 27, 29, 255))
-    _extras(d, estado, t, cor, alpha_extras)
-    return camada
 
 
 # ---------- máquina de estados ----------
@@ -260,6 +328,9 @@ class Mascote:
     _reseta_ant: dict[str, datetime] = field(default_factory=dict)  # último horário de reset visto, por janela
     _reset_ate: float = 0.0
     _calmo_desde: float | None = None
+    duracao_concluido: float = DURACAO_CONCLUIDO
+    _havia_trabalho: bool = False  # alguma sessão estava trabalhando na leitura anterior?
+    _terminou_em: float | None = None  # quando a última sessão parou de trabalhar sem esperar você
 
     def __post_init__(self) -> None:
         if self.cor_fixa:  # --cor-mascote vale desde o primeiro quadro, não só depois da primeira troca de estado
@@ -283,6 +354,12 @@ class Mascote:
             if ant and j.reseta_em - ant > timedelta(hours=1):
                 self._reset_ate = agora + 3.0
             self._reseta_ant[nome] = j.reseta_em
+        # terminou: havia sessão trabalhando e agora nenhuma trabalha nem espera você
+        # (de "esperando" direto para parada não conta: você cancelou ou fechou a sessão)
+        ativo = u.trabalhando > 0
+        if self._havia_trabalho and not ativo and not u.esperando:
+            self._terminou_em = agora
+        self._havia_trabalho = ativo
         if agora < self._reset_ate:
             return "reset"
         if u.esperando:
@@ -291,11 +368,14 @@ class Mascote:
             alvo = "alerta"
         elif u.trabalhando:
             alvo = "trabalhando"
+        elif self._terminou_em is not None and agora - self._terminou_em < self.duracao_concluido:
+            alvo = "concluido"
         else:
             alvo = "ocioso"
-        # só volta a ficar ocioso depois de uns segundos sem atividade (o status oscila)
-        if alvo == "ocioso" and self.estado != "ocioso":
-            self._calmo_desde = self._calmo_desde or agora
+        # só sossega (concluído ou ocioso) depois de uns segundos sem atividade: o status oscila
+        if alvo in CALMOS and self.estado not in CALMOS:
+            if self._calmo_desde is None:
+                self._calmo_desde = agora
             if agora - self._calmo_desde < 3.0:
                 return self.estado
         else:

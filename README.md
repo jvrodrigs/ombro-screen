@@ -17,7 +17,7 @@ O uso do Claude Code, o CPU e a RAM do Mac numa telinha USB de 3,5" deitada (480
 - **Hoje**: tokens gastos, tokens de saída, sessões abertas (uma bolinha por sessão) e a curva de tokens por hora
 - **Hardware**: CPU e RAM
 - **Aviso**: qual projeto espera você e há quanto tempo (ou "nenhuma sessão esperando")
-- **Cloud**: ocioso, trabalhando, esperando, alerta ou reset, cada um com a sua animação
+- **Cloud**: ocioso, trabalhando, esperando, alerta, reset ou concluído, cada um com a sua animação
 
 Tudo sai de arquivos locais: não usa a API nem lê credenciais.
 
@@ -69,7 +69,10 @@ O estado vem do que o Claude Code grava, na ordem de prioridade abaixo:
 | **esperando** | alguma sessão espera sua resposta ou permissão | `status: waiting` em `~/.claude/sessions` |
 | **alerta** | o uso do plano passou de 90 % | `% de uso` da sessão de 5 h ou da semana |
 | **trabalhando** | alguma sessão está ocupada | `status: busy` em `~/.claude/sessions` |
+| **concluído** | o Claude terminou o que fazia, há menos de 5 min | as sessões saíram de `busy` sem passar a esperar você |
 | **ocioso** | nada acima, há mais de 3 s | |
+
+O **concluído** começa com um pulinho e um ✓ acima da cabeça, com olhos em arco (^ ^), e depois só respira devagar. Ele dura até 5 min; se nesse tempo o Claude voltar a trabalhar (outra mensagem, na mesma sessão ou em outra), o cloud volta para trabalhando, e os 5 min recomeçam quando ele terminar de novo. Passados os 5 min sem nada, o cloud volta a dormir (ocioso, com o zZ). Uma sessão que esperava você e foi cancelada não conta como concluída. No `--demo-ciclo`, o concluído dura um cenário em vez de 5 min.
 
 A cada troca de estado, o cloud ganha uma cor sorteada (matiz livre, saturação e luminosidade limitadas para ler bem sobre o fundo escuro). Para fixar uma cor: `--cor-mascote "#3D7A4F"`.
 

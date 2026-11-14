@@ -52,6 +52,7 @@ class Demo:
     _CENARIOS = [
         ("ocioso", 42, timedelta(hours=2, minutes=14), ["idle"]),
         ("trabalhando", 42, timedelta(hours=2, minutes=14), ["busy", "idle", "busy"]),
+        ("concluido", 42, timedelta(hours=2, minutes=14), ["idle", "idle", "idle"]),  # as que trabalhavam terminaram
         ("esperando", 42, timedelta(hours=2, minutes=14), ["busy", "waiting", "idle"]),
         ("alerta", 93, timedelta(minutes=30), ["busy", "idle"]),
         ("reset", 4, timedelta(hours=5), ["idle"]),  # o horário de reset avança: o cloud comemora

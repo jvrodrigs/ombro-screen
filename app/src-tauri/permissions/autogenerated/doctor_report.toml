@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-doctor-report"
+description = "Enables the doctor_report command without any pre-configured scope."
+commands.allow = ["doctor_report"]
+
+[[permission]]
+identifier = "deny-doctor-report"
+description = "Denies the doctor_report command without any pre-configured scope."
+commands.deny = ["doctor_report"]

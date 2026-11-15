@@ -1,0 +1,9 @@
+Textos de licença dos componentes que o python-build-standalone liga no CPython embarcado no Ombro.app.
+
+Origem: python/licenses/ de cpython-3.14.10+20261110-aarch64-apple-darwin-pgo+lto-full.tar.zst
+        (release 20261110 de https://github.com/astral-sh/python-build-standalone;
+        sha256 d14291578918474f3b02d2530c90dcba30efa7ccc0e3b01ae1bfeebbbbcd9f6a).
+O runtime do app (install_only_stripped) é a mesma build. Ficaram de fora só os do tkinter (Tcl, Tix, X11),
+que o build remove. Quais módulos usam cada um: o PYTHON.json da mesma distribuição.
+
+Ao trocar o runtime (PBS_TAG em app/scripts/build_backend.py), troque também estes textos: o build confere a tag.

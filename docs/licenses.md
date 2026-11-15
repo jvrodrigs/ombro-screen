@@ -1,0 +1,55 @@
+# Licenças e redistribuição
+
+O que o Ombro redistribui, sob quais licenças, e o que ainda precisa de decisão antes de uma release pública.
+
+## O Ombro
+
+O repositório ainda **não tem um arquivo LICENSE**. Sem ele, o código não é open source no sentido legal (ninguém
+recebe permissão para usar, modificar ou redistribuir), e o Ombro.app não deve ser publicado. A escolha é de quem
+mantém o projeto; o que pesa nela:
+
+- Com uma licença permissiva (MIT, Apache-2.0), o Ombro.app continua sem embarcar a biblioteca GPL da tela (abaixo).
+- Com a GPL-3.0, daria para embarcar a turing-smart-screen-python (e com ela as revisões B, C, D e WeAct no app),
+  cumprindo as obrigações da GPL na distribuição (código-fonte correspondente e o texto da licença).
+
+## A biblioteca da tela (turing-smart-screen-python, GPL-3.0)
+
+Não vai no Ombro.app. No Mac, a revisão A (a Turing de 3,5") é atendida pelo `usb_direto.py`, que é código do
+próprio Ombro e fala com o endpoint USB sem a biblioteca. As outras revisões continuam funcionando pelo Ombro do
+repositório, com a biblioteca clonada à parte, como antes (README, seção 1). Rodar a biblioteca em outro processo não
+foi usado como justificativa para embarcá-la: ela simplesmente não é distribuída.
+
+## O desenho do cloud
+
+O README e o `dados_cloud.py` dizem que o contorno e os olhos do cloud foram medidos na "KEY de formas dos avatares
+do Grok Bot". O ícone da Menu Bar e a marca do app são gerados a partir desses mesmos pontos. **Antes de uma release
+pública, confirme que esse desenho pode ser redistribuído** (de quem é a KEY, sob quais termos) ou substitua-o por um
+desenho próprio. Isso não é uma questão de código e não foi decidido aqui.
+
+## O que vai dentro do Ombro.app
+
+A cada build, `app/scripts/build_backend.py` monta `Contents/Resources/licenses/` com o `THIRD_PARTY_NOTICES.md`
+(cada componente, a versão e a licença) e o texto da licença de cada um, tirado do próprio pacote. O build falha se
+um componente não tiver texto. No app: Ajustes > Sobre > Avisos de terceiros.
+
+| Grupo | Licenças | Observações |
+| --- | --- | --- |
+| CPython 3.14 (python-build-standalone) | PSF-2.0 | |
+| O que o python-build-standalone liga no CPython | OpenSSL 3 (Apache-2.0), SQLite (domínio público), expat, libffi (MIT), mpdecimal (BSD-2), liblzma (0BSD), bzip2, ncurses (X11), libedit, libuuid, zstd (BSD-3), zlib e zlib-ng (Zlib) | o `LICENSE.txt` do CPython não traz esses avisos: os textos vêm da distribuição "full" da mesma release e ficam em `app/backend/licenses/python-build-standalone/` (origem e hash em `ORIGEM.txt`). Os do tkinter (Tcl, Tix, X11) ficam de fora, porque o build remove o tkinter |
+| Pillow | MIT-CMU | o arquivo de licença dele cobre as bibliotecas de imagem que o wheel embute (FreeType, libjpeg-turbo, libpng, libtiff, libwebp, HarfBuzz, OpenJPEG, LittleCMS, Brotli, libavif, zlib-ng, libxcb…) |
+| numpy | BSD-3-Clause e outras permissivas | o wheel traz OpenBLAS (BSD-3), libgfortran e libgcc_s (GPL-3.0 com a exceção de runtime do GCC, que permite a redistribuição) e libquadmath (LGPL-2.1-or-later) |
+| libusb 1.0.30 (via libusb-package) | LGPL-2.1-or-later | biblioteca dinâmica, sem modificação; o texto completo da LGPL-2.1 vai junto (`app/backend/licenses/LGPL-2.1.txt`, da gnu.org) e o código-fonte está em <https://github.com/libusb/libusb> |
+| psutil, pyusb, pyserial | BSD-3-Clause | o wheel do pyserial não traz o texto: o build gera o BSD-3 padrão com o copyright do próprio pyserial |
+| importlib_resources, libusb-package | Apache-2.0 | |
+| 249 crates Rust do app | MIT, Apache-2.0, BSD, Zlib, Unicode-3.0, MPL-2.0 (5 crates do Servo) | nenhum GPL/LGPL/AGPL; os 18 que não publicam o arquivo de licença recebem o texto padrão da licença declarada, com os autores do Cargo.toml |
+| React, React DOM, scheduler, @tauri-apps/api | MIT; Apache-2.0 ou MIT | |
+| Lucide (ícones da interface) | ISC | |
+| JetBrains Mono (fonte da telinha) | OFL-1.1 | |
+
+Conferir de novo depois de mudar dependências: rodar o build (ele refaz a lista) e, para os crates,
+`cargo tree -e normal --target aarch64-apple-darwin` dentro de `app/src-tauri`.
+
+## O que não vai
+
+O `macmon` (opcional, do Homebrew) não é redistribuído: se estiver instalado, o Ombro o usa. O Homebrew, o Xcode e as
+ferramentas de build também não.

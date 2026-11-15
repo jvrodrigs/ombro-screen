@@ -1,0 +1,75 @@
+name: app
+
+# O Ombro.app (app/): interface (TypeScript, Vitest) e o lado Rust (clippy, testes). Só roda quando algo do app
+# muda; os testes do backend Python seguem no tests.yml. O empacotamento (mais caro) fica no release.yml.
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/app.yml"]
+  pull_request:
+    paths: ["app/**", ".github/workflows/app.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  interface:
+    name: Interface (tipos e testes)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Tipos (tsc)
+        run: npm run typecheck
+      - name: Testes (Vitest, com mocks do contrato IPC)
+        run: npm test
+      - name: Build da interface
+        run: npm run build
+
+  rust:
+    name: Rust (clippy e testes)
+    # macOS: o app só existe para macOS, e os testes usam o socket Unix e o repositório de verdade
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Interface (o Tauri embute app/dist ao compilar)
+        working-directory: app
+        run: npm ci && npm run build
+      - name: Rust estável, com clippy e rustfmt
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/src-tauri/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - name: Formatação
+        working-directory: app/src-tauri
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: app/src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Testes
+        working-directory: app/src-tauri
+        run: cargo test --locked

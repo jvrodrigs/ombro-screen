@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-display-set-brightness"
+description = "Enables the display_set_brightness command without any pre-configured scope."
+commands.allow = ["display_set_brightness"]
+
+[[permission]]
+identifier = "deny-display-set-brightness"
+description = "Denies the display_set_brightness command without any pre-configured scope."
+commands.deny = ["display_set_brightness"]

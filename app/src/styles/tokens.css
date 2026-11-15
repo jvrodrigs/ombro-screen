@@ -1,0 +1,70 @@
+/* Tokens de design do Ombro.app: a mesma paleta da telinha (render.py), num lugar só.
+   Só tema escuro: um tema claro só entra quando estiver completo. */
+:root {
+  color-scheme: dark;
+
+  /* superfícies */
+  --bg: #101010;
+  --surface: #191919;
+  --surface-raised: #232323;
+  --surface-hover: #2a2a2a;
+  --border: #303030;
+  --border-strong: #3d3d3d;
+
+  /* texto */
+  --text: #e5e5e5;
+  --text-secondary: #a5a5a5;
+  --text-muted: #858585;
+
+  /* acentos */
+  --orange: #df8559;
+  --blue: #79a9d8;
+  --green: #83b596;
+  --warning: #e7af5e;
+  --critical: #e56b6b;
+
+  /* fundos translúcidos dos acentos (selos, avisos) */
+  --orange-soft: rgb(223 133 89 / 14%);
+  --blue-soft: rgb(121 169 216 / 14%);
+  --green-soft: rgb(131 181 150 / 14%);
+  --warning-soft: rgb(231 175 94 / 14%);
+  --critical-soft: rgb(229 107 107 / 14%);
+
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--blue);
+
+  /* tipografia: as do sistema (SF Pro e SF Mono), nada embarcado */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 20px;
+  --fs-2xl: 26px;
+
+  /* espaçamento (múltiplos de 4) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+
+  --sidebar-width: 208px;
+  --titlebar-height: 40px;
+  --content-max: 1040px;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur: 140ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+  }
+}

@@ -45,11 +45,27 @@ class Comando(IntEnum):
     DISPLAY_BITMAP = 197
 
 
+def _libusb_embarcada():
+    """A libusb do pacote libusb-package (a que vai dentro do Ombro.app); None se o pacote não está instalado."""
+    try:
+        import libusb_package
+    except ImportError:
+        return None
+    caminho = libusb_package.get_library_path()
+    return str(caminho) if caminho and Path(caminho).exists() else None
+
+
 def _backend():
-    """Backend do libusb; no Mac, o ctypes nem sempre acha a biblioteca do Homebrew sozinho."""
+    """Backend do libusb; no Mac, o ctypes nem sempre acha a biblioteca do Homebrew sozinho.
+
+    Ordem: a embarcada (libusb-package, no Ombro.app: o app não depende do que o Mac tem instalado), a que o
+    sistema acha e as do Homebrew."""
     import usb.backend.libusb1 as libusb1
 
-    be = libusb1.get_backend()
+    embarcada = _libusb_embarcada()
+    be = libusb1.get_backend(find_library=lambda _nome, c=embarcada: c) if embarcada else None
+    if be is None:
+        be = libusb1.get_backend()
     for caminho in LIBUSB_HOMEBREW:
         if be is not None:
             break

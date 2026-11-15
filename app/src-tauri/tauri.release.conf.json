@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "bundle-resources/runtime": "runtime",
+      "bundle-resources/backend": "backend",
+      "bundle-resources/licenses": "licenses"
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "hardenedRuntime": true
+    }
+  }
+}

@@ -1,4 +1,5 @@
 """usb_direto.py com um dispositivo USB falso: bytes exatos de cada comando, um envio por comando."""
+import importlib.util
 import unittest
 from unittest import mock
 
@@ -169,3 +170,35 @@ class TelaUSBComUsbDireto(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LibusbEmbarcada(unittest.TestCase):
+    """No Ombro.app não há Homebrew: a libusb vem do pacote libusb-package."""
+
+    @unittest.skipUnless(importlib.util.find_spec("usb"), "sem o pyusb (a CI no Linux não o instala)")
+    def test_a_embarcada_vem_antes_da_do_sistema(self):
+        import usb.backend.libusb1 as libusb1
+
+        chamadas = []
+
+        def get_backend(find_library=None):
+            chamadas.append(find_library("usb-1.0") if find_library else None)
+            return object()
+
+        with mock.patch.object(libusb1, "get_backend", side_effect=get_backend), \
+                mock.patch.object(usb_direto, "_libusb_embarcada", return_value="/app/libusb-1.0.dylib"):
+            self.assertIsNotNone(usb_direto._backend())
+        self.assertEqual(chamadas, ["/app/libusb-1.0.dylib"])  # nem chega a procurar a do sistema
+
+    @unittest.skipUnless(importlib.util.find_spec("usb"), "sem o pyusb (a CI no Linux não o instala)")
+    def test_sem_a_embarcada_procura_a_do_sistema(self):
+        import usb.backend.libusb1 as libusb1
+
+        with mock.patch.object(libusb1, "get_backend", return_value=object()) as gb, \
+                mock.patch.object(usb_direto, "_libusb_embarcada", return_value=None):
+            self.assertIsNotNone(usb_direto._backend())
+        gb.assert_called_once_with()
+
+    def test_sem_o_pacote_e_none(self):
+        with mock.patch.dict("sys.modules", {"libusb_package": None}):
+            self.assertIsNone(usb_direto._libusb_embarcada())

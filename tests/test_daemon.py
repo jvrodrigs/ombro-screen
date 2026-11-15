@@ -4,6 +4,7 @@ Nada aqui precisa de tela USB, de agentes instalados nem de rede: os processos r
 pasta temporária (OMBRO_SCREEN_DIR), com o simulador numa porta livre.
 """
 import json
+from datetime import datetime, timedelta
 import os
 import signal
 import socket
@@ -23,7 +24,11 @@ from core.models import Activity, AgentSession, Attention
 from ombro import ipc, preferencias, processos
 from ombro.app import Aplicacao, Indisponivel, ao_vivo
 from ombro.arquivos import ArquivoMudou, assinatura, gravar_atomico
-from ombro.daemon import Daemon, SaidaIndisponivel, status_da_sessao
+from coletores.hardware import Hardware
+from core.models import ProviderSnapshot, QuotaReport, QuotaWindow, UsageMetrics
+from ombro.daemon import (
+    Daemon, SaidaIndisponivel, quotas_do_snapshot, sistema_do_hardware, status_da_sessao, uso_do_snapshot,
+)
 from ombro.instancia import OutraInstancia, Trava, quem_esta_rodando
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -428,7 +433,12 @@ class ProcessoInteiro(Temporaria):
             if ipc.chamar("providers.list", caminho=sock)["providers"]:
                 break
             time.sleep(0.1)
-        self.assertEqual([x["id"] for x in ipc.chamar("providers.list", caminho=sock)["providers"]], ["claude", "codex", "cursor"])
+        provs = {x["id"]: x for x in ipc.chamar("providers.list", caminho=sock)["providers"]}
+        self.assertEqual(list(provs), ["claude", "codex", "cursor"])
+        self.assertEqual([w["id"] for w in provs["claude"]["quotas"]["windows"]], ["5h", "7d"])  # o demo do Claude tem limites
+        self.assertIsNotNone(provs["claude"]["usage"]["total_tokens"])
+        self.assertIsNone(provs["codex"]["quotas"])  # o Codex não informa limites: nada inventado
+        self.assertIsNone(provs["codex"]["usage"])
         for _ in range(50):  # e o primeiro quadro, logo depois
             if ipc.chamar("display.preview", caminho=sock)["available"]:
                 break
@@ -493,3 +503,33 @@ class ProcessoInteiro(Temporaria):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CamposDoApp(unittest.TestCase):
+    """Campos que o Ombro.app usa (acrescentados na v1 do protocolo): só o que o provider entregou."""
+
+    def test_quotas_e_uso(self):
+        agora = datetime(2026, 11, 15, 10, 0)
+        snap = ProviderSnapshot("claude", agora,
+                                usage=UsageMetrics("today", input_tokens=900, output_tokens=100, messages=4),
+                                quotas=QuotaReport("statusline", agora, stale=True, windows=(
+                                    QuotaWindow("5h", "Sessão", 42.0, agora + timedelta(hours=2)),
+                                    QuotaWindow("7d", "Semana", None, None))))
+        q = quotas_do_snapshot(snap)
+        self.assertEqual(q["source"], "statusline")
+        self.assertTrue(q["stale"])
+        self.assertEqual(q["windows"][0], {"id": "5h", "label": "Sessão", "used_percent": 42.0,
+                                           "resets_at": "2026-11-15T12:00:00"})
+        self.assertIsNone(q["windows"][1]["used_percent"])  # sem número, sem 0 inventado
+        u = uso_do_snapshot(snap)
+        self.assertEqual((u["total_tokens"], u["output_tokens"], u["messages"]), (1000, 100, 4))
+        vazio = ProviderSnapshot("codex", agora)
+        self.assertIsNone(quotas_do_snapshot(vazio))
+        self.assertIsNone(uso_do_snapshot(vazio))
+        self.assertIsNone(quotas_do_snapshot(None))
+
+    def test_sistema(self):
+        self.assertIsNone(sistema_do_hardware(None))
+        self.assertIsNone(sistema_do_hardware(Hardware(disponivel=False)))
+        s = sistema_do_hardware(Hardware(cpu_pct=12.345, ram_usada=8, ram_total=16, pressao_memoria="atencao"))
+        self.assertEqual(s, {"cpu_percent": 12.3, "ram_used_bytes": 8, "ram_total_bytes": 16, "memory_pressure": "warning"})

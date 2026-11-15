@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Ombro",
+  "version": "../package.json",
+  "identifier": "io.github.jvrodrigs.ombro",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Ombro",
+        "width": 1100,
+        "height": 740,
+        "minWidth": 780,
+        "minHeight": 540,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#101010",
+        "theme": "Dark",
+        "visible": false
+      }
+    ],
+    "macOSPrivateApi": false,
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      "freezePrototype": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Monitor local de agentes de IA e da telinha USB",
+    "longDescription": "Ombro acompanha Claude Code, Codex e Cursor e o seu Mac, na janela, na Menu Bar e numa telinha USB de 480x320. Tudo local: sem conta, sem nuvem, sem telemetria.",
+    "copyright": "Ombro Screen contributors",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

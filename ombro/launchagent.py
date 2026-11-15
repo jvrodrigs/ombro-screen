@@ -67,7 +67,8 @@ def arquivo_de_log() -> Path:
 
 # ---------- o plist ----------
 def gerar(python: Optional[str] = None, extras: Sequence[str] = (), raiz: Path = RAIZ) -> dict:
-    env = {"PATH": PATH_PADRAO, "PYTHONUNBUFFERED": "1"}
+    # sem .pyc gravado ao lado do código: no Ombro.app ele fica dentro do bundle assinado
+    env = {"PATH": PATH_PADRAO, "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1"}
     if os.environ.get("OMBRO_SCREEN_DIR"):
         env["OMBRO_SCREEN_DIR"] = str(pasta_ombro())  # já expandido: o launchd não conhece ~
     log_ = str(arquivo_de_log())

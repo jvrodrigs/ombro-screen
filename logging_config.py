@@ -3,7 +3,8 @@
   2026-11-14 12:30:00 INFO [ombro.usb] tela USB conectada (USB direto)
 
 Nível INFO por padrão; DEBUG com `--debug`. Cada parte usa um logger filho de "ombro":
-ombro.main, ombro.config, ombro.claude, ombro.hardware, ombro.render, ombro.usb, ombro.simulador.
+ombro.main, ombro.config, ombro.claude, ombro.hardware, ombro.render, ombro.usb, ombro.simulador e, no Hub,
+ombro.daemon, ombro.ipc, ombro.integrations, ombro.service e ombro.doctor.
 
 Regras que valem para todos:
   - nada a cada quadro: problemas que se repetem entram uma vez (SoQuandoMuda) e a volta ao

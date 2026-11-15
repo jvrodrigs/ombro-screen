@@ -28,7 +28,12 @@ vazio) em todos os eventos.
 
 ## Como ligar
 
-Em `~/.cursor/hooks.json` (todos os projetos) ou em `.cursor/hooks.json` de um projeto, **junto** dos
+```bash
+python3 -m ombro integrations install cursor --dry-run
+python3 -m ombro integrations install cursor
+```
+
+Ou à mão: em `~/.cursor/hooks.json` (todos os projetos) ou em `.cursor/hooks.json` de um projeto, **junto** dos
 hooks que você já tem. O Cursor recarrega o arquivo ao salvar.
 
 ```json

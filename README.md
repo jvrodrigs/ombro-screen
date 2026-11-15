@@ -180,45 +180,43 @@ No USB direto (Mac Apple Silicon, tela ligada por hub) o envio medido foi de ≈
 
 ## 6. Deixar rodando sempre (opcional)
 
-Um LaunchAgent inicia o Ombro quando você entra no Mac e o reinicia se ele cair. Salve como `~/Library/LaunchAgents/com.ombro-screen.plist`, trocando `/CAMINHO` pela pasta do projeto e `SEU_USUARIO` pelo seu usuário (o launchd não entende `~` nesses caminhos):
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.ombro-screen</string>
-  <key>ProgramArguments</key><array>
-    <string>/CAMINHO/ombro-screen/.venv/bin/python</string>
-    <string>/CAMINHO/ombro-screen/tela.py</string>
-    <string>--usb</string>
-  </array>
-  <key>WorkingDirectory</key><string>/CAMINHO/ombro-screen</string>
-  <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string>
-    <key>PYTHONUNBUFFERED</key><string>1</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>/Users/SEU_USUARIO/Library/Logs/ombro-screen.log</string>
-  <key>StandardErrorPath</key><string>/Users/SEU_USUARIO/Library/Logs/ombro-screen.log</string>
-</dict></plist>
-```
-
-- `StandardOutPath` e `StandardErrorPath`: sem terminal, os avisos (tela desconectada, reconexão) vão para esse arquivo. `PYTHONUNBUFFERED` faz eles aparecerem na hora.
-- `ThrottleInterval`: se o processo cair, espera 10 s antes de reiniciar, em vez de ficar reiniciando sem parar.
+O `ombrod` é o Ombro como serviço: o mesmo laço do `tela.py` (coleta, cloud, layout, tela USB), sem terminal
+aberto, com a CLI `python3 -m ombro` para consultar e ajustar (seção 10). Um LaunchAgent o inicia quando você
+entra no Mac e o reinicia se ele cair:
 
 ```bash
-plutil -lint ~/Library/LaunchAgents/com.ombro-screen.plist                      # confere o arquivo
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ombro-screen.plist  # liga (e já inicia)
-tail -f ~/Library/Logs/ombro-screen.log                                         # avisos
-launchctl kickstart -k gui/$(id -u)/com.ombro-screen                            # reinicia (depois de mudar o código)
-launchctl bootout gui/$(id -u)/com.ombro-screen                                 # desliga
+python3 -m ombro service install --usb --dry-run   # mostra o plist e os passos, sem mudar nada
+python3 -m ombro service install --usb             # grava ~/Library/LaunchAgents/com.ombro-screen.daemon.plist e liga
+python3 -m ombro service status                    # carregado? PID? última saída?
+python3 -m ombro service restart                   # depois de mudar o código
+python3 -m ombro service stop                      # desliga (volta no próximo login, ou com start)
+python3 -m ombro service uninstall                 # desliga e apaga só o plist do Ombro
+tail -f ~/Library/Logs/ombro-screen/ombrod.log     # avisos
 ```
 
-Só um Ombro pode falar com a tela por vez: desligue o LaunchAgent antes de rodar `tela.py --usb` no terminal. Ele roda o código que estiver na pasta (inclusive o branch atual) e o `.venv` dela; se o Homebrew trocar a versão do Python, recrie o `.venv`.
+- É do seu usuário (`gui/<uid>`): sem `sudo`, sem LaunchDaemon, nunca como root.
+- O plist leva caminhos absolutos (pastas com espaço funcionam) e roda o código e o python desta pasta
+  (o que rodou o `install`; outro com `--python`). Se o Homebrew trocar a versão do Python, recrie o `.venv` e
+  rode o `install` de novo.
+- `--usb` vai para a linha de comando do ombrod; sem ele, vale o `usb` do `config.json`. As outras opções
+  ficam melhor no `config.json` (seção 7).
+- Só um Ombro ao vivo por vez: com o serviço ligado, `python3 tela.py --usb` recusa e diz quem está rodando;
+  `--demo` e `--png` continuam funcionando ao lado.
 
-Opções do Ombro (brilho, cor do cloud etc.) podem ficar no arquivo de configuração (seção 7), em vez de mais linhas `<string>` no `ProgramArguments`. Para investigar um problema, acrescente `<string>--debug</string>` ao `ProgramArguments` e reinicie com o `kickstart` (seção 8).
+### Migrar do LaunchAgent antigo
+
+Antes da Fase 4, o README ensinava um LaunchAgent `com.ombro-screen` que roda `tela.py --usb`. Os dois juntos
+disputariam a tela, então o `install` recusa enquanto o antigo existe, e o `ombrod` espera ele sair. Para trocar:
+
+```bash
+python3 -m ombro service migrate --dry-run   # mostra o que vai fazer
+python3 -m ombro service migrate             # guarda o plist antigo, desliga-o e liga o novo
+python3 -m ombro service rollback            # se quiser voltar: desliga o novo e devolve o antigo
+```
+
+O `migrate` leva as opções do antigo que o ombrod entende (`--usb`, `--brilho 40`...), guarda o plist antigo em
+`~/.ombro-screen/backups/launchagents/` e o tira de `~/Library/LaunchAgents` (para não voltar no próximo login).
+Se o novo não ligar, ele devolve o antigo sozinho. Nada muda sem você rodar o comando.
 
 ## 7. Arquivo de configuração (opcional)
 
@@ -252,14 +250,16 @@ Os avisos saem no terminal (ou, no LaunchAgent, em `~/Library/Logs/ombro-screen.
 ```
 
 - `python3 tela.py --usb --debug` mostra também os detalhes (nível DEBUG): a configuração resolvida, o traceback de cada falha e, a cada minuto, um resumo do laço (quadros por segundo, tempo de desenho e quantos KiB foram para a tela).
-- Cada parte tem o seu nome: `ombro.main`, `ombro.config`, `ombro.claude`, `ombro.hardware`, `ombro.render`, `ombro.usb`, `ombro.simulador`, e, no núcleo, `ombro.providers`, `ombro.estado`, `ombro.eventos` e `ombro.persistencia`.
+- Cada parte tem o seu nome: `ombro.main`, `ombro.config`, `ombro.claude`, `ombro.hardware`, `ombro.render`, `ombro.usb`, `ombro.simulador`, no núcleo, `ombro.providers`, `ombro.estado`, `ombro.eventos` e `ombro.persistencia`, e, no Hub, `ombro.daemon`, `ombro.ipc`, `ombro.integrations` e `ombro.service`.
+- `python3 -m ombro doctor` confere a instalação inteira sem mudar nada (seção 10 e [docs/troubleshooting.md](docs/troubleshooting.md)).
 - Um problema que se repete (porta ocupada, arquivo estranho, macmon fora) entra no log uma vez, e a volta ao normal entra uma vez; nada é registrado a cada quadro.
 - O log não guarda conteúdo de prompts, respostas ou arquivos do Claude Code, nomes de projeto nem credenciais; a sua pasta pessoal aparece como `~`.
 
 | O que aparece | O que fazer |
 | --- | --- |
 | `tela USB não encontrada` | Confira o cabo e o hub (`ls /dev/cu.*`); o Ombro tenta de novo sozinho a cada 3 s. |
-| `não consegui iniciar a tela USB (... busy ...)` | Outro programa está com a tela: o app do fabricante ou outro Ombro (o LaunchAgent, por exemplo). |
+| `não consegui iniciar a tela USB (... busy ...)` | Outro programa está com a tela: o app do fabricante ou um Ombro antigo (o LaunchAgent de antes da Fase 4: seção 6). |
+| `já existe um Ombro rodando (...)` | Só um Ombro ao vivo por vez: pare o outro (`python3 -m ombro service stop`) ou use `--demo`/`--png`. |
 | `usando a porta serial, que no macOS costuma embaralhar a imagem` | Falta o `pyusb` ou o `libusb` (seção 5). |
 | `sem dados do uso do plano` | Nenhuma fonte de uso de 5 h e da semana ainda (seção 4). |
 | `o uso do plano (/usage) tem mais de 30 min` | Rode `/usage` no Claude Code ou ligue o `statusline_tap.py` (seção 4). |
@@ -279,9 +279,18 @@ python3 tela.py --layout multiagente               # visão geral (no simulador;
 python3 tela.py --layout multiagente --demo        # com dados inventados, para ver como fica
 ```
 
-O Claude Code funciona sem configurar nada. Codex e Cursor precisam dos **hooks do Ombro**, que você liga
-à mão (o Ombro nunca mexe nas suas configurações): veja [Claude Code](docs/providers/claude.md),
-[Codex](docs/providers/codex.md) e [Cursor](docs/providers/cursor.md). Visões, rotação, prioridades e o
+O Claude Code funciona sem configurar nada. Codex e Cursor precisam dos **hooks do Ombro**, que só são
+instalados quando você pede (o Ombro nunca mexe nas suas configurações sozinho):
+
+```bash
+python3 -m ombro integrations list                      # o estado dos três
+python3 -m ombro integrations install codex --dry-run   # o que mudaria no ~/.codex/hooks.json
+python3 -m ombro integrations install codex             # com backup; desfaz com: integrations rollback codex
+```
+
+A instalação muda só as entradas do Ombro (o resto do arquivo fica), não duplica nada ao repetir e guarda um
+backup antes; detalhes em [docs/integrations.md](docs/integrations.md). Para ligar à mão, ou entender cada
+evento: [Claude Code](docs/providers/claude.md), [Codex](docs/providers/codex.md) e [Cursor](docs/providers/cursor.md). Visões, rotação, prioridades e o
 transporte dos eventos: [docs/multi-agent.md](docs/multi-agent.md).
 
 | O que o Ombro mostra | Claude Code | Codex | Cursor |
@@ -302,6 +311,51 @@ transporte dos eventos: [docs/multi-agent.md](docs/multi-agent.md).
   limites aos hooks. O App Server do Codex não serve a um monitor passivo (ver [docs/providers/codex.md](docs/providers/codex.md)).
 - **Conferir os hooks:** rode o Ombro com `--debug` e procure `eventos dos hooks do … chegando`.
 
+## 10. Ombro Hub: o ombrod e a CLI
+
+```bash
+python3 ombrod.py                 # o serviço num terminal (as mesmas opções do tela.py, menos --png); ou a seção 6
+python3 -m ombro status           # de outro terminal (ou python3 /caminho/ombro-screen/ombro status, de qualquer pasta)
+```
+
+```
+Ombro Hub
+
+Daemon:        running
+Saúde:         healthy
+Tempo rodando: 2h 14m 3s
+Display:       connected (usb)
+Layout:        minimal-v2
+Providers:     3 configurados, 2 instalados, 2 operacionais
+Sessões:       3
+Aguardando:    1
+Armazenamento: persistent
+IPC:           v1 (ombrod 0.4.0, PID 4321)
+```
+
+| Comando | O que mostra ou faz |
+| --- | --- |
+| `status` | estado do ombrod, tela, providers, sessões, armazenamento e a versão da IPC |
+| `providers` | cada agente: ligado, instalado, integração, se há dados, estado e a última atualização |
+| `sessions [--provider codex] [--full]` | as sessões conhecidas (projeto = nome da pasta, nunca o caminho) |
+| `display` | tela: tipo, conexão, revisão, transporte, brilho, orientação, layout, último quadro e erro |
+| `display brightness 40 [--persist]` | brilho na hora (`--persist` grava no config.json) |
+| `display layout multiagente [--persist]` | troca o layout na hora (de ou para o `classico`, só ao reiniciar) |
+| `display preview quadro.png` | o último quadro da tela, sem desenhar de novo |
+| `config` / `config set brilho 40` | a configuração em uso, e as preferências que podem mudar pela IPC |
+| `health` | a saúde de cada componente |
+| `integrations ...` | os hooks dos agentes (seção 9) |
+| `service ...` | o LaunchAgent (seção 6) |
+| `doctor [--json] [--report]` | diagnóstico completo, sem mudar nada |
+
+Todos aceitam `--json` (saída estável). Sem o ombrod, a CLI diz `O ombrod não está rodando.` e sai com 3, sem
+iniciar nada. A CLI só fala com o ombrod pelo socket local `~/.ombro-screen/run/ombro.sock` (protocolo
+versionado, sem rede e só para o seu usuário: [docs/ipc.md](docs/ipc.md)); ela não abre o banco, a tela nem os
+agentes por conta própria. É a mesma interface que o futuro Ombro.app vai usar.
+
+O `tela.py` continua igual para desenvolver e testar (`--demo`, `--png`, o simulador): não precisa do ombrod nem
+da IPC.
+
 ## Arquitetura
 
 Os dados dos agentes passam por um núcleo que não depende da tela (`core/`): um **provider** por
@@ -315,13 +369,15 @@ tokens), apaga o que tem mais de 7 dias e nunca impede o Ombro de rodar: se der 
 Ombro segue em memória e avisa no log. `--demo` e `--png` não usam o banco.
 
 Detalhes, regras e como adicionar um provider: [docs/architecture.md](docs/architecture.md). Os
-agentes, os hooks e o layout multiagente estão na seção 9.
+agentes, os hooks e o layout multiagente estão na seção 9; o ombrod, a IPC e a CLI, na seção 10.
 
 ## Arquivos
 
 | Arquivo | O que faz |
 | --- | --- |
-| `tela.py` | Ponto de entrada: laço, opções, simulador ou USB |
+| `tela.py` | Ponto de entrada de sempre: opções, simulador, USB ou `--png` (o laço está em `ombro/app.py`) |
+| `ombrod.py` | O Ombro como serviço local (`ombro/daemon.py`), com a IPC para a CLI |
+| `ombro/` | Ombro Hub: o laço (`app.py`), o daemon, a IPC, a CLI (`python3 -m ombro`), integrações, LaunchAgent e doctor |
 | `core/` | Núcleo sem tela: modelos, providers, estado, eventos, banco (ver `docs/architecture.md`) |
 | `providers/claude.py` | O provider do Claude Code, sobre o coletor de sempre |
 | `apresentacao.py` | Do estado do núcleo para o formato que o layout e o cloud usam |
@@ -342,7 +398,7 @@ agentes, os hooks e o layout multiagente estão na seção 9.
 | `coletores/demo.py` | Dados inventados para `--demo` e `--demo-ciclo` |
 | `statusline_tap.py` | Captura o uso de 5 h e semanal do statusline (opcional) |
 | `tests/` | Testes (`unittest`, sem dependências extras) |
-| `scripts/` | `benchmark.py` (quanto custa cada parte) e `quadros_referencia.py` (confere que nenhum pixel mudou) |
+| `scripts/` | `benchmark.py` (quanto custa cada parte), `benchmark_hub.py` (ombrod, IPC e CLI) e `quadros_referencia.py` (confere que nenhum pixel mudou) |
 | `.github/workflows/tests.yml` | CI: os testes do Python 3.9 ao 3.14 e o lint, a cada push e pull request |
 
 Se algum arquivo do Claude Code estiver estranho, o erro vira um aviso no terminal e a tela segue; campos sem dado aparecem como "—".
@@ -357,7 +413,7 @@ Fonte: JetBrains Mono (licença OFL, em `fontes/`). A biblioteca da tela (turing
 python3 -m unittest discover -s tests -t .
 ```
 
-Não precisam da tela, da biblioteca da tela, do macmon nem do Claude Code: a `TelaUSB` e o envio direto pelo USB são testados com dispositivos falsos, o hardware com um psutil falso, e o coletor do Claude com pastas temporárias. Nada lê os seus arquivos de verdade.
+Não precisam da tela, da biblioteca da tela, do macmon nem do Claude Code: a `TelaUSB` e o envio direto pelo USB são testados com dispositivos falsos, o hardware com um psutil falso, e o coletor do Claude com pastas temporárias. Nada lê os seus arquivos de verdade. O ombrod, a IPC e a CLI rodam de verdade (subprocessos com `--demo` numa pasta temporária); as integrações usam um HOME temporário e o LaunchAgent, um `launchctl` falso: nenhum teste instala hooks ou serviços.
 
 **CI:** o GitHub Actions (`.github/workflows/tests.yml`) roda os testes no Python 3.9, 3.10, 3.11, 3.12, 3.13 e 3.14 (Ubuntu, sem hardware) e o lint (`ruff check --select F,E9 .`) a cada push e pull request.
 
@@ -369,3 +425,5 @@ python3 scripts/quadros_referencia.py --comparar /tmp/antes.json   # depois: "60
 ```
 
 **Quanto custa cada parte:** `python3 scripts/benchmark.py` mede desenho, coleta, preparação do envio e o laço completo, com entradas fixas e uma tela falsa (o USB em si não entra). Compare execuções feitas na mesma máquina.
+
+**O Hub:** `python3 scripts/benchmark_hub.py` mede o início do ombrod, a latência da IPC (uma conexão, conexões novas, 8 clientes), a CLI de ponta a ponta e a CPU e a memória do ombrod ao lado do `tela.py` com o mesmo laço.

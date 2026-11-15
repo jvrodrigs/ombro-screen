@@ -29,7 +29,12 @@ Sessões são identificadas pelo `session_id` do Codex. "Trabalhando" sem nenhum
 
 ## Como ligar
 
-Em `~/.codex/hooks.json` (ou num `.codex/hooks.json` do projeto), **junto** dos hooks que você já tem:
+```bash
+python3 -m ombro integrations install codex --dry-run
+python3 -m ombro integrations install codex
+```
+
+Ou à mão: em `~/.codex/hooks.json` (ou num `.codex/hooks.json` do projeto), **junto** dos hooks que você já tem:
 
 ```json
 {

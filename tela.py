@@ -13,56 +13,36 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import platform
 import signal
 import sys
-import time
-import webbrowser
-from datetime import datetime
 from pathlib import Path
 
 AQUI = Path(__file__).resolve().parent
-INTERVALO_CLAUDE = 5.0  # segundos entre leituras dos arquivos do Claude Code
 sys.path.insert(0, str(AQUI))
 
-import psutil  # noqa: E402
-
-from apresentacao import uso_claude, uso_mascote  # noqa: E402
-from coletores.claude import ColetorClaude  # noqa: E402
-from coletores.demo import Demo  # noqa: E402
-from coletores.hardware import ColetorHardware, Hardware  # noqa: E402
 from config import (  # noqa: E402
-    LAYOUTS, NOMES_LAYOUT, PROVIDERS, TRANSPORTES, VISTAS, ConfigInvalida, OmbroConfig, pasta_ombro, resolver,
+    LAYOUTS, NOMES_LAYOUT, PROVIDERS, TRANSPORTES, VISTAS, ConfigInvalida, OmbroConfig, resolver,
 )
-from core.monitor import Monitor  # noqa: E402
-from core.resumo import resumir  # noqa: E402
-from layout_minimal_v2 import desenhar_minimal  # noqa: E402
-from layout_multiagente import SeletorDeVista, desenhar_multiagente  # noqa: E402
-from layout_ombro import desenhar_ombro  # noqa: E402
-from logging_config import SoQuandoMuda, curto, logger, sem_casa  # noqa: E402
+from logging_config import curto, logger, sem_casa  # noqa: E402
 from logging_config import configurar as configurar_logs  # noqa: E402
-from mascote import Mascote  # noqa: E402
-from providers.claude import PROVIDER_ID as CLAUDE  # noqa: E402
-from providers.claude import ClaudeProvider, FonteDemo  # noqa: E402
-from providers.codex import CodexProvider  # noqa: E402
-from providers.cursor import CursorProvider  # noqa: E402
-from providers.demo import codex_demo, cursor_demo  # noqa: E402
-from render import desenhar  # noqa: E402
+# o laço mora em ombro/app.py (o mesmo do ombrod); os nomes abaixo continuam importáveis daqui
+from ombro.app import (  # noqa: E402,F401
+    ESTATISTICAS_S, INTERVALO_CLAUDE, Aplicacao, Estatisticas, ao_vivo, banco_de_estado, montar_providers,
+    pasta_de_eventos,
+)
+from ombro.instancia import OutraInstancia, Trava  # noqa: E402
 
 log = logger("main")
 log_cfg = logger("config")
-log_hw = logger("hardware")
-log_render = logger("render")
-log_usb = logger("usb")
-ESTATISTICAS_S = 60.0  # com --debug, um resumo do laço a cada minuto
 
 
-def argumentos(argv=None) -> tuple[OmbroConfig, list[str]]:
+def argumentos(argv=None, prog: str | None = None, descricao: str | None = None) -> tuple[OmbroConfig, list[str]]:
     """Opções da linha de comando juntadas com o arquivo de configuração (ver config.py)."""
     sim_nao = argparse.BooleanOptionalAction  # --usb e --no-usb: a linha de comando desliga o que o arquivo ligou
     p = argparse.ArgumentParser(
-        description="Hardware do Mac e uso do Claude Code numa tela USB de 3,5\".",
+        prog=prog,
+        description=descricao or "Hardware do Mac e uso do Claude Code numa tela USB de 3,5\".",
         epilog="Os padrões podem ficar em ~/.ombro-screen/config.json (veja o README); a linha de comando vence o arquivo.")
     p.add_argument("--usb", action=sim_nao, help="usar a tela USB (sem isto, abre o simulador)")
     p.add_argument("--revisao", help="revisão do hardware da tela: A, B, C, D ou WEACT_A (padrão: A)")
@@ -100,58 +80,6 @@ def argumentos(argv=None) -> tuple[OmbroConfig, list[str]]:
         p.exit(2, f"{p.prog}: erro: {e}\n")
 
 
-class Estatisticas:
-    """Contadores do laço, resumidos no log de depuração a cada minuto (nunca a cada quadro)."""
-
-    def __init__(self, saida, agora: float):
-        self.saida = saida
-        self._zerar(agora)
-
-    def _zerar(self, agora: float) -> None:
-        self.inicio, self.quadros, self.pulados, self.ms_desenho = agora, 0, 0, 0.0
-        self.bytes0 = getattr(self.saida, "bytes_enviados", 0)
-
-    def contar(self, agora: float, ms_desenho: float | None) -> None:
-        if ms_desenho is None:
-            self.pulados += 1
-        else:
-            self.quadros += 1
-            self.ms_desenho += ms_desenho
-        dt = agora - self.inicio
-        if dt < ESTATISTICAS_S:
-            return
-        if log.isEnabledFor(logging.DEBUG):
-            enviados = getattr(self.saida, "bytes_enviados", 0) - self.bytes0
-            log.debug("últimos %.0f s: %d quadros (%.1f/s), desenho %.1f ms em média, %d pulados com a tela fora, "
-                      "%.0f KiB para a tela (%.1f KiB/s)", dt, self.quadros, self.quadros / dt,
-                      self.ms_desenho / max(1, self.quadros), self.pulados, enviados / 1024, enviados / 1024 / dt)
-        self._zerar(agora)
-
-
-def montar_providers(cfg: OmbroConfig, demo) -> list:
-    """Os agentes ligados na configuração (todos, por padrão). No --demo, com dados inventados."""
-    feitos = {
-        "claude": lambda: ClaudeProvider(FonteDemo(demo, cfg.demo_ciclo) if demo else ColetorClaude(cfg.claude_dir)),
-        "codex": lambda: codex_demo(cfg.demo_ciclo) if demo else CodexProvider(),
-        "cursor": lambda: cursor_demo(cfg.demo_ciclo) if demo else CursorProvider(),
-    }
-    return [feitos[pid]() for pid in cfg.providers]
-
-
-def pasta_de_eventos(cfg: OmbroConfig) -> Path | None:
-    """Onde os hooks deixam os eventos. Dados inventados e quadros avulsos não leem (nem apagam) eventos."""
-    if cfg.demo or cfg.png:
-        return None
-    return pasta_ombro() / "eventos"
-
-
-def banco_de_estado(cfg: OmbroConfig) -> Path | None:
-    """Onde gravar o estado (sessões conhecidas) entre execuções. Dados inventados e quadros avulsos não gravam."""
-    if cfg.demo or cfg.png:
-        return None
-    return pasta_ombro() / "state.db"
-
-
 def main(argv=None):
     cfg, avisos = argumentos(argv)
     configurar_logs(debug=cfg.debug)
@@ -169,128 +97,41 @@ def main(argv=None):
 
 
 def rodar(cfg: OmbroConfig) -> None:
-    demo = Demo() if cfg.demo else None
-    hw = None if demo else ColetorHardware(usar_macmon=not cfg.sem_macmon)
-    # agentes -> providers -> StateStore (e banco) -> apresentação (UsoClaude, ou o resumo de todos) -> tela
-    monitor = Monitor.montar(montar_providers(cfg, demo), banco=banco_de_estado(cfg), eventos=pasta_de_eventos(cfg))
-    nomes = [(p.provider_id, p.display_name) for p in monitor.registry]
-    multi = cfg.layout == "multiagente"
-    seletor = SeletorDeVista(cfg.vista, cfg.foco, cfg.rotacao, cfg.intervalo_rotacao)
-    resumo, uso_multi = None, None
-    avisos_hw = SoQuandoMuda(log_hw)
-    ultimo_hw = Hardware(disponivel=False)  # até a primeira leitura boa
-
-    def ler_hw():
-        nonlocal ultimo_hw
-        if demo:
-            return demo.hardware()
-        try:
-            ultimo_hw = hw.ler()
-        except (OSError, psutil.Error) as e:  # leitura do sistema que falhou: repete a anterior e segue
-            if avisos_hw.registrar("ler", logging.WARNING, "não consegui ler o hardware (%s: %s); repetindo a última leitura",
-                                   type(e).__name__, sem_casa(e)):
-                log_hw.debug("detalhes da falha do hardware", exc_info=True)
-        else:
-            avisos_hw.resolver("ler", "leitura do hardware voltou ao normal")
-        return ultimo_hw
-
-    def ler_claude():
-        """Coleta todos os agentes (e os eventos dos hooks); devolve o que os layouts de sempre usam."""
-        nonlocal resumo, uso_multi
-        monitor.atualizar_todos()
-        snap_claude = monitor.store.snapshot(CLAUDE)
-        if multi:
-            resumo = resumir(monitor.store, nomes)
-            uso_multi = uso_mascote(resumo, snap_claude)
-        return uso_claude(snap_claude)
-
-    animado, paisagem = cfg.animado, cfg.paisagem_efetiva
-    intervalo = cfg.intervalo_efetivo
-    mascote = Mascote(cor_fixa=cfg.cor_mascote_rgb)
-    if demo and cfg.demo_ciclo > 0:  # no ciclo de demonstração, o "concluído" dura um cenário, não 5 min
-        mascote.duracao_concluido = cfg.demo_ciclo
-    mascote.inicio = time.monotonic()
-
-    def desenhar_animado(h, uso, agora_mono):
-        if multi:
-            vista, foco = seletor.escolher(resumo, agora_mono)
-            return desenhar_multiagente(h, resumo, mascote, datetime.now(), agora_mono, vista, foco)
-        if cfg.layout == "minimal-v2":
-            return desenhar_minimal(h, uso, mascote, datetime.now(), agora_mono, agente=CLAUDE)
-        return desenhar_ombro(h, uso, mascote, datetime.now(), agora_mono)
-
-    def quadro(h, uso, agora_mono):
-        try:
-            if animado:
-                base = uso_multi if multi else uso  # no multiagente, o cloud reage a todos os agentes
-                mascote.ir_para(mascote.decidir(base, agora_mono), agora_mono)
-                return desenhar_animado(h, uso, agora_mono)
-            return desenhar(h, uso, paisagem_=paisagem)
-        except Exception:
-            # Um erro no desenho é bug, não falha recuperável: registra com o contexto e fecha.
-            log_render.critical("falha ao desenhar o quadro (layout %s, cloud %s); o Ombro vai fechar",
-                                NOMES_LAYOUT[cfg.layout], mascote.estado, exc_info=True)
-            raise SystemExit(1) from None
-
+    app = Aplicacao(cfg)
     if cfg.png:
-        if hw and hw.macmon:
-            time.sleep(1.5)  # espera a primeira amostra do macmon
-        ler_hw()
-        time.sleep(0.5)
-        agora = time.monotonic()
-        img = quadro(ler_hw(), ler_claude(), agora)
-        if animado:  # sem mistura com o estado anterior, e já no meio do movimento
-            mascote.anterior = None
-            img = desenhar_animado(ler_hw(), ler_claude(), agora + 1.0)
-        img.save(cfg.png)
-        log.info("quadro salvo em %s", curto(cfg.png))
+        try:
+            app.salvar_png(cfg.png)
+        finally:
+            app.fechar()
         return
 
-    if cfg.usb:
-        from saida import TelaUSB, escolher_transporte
-
-        transporte, aviso = escolher_transporte(cfg.transporte, cfg.revisao)
-        if aviso:
-            log_usb.warning(aviso)
-        saida = TelaUSB(cfg.revisao, cfg.porta, cfg.brilho, cfg.lib, paisagem=paisagem, girar=cfg.girar, transporte=transporte)
-        log.info("mandando para a tela (%s). Ctrl+C para sair.", "USB direto" if transporte == "usb" else "porta serial")
-    else:
-        from saida import Simulador
-
-        saida = Simulador(cfg.porta_sim, paisagem=paisagem)
-        log.info("simulador em %s  (Ctrl+C para sair)", saida.url)
-        if not cfg.nao_abrir:
-            webbrowser.open(saida.url)
+    # Um Ombro ao vivo por usuário: este tela.py, o ombrod ou o LaunchAgent (ver ombro/instancia.py).
+    trava = Trava("tela.py")
+    if ao_vivo(cfg):
+        try:
+            trava.adquirir()
+        except OutraInstancia as e:
+            app.fechar()
+            log.error("%s: pare-o antes (python3 -m ombro service stop, ou Ctrl+C no outro terminal), "
+                      "ou rode com --demo ou --png, que não disputam a tela nem os eventos", e)
+            raise SystemExit(75) from None  # EX_TEMPFAIL
 
     motivo = None
 
     def ao_sinal(sinal, _quadro):
         nonlocal motivo
         motivo = signal.Signals(sinal).name
+        app.acordar()
 
-    signal.signal(signal.SIGINT, ao_sinal)
-    signal.signal(signal.SIGTERM, ao_sinal)
-
-    uso, ultimo_uso = None, 0.0
-    estat = Estatisticas(saida, time.monotonic())
     try:
-        while motivo is None:
-            inicio = time.monotonic()
-            if not saida.pronta():  # tela USB fora e ainda não é hora de tentar de novo: nada a desenhar
-                estat.contar(inicio, None)
-                time.sleep(max(0.05, intervalo))
-                continue
-            if uso is None or inicio - ultimo_uso >= INTERVALO_CLAUDE or (demo and cfg.demo_ciclo > 0):
-                uso, ultimo_uso = ler_claude(), inicio  # problemas na leitura vão para o log do coletor
-            saida.mostrar(quadro(ler_hw(), uso, inicio))
-            estat.contar(time.monotonic(), (time.monotonic() - inicio) * 1000)
-            time.sleep(max(0.05, intervalo - (time.monotonic() - inicio)))
+        app.abrir_saida()
+        signal.signal(signal.SIGINT, ao_sinal)
+        signal.signal(signal.SIGTERM, ao_sinal)
+        app.laco(parar=lambda: motivo is not None)
     finally:
         log.info("encerrando%s", f" ({motivo})" if motivo else "")
-        saida.fechar()
-        monitor.fechar()
-        if hw:
-            hw.parar()
+        app.fechar()
+        trava.soltar()
 
 
 if __name__ == "__main__":

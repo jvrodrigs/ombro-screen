@@ -28,7 +28,12 @@ antes; a diferença aparece no layout multiagente.
 
 ### Como ligar
 
-Acrescente ao `~/.claude/settings.json`, **junto** dos hooks que você já tem (o Claude Code soma os
+```bash
+python3 -m ombro integrations install claude --dry-run   # mostra a mudança
+python3 -m ombro integrations install claude             # com backup (docs/integrations.md)
+```
+
+Ou à mão: acrescente ao `~/.claude/settings.json`, **junto** dos hooks que você já tem (o Claude Code soma os
 hooks de todos os arquivos de configuração; não apague os seus). Troque `/CAMINHO` pela pasta do projeto:
 
 ```json

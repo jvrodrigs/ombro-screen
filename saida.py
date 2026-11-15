@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops
 
-from logging_config import SoQuandoMuda, logger
+from logging_config import SoQuandoMuda, logger, sem_casa
 
 log = logger("usb")
 log_sim = logger("simulador")
@@ -88,6 +88,13 @@ setInterval(()=>{const n=new Image();n.onload=()=>q.src=n.src;n.src='/quadro.png
         self.servidor = ThreadingHTTPServer(("127.0.0.1", porta), Handler)
         threading.Thread(target=self.servidor.serve_forever, daemon=True).start()
         self.url = f"http://localhost:{porta}"
+        self.porta, self.tamanho = porta, (w, h)
+
+    def estado(self) -> dict:
+        """Para o `display.status` do ombrod. O simulador não tem brilho nem revisão."""
+        return {"kind": "simulator", "connection": "connected", "transport": "http", "url": self.url,
+                "width": self.tamanho[0], "height": self.tamanho[1], "orientation": "landscape" if self.tamanho[0] > self.tamanho[1]
+                else "portrait"}
 
     def pronta(self) -> bool:
         return True
@@ -157,7 +164,36 @@ class TelaUSB:
         self._avisos = SoQuandoMuda(log)
         self._ja_conectou = False
         self.bytes_enviados = 0  # pixels mandados à tela desde o início (para medir; ver o log em --debug)
+        # o estado da ligação, para o `display.status` do ombrod (só leitura de fora)
+        self.conexao = "disconnected"  # connected, disconnected (sem a tela) ou error (está lá, mas falhou)
+        self.ultimo_erro: str | None = None
+        self.conectada_em: float | None = None  # time.time() da última conexão boa
         self._conectar()
+
+    def estado(self) -> dict:
+        nomes = {0: "portrait", 1: "reverse_portrait", 2: "landscape", 3: "reverse_landscape"}
+        return {"kind": "usb", "connection": self.conexao, "transport": "usb" if self.usb_direto else "serial",
+                "revision": self.revisao, "port": "auto" if self.porta.upper() == "AUTO" else Path(self.porta).name,
+                "brightness": self.brilho, "orientation": nomes.get(int(self._orientacao), str(self._orientacao)),
+                "last_error": self.ultimo_erro, "connected_since": self.conectada_em}
+
+    def definir_brilho(self, nivel: int) -> bool:
+        """Muda o brilho agora (e nas próximas reconexões). Verdadeiro se a tela estava ligada e aceitou."""
+        self.brilho = nivel
+        if self.lcd is None:
+            return False
+        try:
+            self.lcd.SetBrightness(level=nivel)
+        except (Exception, SystemExit) as e:  # a mesma regra do envio: erro aqui vira reconexão
+            log.warning("a tela USB não aceitou o brilho (%s); tentando reconectar a cada %.0f s", self._motivo(e), RETENTAR_S)
+            self._falhou(e)
+            self._desconectar()
+            return False
+        log.info("brilho da tela: %d %%", nivel)
+        return True
+
+    def _falhou(self, e: BaseException) -> None:
+        self.conexao, self.ultimo_erro = "error", sem_casa(self._motivo(e))[:200]
 
     def _descricao(self) -> str:
         return "USB direto" if self.usb_direto else f"porta serial, revisão {self.revisao}"
@@ -184,6 +220,7 @@ class TelaUSB:
 
     def _conectar(self) -> bool:
         if not self._porta_presente():
+            self.conexao, self.ultimo_erro = "disconnected", "tela USB não encontrada"
             self._avisos.registrar("conexao", logging.WARNING,
                                    "tela USB não encontrada; tentando de novo a cada %.0f s (Ctrl+C para sair)", RETENTAR_S)
             self._proxima_tentativa = time.monotonic() + RETENTAR_S
@@ -200,11 +237,13 @@ class TelaUSB:
             if self._avisos.registrar("conexao", logging.WARNING, "não consegui iniciar a tela USB (%s); "
                                       "tentando de novo a cada %.0f s", self._motivo(e), RETENTAR_S):
                 log.debug("detalhes da falha ao iniciar a tela", exc_info=True)
+            self._falhou(e)
             self._desconectar()
             return False
         self._serial = lcd.lcd_serial
         self.anterior = None  # a tela foi reiniciada: o próximo quadro vai inteiro
         self._avisos.resolver("conexao")
+        self.conexao, self.ultimo_erro, self.conectada_em = "connected", None, time.time()
         log.info("tela USB %s (%s)", "reconectada" if self._ja_conectou else "conectada", self._descricao())
         self._ja_conectou = True
         return True
@@ -254,6 +293,7 @@ class TelaUSB:
             # reconexão, para o Ombro não cair. O traceback fica no log de depuração.
             log.warning("a tela USB parou de responder (%s); tentando reconectar a cada %.0f s", self._motivo(e), RETENTAR_S)
             log.debug("detalhes da falha no envio", exc_info=True)
+            self._falhou(e)
             self._desconectar()
             return
         self.anterior = img

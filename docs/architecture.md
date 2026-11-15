@@ -25,8 +25,8 @@ mascote.py + layout_*.py / render.py      decidem o estado do cloud e desenham
 saida.py                   tela USB (direto ou serial) ou simulador HTTP
 ```
 
-`core/monitor.py` (o `Monitor`) junta registro, estado, eventos e banco; o `tela.py` chama
-`monitor.atualizar_todos()` no ritmo da coleta, nunca a cada quadro. O `--demo` passa pelo mesmo caminho
+`core/monitor.py` (o `Monitor`) junta registro, estado, eventos e banco; o laço (`ombro/app.py`, o mesmo no
+`tela.py` e no `ombrod`) chama `monitor.atualizar_todos()` no ritmo da coleta, nunca a cada quadro. O `--demo` passa pelo mesmo caminho
 (`FonteDemo` e `providers/demo.py`), só que sem banco e sem eventos.
 
 O núcleo (`core/`) usa só a biblioteca padrão: não importa Pillow, USB, numpy nem psutil (há um teste
@@ -123,9 +123,62 @@ sessões e a privacidade estão em [multi-agent.md](multi-agent.md); a configura
      parte falhar, em vez de devolver vazio como se não houvesse nada).
 2. Se a ferramenta só avisa por hooks, herde de `ProviderPorHooks` (`providers/hooks.py`) e escreva só o
    `mapear()` dos eventos; acrescente os eventos aceitos em `EVENTOS` do `ombro_hook.py`.
-3. Acrescente o id em `PROVIDERS` (`config.py`) e em `montar_providers` (`tela.py`).
+3. Acrescente o id em `PROVIDERS` (`config.py`), em `montar_providers` (`ombro/app.py`) e, se ele usa hooks,
+   um `Alvo` em `ombro/integracoes.py` (onde fica a configuração e o formato da entrada).
 4. Testes: um snapshot com e sem dados, sessões simultâneas, partes que falham, ids estáveis entre
    coletas, eventos repetidos e atrasados.
+
+## Ombro Hub: o serviço local e a gerência
+
+```
+Claude Code ─┐
+Codex ───────┤ arquivos e hooks ──► providers ──► EventBus / StateStore ──► SQLite
+Cursor ──────┘                                          │
+                                                        ▼
+                                  ombro/app.py (Aplicacao): coleta, cloud, layout, saída ──► USB / simulador
+                                         ▲                         │ publica a cada coleta
+                     executar(fn) (fila) │                         ▼
+                                  ombro/daemon.py (ombrod): lock, ciclo de vida, saúde, métodos
+                                                        │
+                                          ~/.ombro-screen/run/ombro.sock (IPC v1, docs/ipc.md)
+                                                        │
+                                  python3 -m ombro (ombro/cli.py) ··· futuro Ombro.app
+```
+
+| Peça | Arquivo | O que faz |
+| --- | --- | --- |
+| `Aplicacao` | `ombro/app.py` | O laço de sempre (era o `tela.rodar`), agora numa classe. A espera entre quadros é a fila de pedidos: `executar(fn)` roda `fn` no laço, entre dois quadros, sem trava. |
+| `tela.py` | `tela.py` | Entrada de compatibilidade: as mesmas opções; `--png` e `--demo` sem lock nem IPC. |
+| `Daemon` | `ombro/daemon.py` | O `ombrod`: lock, sinais, espera por um Ombro antigo, `Aplicacao`, IPC, saúde e os métodos. |
+| `Trava` | `ombro/instancia.py` | Um Ombro ao vivo por usuário (`flock` em `run/ombro.lock`); o sistema solta numa queda. |
+| `ServidorIPC`, `ClienteIPC` | `ombro/ipc.py` | O protocolo e os limites (docs/ipc.md). |
+| CLI | `ombro/cli.py` | Cliente da IPC; integrações, serviço e doctor rodam localmente. |
+| Integrações | `ombro/integracoes.py` | Hooks nos agentes, com backup e rollback (docs/integrations.md). |
+| LaunchAgent | `ombro/launchagent.py` | `com.ombro-screen.daemon` e a migração do antigo. |
+| Doctor | `ombro/doctor.py` | Diagnóstico não destrutivo (docs/troubleshooting.md). |
+
+**Quem é "ao vivo":** o `ombrod` sempre, e o `tela.py` fora do `--demo` e do `--png` (ou com `--usb`). Ao vivo
+quer dizer ler os eventos dos hooks, gravar o `state.db` e falar com a tela, então só um por vez: o segundo sai
+com código 75 e diz quem está rodando. O lock é um `flock`, não um arquivo de PID: uma instância que caiu
+(até com `kill -9`) não trava a próxima. Um `tela.py` de antes da Fase 4 não segura o lock; o `ombrod` o
+encontra pelo nome do processo (psutil, só processos do usuário) e espera ele sair, em `degraded`, sem
+disputar a tela nem mandar sinal a ninguém.
+
+**Threads:** o laço continua no thread principal. A IPC tem uma thread de `accept` e uma por cliente (no
+máximo 8). Os métodos de leitura usam dicionários que o laço troca inteiros a cada coleta (`publicado`), o
+último quadro (`ultimo_quadro`) e atributos simples da saída; nada disso pede trava. Os métodos que mudam algo
+vão para a fila do laço e esperam até 2 s.
+
+**Encerramento:** SIGTERM ou SIGINT só marcam o pedido e acordam o laço. Na volta: `stopping`; recusa métodos
+que mudam algo; libera pedidos pendentes; fecha a tela, o banco (as gravações são transações curtas no
+próprio laço, então nunca ficam pela metade) e o leitor de hardware; fecha a IPC e apaga o socket se ainda for
+o nosso; solta o lock; `stopped`. Agentes nunca recebem sinal.
+
+**Transporte dos hooks:** continua o da Fase 3 (arquivos atômicos em `eventos/`, lidos pelo laço a cada
+coleta). Comparado a mandar cada evento pelo socket, ele não depende de o ombrod estar no ar (os eventos
+esperam, até 5000 e 24 h), não deixa o hook esperando um servidor, não precisa de um segundo caminho para
+quando o socket não responde, e já tem as garantias de ordem, repetição e atraso. O custo é a latência de até
+5 s (o ritmo da coleta), a mesma de antes.
 
 ## Limitações conhecidas
 
@@ -134,3 +187,5 @@ sessões e a privacidade estão em [multi-agent.md](multi-agent.md); a configura
   viram `waiting_user`.
 - A ordem entre snapshots e eventos do mesmo provider é decidida pelo horário de cada um; não há relógio
   comum entre fontes diferentes.
+- Um `tela.py` de antes da Fase 4 não usa o lock: o `ombrod` o detecta pelo nome do processo, não pelo lock.
+- O log do LaunchAgent não é girado (o launchd não faz isso).

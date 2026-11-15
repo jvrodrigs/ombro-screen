@@ -18,3 +18,5 @@ dist/
 # estado local do Ombro, se OMBRO_SCREEN_DIR apontar para o projeto
 state.db
 eventos/
+run/
+backups/

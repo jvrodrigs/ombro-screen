@@ -70,6 +70,7 @@ def main():
     env = dict(os.environ, OMBRO_SCREEN_DIR=pasta, PYTHONDONTWRITEBYTECODE="1")
     os.environ["OMBRO_SCREEN_DIR"] = pasta
     sock = Path(pasta) / "run" / "ombro.sock"
+    p = None
     try:
         # 1. subir o ombrod até a primeira resposta
         t0 = time.monotonic()
@@ -143,6 +144,13 @@ def main():
             cpu, rss = medir_processo([str(RAIZ / script), "--demo", "--porta-sim", str(porta_livre()), *extra], env, a.segundos)
             print(f"{nome:<8} em {a.segundos:.0f} s: CPU {cpu:.1f} % de um núcleo, memória (RSS) {rss:.0f} MiB")
     finally:
+        # um erro ou Ctrl+C no meio não pode deixar o ombrod de teste vivo (e sem a pasta dele)
+        if p is not None and p.poll() is None:
+            p.send_signal(signal.SIGTERM)
+            try:
+                p.wait(10)
+            except subprocess.TimeoutExpired:
+                p.kill()
         shutil.rmtree(pasta, ignore_errors=True)
 
 

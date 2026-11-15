@@ -180,6 +180,26 @@ esperam, até 5000 e 24 h), não deixa o hook esperando um servidor, não precis
 quando o socket não responde, e já tem as garantias de ordem, repetição e atraso. O custo é a latência de até
 5 s (o ritmo da coleta), a mesma de antes.
 
+## Ombro.app: a interface gráfica
+
+```
+React (app/src) ──comandos Tauri tipados──► Rust (app/src-tauri)
+                                              ├─ IPC v1 (socket Unix) ───────────► ombrod ──► core / providers / layout / USB
+                                              └─ CLI com --json (python embarcado) ► integrações, LaunchAgent, doctor
+```
+
+- **Fonte da verdade:** o ombrod. O app não lê o banco, os arquivos dos agentes nem o `config.json`; a prévia da tela
+  é o último quadro que o ombrod desenhou (`display.preview`), não um desenho refeito em HTML.
+- **Um laço só:** `monitor.rs` pede `status`, `providers.list`, `sessions.list` e `health` (a cada 3 s com a janela
+  visível, 10 s escondida) e alimenta a janela (evento), a Menu Bar e as notificações. Com a janela escondida, a
+  página não recebe nada; ao reabrir, recebe o retrato na hora.
+- **Quem cuida do ombrod:** o app conversa com um que já roda; se o LaunchAgent existe, espera o launchd; senão,
+  inicia um filho e o encerra ao sair (também com SIGTERM). Com o LaunchAgent de antes da Fase 4 instalado, não
+  inicia nada e oferece a migração.
+- **Empacotamento:** o app traz um CPython relocável e o código do Ombro pré-compilado (`Contents/Resources`); os
+  hooks e o LaunchAgent apontam para eles, por isso o app só os instala estando em Aplicativos.
+- Detalhes: [development.md](development.md) e [distribution.md](distribution.md).
+
 ## Limitações conhecidas
 
 - Os horários são locais e sem fuso, como no resto do Ombro.

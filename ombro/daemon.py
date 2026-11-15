@@ -65,6 +65,33 @@ def _iso(d) -> Optional[str]:
     return d.isoformat(timespec="seconds")
 
 
+def quotas_do_snapshot(snap) -> Optional[dict]:
+    """As janelas de limite como o provider as entregou (sem recalcular nada); None = o provider não tem fonte."""
+    q = getattr(snap, "quotas", None)
+    if q is None:
+        return None
+    return {"source": q.source, "fetched_at": _iso(q.fetched_at), "stale": q.stale,
+            "windows": [{"id": w.window_id, "label": w.label, "used_percent": w.used_percent,
+                         "resets_at": _iso(w.resets_at)} for w in q.windows]}
+
+
+def uso_do_snapshot(snap) -> Optional[dict]:
+    """Os totais de hoje (só números; nada de conteúdo). None = o provider não informa uso."""
+    u = getattr(snap, "usage", None)
+    if u is None:
+        return None
+    return {"scope": u.scope, "total_tokens": u.total_tokens, "input_tokens": u.input_tokens,
+            "output_tokens": u.output_tokens, "messages": u.messages}
+
+
+def sistema_do_hardware(h) -> Optional[dict]:
+    """CPU e RAM do Mac, da mesma leitura que vai para a tela. None = ainda sem leitura."""
+    if h is None or not getattr(h, "disponivel", False):
+        return None
+    return {"cpu_percent": round(h.cpu_pct, 1), "ram_used_bytes": h.ram_usada, "ram_total_bytes": h.ram_total,
+            "memory_pressure": {"normal": "normal", "atencao": "warning", "critico": "critical"}.get(h.pressao_memoria)}
+
+
 def status_da_sessao(s) -> str:
     """Um nome só para a CLI e o app: error > approval > waiting > working > idle > unknown."""
     if s.attention is Attention.ERROR:
@@ -240,6 +267,7 @@ class Daemon:
                 "recovered": bool(st and st.recuperado),
                 "last_collected_at": _iso(snap.collected_at) if snap else None,
                 "last_event_at": _iso(ultimo_evento),
+                "quotas": quotas_do_snapshot(snap), "usage": uso_do_snapshot(snap),
             })
             for s in lista:
                 sessoes.append({
@@ -364,6 +392,7 @@ class Daemon:
             "demo": self.cfg.demo,
             "collected_at": self.publicado["collected_at"],
             "conflicts": [p["pid"] for p in self.conflito] if self.app is None else [],
+            "system": sistema_do_hardware(getattr(self.app, "ultimo_hw", None)),
         }
 
     def m_providers(self, _p) -> dict:

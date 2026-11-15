@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-config-schema"
+description = "Enables the config_schema command without any pre-configured scope."
+commands.allow = ["config_schema"]
+
+[[permission]]
+identifier = "deny-config-schema"
+description = "Denies the config_schema command without any pre-configured scope."
+commands.deny = ["config_schema"]

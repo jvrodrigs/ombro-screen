@@ -160,6 +160,7 @@ class Aplicacao:
         self.ultimo_quadro_em: Optional[datetime] = None
         self.quadros = 0
         self.coletado_em: Optional[datetime] = None
+        self.ultimo_hw: Optional[Hardware] = None
         self.ao_coletar: Optional[Callable[[], None]] = None  # chamado no laço depois de cada coleta
 
     # ---------- leitura ----------
@@ -265,7 +266,8 @@ class Aplicacao:
                     self.coletado_em = datetime.now()
                     if self.ao_coletar is not None:
                         self.ao_coletar()
-                img = self.quadro(self.ler_hw(), self._uso, inicio)
+                self.ultimo_hw = self.ler_hw()  # o ombrod publica CPU e RAM a partir desta leitura
+                img = self.quadro(self.ultimo_hw, self._uso, inicio)
                 self.saida.mostrar(img)
                 self.ultimo_quadro, self.ultimo_quadro_em = img, datetime.now()
                 self.quadros += 1

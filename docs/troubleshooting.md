@@ -85,3 +85,17 @@ mostrado no terminal; só vai para um arquivo com `--output`, e esse arquivo nas
   sempre (`ombro.main`, `ombro.usb`, `ombro.estado`...). Problemas que se repetem entram uma vez.
 - O launchd não gira o arquivo de log; ele cresce devagar (só mudanças de estado), mas pode ser apagado com o
   serviço parado.
+
+## Ombro.app
+
+| O que aparece | O que fazer |
+| --- | --- |
+| O macOS diz que não pode abrir o Ombro | Versão sem assinatura da Apple (alpha): Ajustes do Sistema > Privacidade e Segurança > Abrir Mesmo Assim ([macos-installation.md](macos-installation.md)). |
+| "O Ombro antigo está cuidando da tela" | O LaunchAgent de antes do Ombro Hub está instalado. Ajustes > Ver a migração: guarda um backup, liga o novo e pode ser desfeita. |
+| "Instalar integrações está bloqueado" | O app está fora de Aplicativos (ou rodando direto do DMG). Arraste-o para Aplicativos e abra de lá. |
+| "O Ombro não está monitorando" | O serviço local não responde. "Iniciar monitoramento" tenta de novo; o Diagnóstico mostra o porquê, e o log fica em `~/Library/Logs/ombro-screen/ombrod.log`. |
+| "Esperando o serviço do Ombro" | O serviço em segundo plano está instalado, mas parado: "Iniciar serviço", ou Ajustes para removê-lo. |
+| "Serviço de outra versão" | Um ombrod de outra versão (do repositório, por exemplo) está rodando. Pare-o e abra o app de novo. |
+| "O backend do Ombro não foi encontrado" | O app está incompleto: baixe o DMG de novo e substitua o app. |
+| A prévia diz "Esperando o primeiro quadro" | O serviço acabou de iniciar (alguns segundos) ou está esperando o Ombro antigo sair (veja a migração). |
+| Revisão B, C, D ou WeAct não funciona no app | Essas revisões precisam da biblioteca turing-smart-screen-python, que o app não traz (GPL): use o Ombro do repositório. |

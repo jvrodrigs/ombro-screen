@@ -22,6 +22,27 @@ O uso do Claude Code, o CPU e a RAM do Mac numa telinha USB de 3,5" deitada (480
 
 Tudo sai de arquivos locais: não usa a API nem lê credenciais.
 
+## Ombro.app (macOS)
+
+O jeito mais simples de usar: um app para Mac que traz tudo o que precisa (não é preciso Python, Homebrew nem
+terminal). Ele mostra os agentes e o Mac numa janela e na Menu Bar, configura as integrações com um clique (sempre
+mostrando antes o que muda), mostra a prévia da telinha e cuida do serviço em segundo plano.
+
+- **Painel**: agentes, sessões, quem espera você, limites de uso com o horário de reset, tokens de hoje, CPU e RAM
+- **Agentes**: instalar, conferir, reparar e remover as integrações do Claude Code, Codex e Cursor
+- **Tela**: a prévia ao vivo do que a telinha mostra (o mesmo desenho, sem a tela USB), layout, brilho e hardware
+- **Aparência**, **Diagnóstico** (o `ombro doctor`, com relatório para issues) e **Ajustes**
+- **Menu Bar**: o cloud com o resumo; notificações opcionais quando uma sessão espera você
+
+**Requisitos:** Mac com Apple Silicon e macOS 13 ou mais novo. Baixe o `Ombro-<versão>-macos-arm64.dmg` em
+[Releases](https://github.com/jvrodrigs/ombro-screen/releases) e arraste para Aplicativos: o passo a passo, as
+versões alpha sem assinatura e como desinstalar estão em [docs/macos-installation.md](docs/macos-installation.md).
+
+O app usa o mesmo código deste repositório: tudo abaixo (o `tela.py`, o `ombrod`, a CLI e o simulador) continua
+funcionando para desenvolver, para as revisões de tela que o app ainda não traz (B, C, D e WeAct, que precisam da
+biblioteca GPL da tela) e para quem prefere o terminal. Desenvolver o app: [docs/development.md](docs/development.md);
+montar e publicar: [docs/distribution.md](docs/distribution.md).
+
 ## 1. Instalar
 
 O Ombro Screen **precisa da biblioteca [turing-smart-screen-python](https://github.com/mathoudebine/turing-smart-screen-python)** (GPL-3.0) para falar com a telinha USB. Ela **não vem neste repositório**: clone-a dentro da pasta do projeto, com o nome `turing-smart-screen-python` (é onde o `tela.py` a procura; use `--lib` para outro caminho):
@@ -398,15 +419,17 @@ agentes, os hooks e o layout multiagente estão na seção 9; o ombrod, a IPC e 
 | `coletores/claude.py` | Uso do plano, tokens de hoje (e por hora), sessões abertas e quem espera você |
 | `coletores/demo.py` | Dados inventados para `--demo` e `--demo-ciclo` |
 | `statusline_tap.py` | Captura o uso de 5 h e semanal do statusline (opcional) |
+| `app/` | O Ombro.app: a interface (`app/src`, React + TypeScript), o lado nativo (`app/src-tauri`, Tauri 2 + Rust) e o empacotamento (`app/scripts/build_backend.py`) |
 | `tests/` | Testes (`unittest`, sem dependências extras) |
 | `scripts/` | `benchmark.py` (quanto custa cada parte), `benchmark_hub.py` (ombrod, IPC e CLI) e `quadros_referencia.py` (confere que nenhum pixel mudou) |
 | `.github/workflows/tests.yml` | CI: os testes do Python 3.9 ao 3.14 e o lint, a cada push e pull request |
+| `.github/workflows/app.yml`, `release.yml` | CI do app (interface e Rust) e a montagem do DMG para as releases ([docs/distribution.md](docs/distribution.md)) |
 
 Se algum arquivo do Claude Code estiver estranho, o erro vira um aviso no terminal e a tela segue; campos sem dado aparecem como "—".
 
 Contas extras do Claude Code: `--claude-dir ~/.claude-conta2`.
 
-Fonte: JetBrains Mono (licença OFL, em `fontes/`). A biblioteca da tela (turing-smart-screen-python, GPL-3.0) não é redistribuída aqui.
+Fonte: JetBrains Mono (licença OFL, em `fontes/`). A biblioteca da tela (turing-smart-screen-python, GPL-3.0) não é redistribuída aqui. O que o Ombro.app redistribui, e o que ainda falta decidir sobre licenças, está em [docs/licenses.md](docs/licenses.md).
 
 ## Testes
 

@@ -69,14 +69,24 @@ laço atende entre dois quadros.
 | Método | Params | Resultado |
 | --- | --- | --- |
 | `ping` | | `{pong, protocol, daemon}` |
-| `status` | | `daemon` (estado do ciclo de vida), `version`, `protocol`, `pid`, `started_at`, `uptime_s`, `health`, `providers {configured, installed, operational}`, `sessions`, `waiting`, `errors`, `display {kind, connection, layout}`, `storage`, `demo`, `collected_at`, `conflicts` |
+| `status` | | `daemon` (estado do ciclo de vida), `version`, `protocol`, `pid`, `started_at`, `uptime_s`, `health`, `providers {configured, installed, operational}`, `sessions`, `waiting`, `errors`, `display {kind, connection, layout}`, `storage`, `demo`, `collected_at`, `conflicts`, `system` |
 | `health` | | `{status, components}`; ver "Saúde" |
-| `providers.list` | | `providers`: `id`, `name`, `enabled`, `capabilities`, `installed`, `integration` (`ok`, `not_installed`, `not_configured`), `collection` (`ok`, `partial`, `error`), `state`, `sessions`, `working`, `waiting`, `errors`, `quota_max_percent`, `stale_parts`, `recovered`, `last_collected_at`, `last_event_at` |
+| `providers.list` | | `providers`: `id`, `name`, `enabled`, `capabilities`, `installed`, `integration` (`ok`, `not_installed`, `not_configured`), `collection` (`ok`, `partial`, `error`), `state`, `sessions`, `working`, `waiting`, `errors`, `quota_max_percent`, `stale_parts`, `recovered`, `last_collected_at`, `last_event_at`, `quotas`, `usage` |
 | `sessions.list` | `provider`: `claude`, `codex`, `cursor` ou `null` | `sessions`: `provider`, `session_id`, `project` (nome curto da pasta, nunca o caminho), `status` (`working`, `idle`, `waiting`, `approval`, `error`, `unknown`), `activity`, `attention`, `started_at`, `status_since`, `updated_at` |
 | `display.status` | | `kind` (`usb`, `simulator`, `none`), `connection` (`connected`, `disconnected`, `error`, `conflict`), `transport`, `revision`, `port` (só o nome), `brightness`, `orientation`, `layout`, `frames`, `last_frame_at`, `connected_since`, `last_error`, `url` (simulador) |
 | `display.preview` | `format`: `png` | `{available: false}` sem quadro ainda; senão `available`, `format`, `width`, `height`, `captured_at`, `data_base64` |
 | `config.get` | | `file`, `file_exists`, `values` (a configuração em uso, caminhos com `~`), `providers_enabled` (`{id: bool}`), `editable`, `live`, `layouts_live`, `views` |
 | `config.schema` | | `{version, options}`: cada preferência que a IPC aceita, com `key`, `group`, `type`, `description`, `live`, `nullable` e, quando há, `choices`, `min`, `max` |
+
+Campos acrescentados para o Ombro.app (ainda v1; quem não os conhece os ignora):
+
+- `providers.list[].quotas`: `null` quando o provider não tem fonte de limites (hoje, Codex e Cursor); senão
+  `{source, fetched_at, stale, windows: [{id, label, used_percent, resets_at}]}`, exatamente o que o provider
+  entregou (`used_percent` e `resets_at` podem ser `null`; nada é recalculado nem inventado).
+- `providers.list[].usage`: `null` quando o provider não informa uso; senão os totais de hoje
+  `{scope, total_tokens, input_tokens, output_tokens, messages}`, só números.
+- `status.system`: `null` até a primeira leitura boa; senão `{cpu_percent, ram_used_bytes, ram_total_bytes,
+  memory_pressure}` (`normal`, `warning`, `critical` ou `null` fora do macOS), da mesma leitura que vai para a tela.
 
 `display.preview` devolve o último quadro que foi para a tela: nada é desenhado de novo. São 50–120 KiB em
 base64, em ~2 ms. Não há streaming: quem quer acompanhar pede de novo (o simulador atualiza 4 vezes por segundo).

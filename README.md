@@ -342,7 +342,8 @@ IPC:           v1 (ombrod 0.4.0, PID 4321)
 | `display brightness 40 [--persist]` | brilho na hora (`--persist` grava no config.json) |
 | `display layout multiagente [--persist]` | troca o layout na hora (de ou para o `classico`, só ao reiniciar) |
 | `display preview quadro.png` | o último quadro da tela, sem desenhar de novo |
-| `config` / `config set brilho 40` | a configuração em uso, e as preferências que podem mudar pela IPC |
+| `config` / `config set brilho 40` | a configuração em uso, e mudar qualquer preferência (`config set providers.codex false`) |
+| `config schema` | todas as preferências que dá para mudar, com os valores aceitos e se valem na hora ou ao reiniciar |
 | `health` | a saúde de cada componente |
 | `integrations ...` | os hooks dos agentes (seção 9) |
 | `service ...` | o LaunchAgent (seção 6) |

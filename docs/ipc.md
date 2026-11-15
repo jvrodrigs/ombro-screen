@@ -75,7 +75,8 @@ laço atende entre dois quadros.
 | `sessions.list` | `provider`: `claude`, `codex`, `cursor` ou `null` | `sessions`: `provider`, `session_id`, `project` (nome curto da pasta, nunca o caminho), `status` (`working`, `idle`, `waiting`, `approval`, `error`, `unknown`), `activity`, `attention`, `started_at`, `status_since`, `updated_at` |
 | `display.status` | | `kind` (`usb`, `simulator`, `none`), `connection` (`connected`, `disconnected`, `error`, `conflict`), `transport`, `revision`, `port` (só o nome), `brightness`, `orientation`, `layout`, `frames`, `last_frame_at`, `connected_since`, `last_error`, `url` (simulador) |
 | `display.preview` | `format`: `png` | `{available: false}` sem quadro ainda; senão `available`, `format`, `width`, `height`, `captured_at`, `data_base64` |
-| `config.get` | | `file`, `file_exists`, `values` (a configuração em uso, caminhos com `~`), `editable`, `layouts_live`, `views` |
+| `config.get` | | `file`, `file_exists`, `values` (a configuração em uso, caminhos com `~`), `providers_enabled` (`{id: bool}`), `editable`, `live`, `layouts_live`, `views` |
+| `config.schema` | | `{version, options}`: cada preferência que a IPC aceita, com `key`, `group`, `type`, `description`, `live`, `nullable` e, quando há, `choices`, `min`, `max` |
 
 `display.preview` devolve o último quadro que foi para a tela: nada é desenhado de novo. São 50–120 KiB em
 base64, em ~2 ms. Não há streaming: quem quer acompanhar pede de novo (o simulador atualiza 4 vezes por segundo).
@@ -84,17 +85,37 @@ Horários em ISO 8601, hora local, sem fuso, como no resto do Ombro.
 
 ## Métodos que mudam algo
 
-Só preferências da allowlist (`ombro/preferencias.py`), validadas pelas mesmas regras do `config.json`:
-
 | Método | Params | O que faz |
 | --- | --- | --- |
-| `config.update` | `changes` (objeto, obrigatório), `persist` (padrão `true`) | aplica e, com `persist`, grava no `config.json` |
+| `config.update` | `changes` (objeto, obrigatório), `persist` (padrão `true`) | valida, aplica o que vale na hora e, com `persist`, grava no `config.json` |
 | `display.set_brightness` | `value` (0–100, obrigatório), `persist` (padrão `false`) | muda o brilho da tela USB na hora |
 | `display.set_layout` | `layout` (obrigatório), `persist` (padrão `false`) | troca o layout entre `auto`, `ombro`, `minimal-v2` e `multiagente` na hora |
 
-Chaves aceitas em `changes`: `brilho`, `layout`, `cor_mascote`, `vista`, `foco`, `rotacao`, `intervalo_rotacao`.
-A resposta diz o que valeu na hora (`applied`), o que só vale ao reiniciar (`restart_required`: trocar de ou
-para o layout `classico`, que muda a orientação) e onde gravou (`file`).
+Toda a configuração que não é caminho de pasta pode mudar por aqui. `config.schema` devolve a lista, que é a
+fonte da verdade (`ombro/preferencias.py`); o Ombro.app monta a tela de ajustes a partir dela, sem lista própria.
+
+| Grupo | Chaves | Vale |
+| --- | --- | --- |
+| `display` | `brilho` | na hora |
+| `display` | `usb`, `revisao`, `transporte`, `porta` (`AUTO` ou `/dev/cu.<nome>`), `paisagem`, `girar`, `porta_sim` (1024–65535) | ao reiniciar |
+| `appearance` | `layout` (de ou para o `classico`, só ao reiniciar), `cor_mascote` | na hora |
+| `appearance` | `intervalo` (0,05–10 s, ou `null` para o padrão do layout) | ao reiniciar |
+| `multi_agent` | `vista`, `foco`, `rotacao`, `intervalo_rotacao` | na hora |
+| `providers` | `providers.claude`, `providers.codex`, `providers.cursor` (`true`/`false`) | ao reiniciar |
+| `hardware` | `sem_macmon` | ao reiniciar |
+| `diagnostics` | `debug` | ao reiniciar |
+
+Regras:
+
+- Cada valor passa pela mesma validação do `config.json`; além disso, `porta` só aceita `AUTO` ou um dispositivo
+  `/dev/cu.*`/`/dev/tty.*`, e pelo menos um agente precisa ficar ligado.
+- Uma chave que só vale ao reiniciar precisa de `persist: true` (sem gravar, ela não mudaria nada): sem isso, o
+  pedido é recusado com `VALIDATION_ERROR`.
+- Ficam de fora, de propósito: `lib` e `claude_dir` (caminhos de pastas para ler: a IPC não aceita caminhos do
+  cliente), `nao_abrir` (só faz sentido no terminal) e as ações de uma vez (`demo`, `demo_ciclo`, `png`).
+- A resposta diz o que valeu na hora (`applied`), o que vale ao reiniciar (`restart_required`) e onde gravou
+  (`file`). Os agentes vão para o bloco `providers` do arquivo (`{"codex": {"enabled": false}}`), e as opções do
+  multiagente, para o bloco `multi_agent`, no mesmo formato que o README ensina.
 
 A gravação muda só essas chaves (as outras, a ordem e o `versao` ficam), é atômica e é recusada se o
 `config.json` não for um JSON válido. Opções dadas na linha de comando do ombrod vencem o arquivo no próximo

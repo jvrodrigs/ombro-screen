@@ -249,6 +249,20 @@ class Saude(Temporaria):
         self.assertEqual((r["applied"], r["restart_required"]), ([], ["brilho"]))
         self.assertEqual(json.loads((self.pasta / "config.json").read_text())["brilho"], 20)
 
+    def test_mudanca_so_ao_reiniciar(self):
+        from ombro.ipc import ErroIPC
+
+        d = Daemon(OmbroConfig(demo=True, arquivo=self.pasta / "config.json"))
+        with self.assertRaises(ErroIPC) as e:
+            d.m_config_update({"changes": {"providers.codex": False}, "persist": False})
+        self.assertEqual(e.exception.codigo, "VALIDATION_ERROR")
+        r = d.m_config_update({"changes": {"providers.codex": False, "usb": True}})
+        self.assertEqual(sorted(r["restart_required"]), ["providers.codex", "usb"])
+        dados = json.loads((self.pasta / "config.json").read_text())
+        self.assertEqual((dados["usb"], dados["providers"]["codex"]["enabled"]), (True, False))
+        self.assertEqual(d.m_config_get({})["providers_enabled"], {"claude": True, "codex": True, "cursor": True})
+        self.assertEqual(d.m_config_schema({})["version"], 1)
+
     def test_estado_da_sessao(self):
         s = AgentSession("codex", "s1", Activity.WORKING, Attention.NONE)
         self.assertEqual(status_da_sessao(s), "working")
@@ -280,9 +294,48 @@ class Preferencias(Temporaria):
     def test_recusa(self):
         from config import ConfigInvalida
 
-        for mud in ({}, {"usb": True}, {"lib": "/tmp"}, {"brilho": 150}, {"layout": "outro"}, {"debug": True}):
+        for mud in ({}, {"lib": "/tmp"}, {"claude_dir": "/tmp"}, {"nao_abrir": True}, {"demo": True}, {"png": "q.png"},
+                    {"brilho": 150}, {"layout": "outro"}, {"usb": "sim"}, {"providers.codex": "false"},
+                    {"providers.outro": False}, {"porta": "/etc/passwd"}, {"porta": "/dev/cu.x; rm"}, {"intervalo": 0.0},
+                    {"porta_sim": 80}, {"brilho": None}, {"intervalo_rotacao": 2}):
             with self.assertRaises(ConfigInvalida, msg=mud):
                 preferencias.validar_mudancas(mud)
+        ok = preferencias.validar_mudancas({"usb": True, "porta": "/dev/cu.usbmodem1101", "intervalo": None, "debug": True,
+                                            "providers.codex": False, "revisao": "b", "cor_mascote": None})
+        self.assertEqual(ok["revisao"], "B")
+
+    def test_nao_desliga_todos_os_agentes(self):
+        from config import ConfigInvalida
+
+        with self.assertRaises(ConfigInvalida):
+            preferencias.validar_mudancas({"providers.claude": False}, ligados=("claude",))
+        preferencias.validar_mudancas({"providers.claude": False, "providers.codex": True}, ligados=("claude",))
+        preferencias.validar_mudancas({"providers.cursor": False}, ligados=("claude", "cursor"))
+
+    def test_agentes_vao_para_o_bloco_providers(self):
+        arq = self.pasta / "config.json"
+        arq.write_text('{"versao": 1, "providers": {"claude": {"enabled": true}}}')
+        preferencias.gravar(arq, {"providers.codex": False, "providers.cursor": False})
+        self.assertEqual(json.loads(arq.read_text())["providers"],
+                         {"claude": {"enabled": True}, "codex": {"enabled": False}, "cursor": {"enabled": False}})
+        from config import ler_arquivo
+
+        self.assertEqual(ler_arquivo(arq)[0]["providers"], ("claude",))  # o tela.py e o ombrod leem igual
+
+    def test_esquema_completo_e_seguro(self):
+        from config import PERSISTENTES
+
+        sc = preferencias.esquema()
+        chaves = {o["key"] for o in sc["options"]}
+        self.assertEqual(sc["version"], 1)
+        self.assertTrue({"lib", "claude_dir", "nao_abrir"}.isdisjoint(chaves))  # caminhos e coisas do terminal: nunca
+        cobertas = {k.split(".")[0] for k in chaves}
+        self.assertEqual(PERSISTENTES - cobertas, {"lib", "claude_dir", "nao_abrir"})  # o resto, tudo
+        for o in sc["options"]:
+            self.assertIn(o["type"], ("boolean", "integer", "number", "string", "enum", "color"))
+            self.assertIn("live", o)
+            if o["type"] == "enum":
+                self.assertTrue(o["choices"])
 
     def test_config_invalido_nao_e_sobrescrito(self):
         from config import ConfigInvalida

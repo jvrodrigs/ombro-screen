@@ -329,6 +329,7 @@ class Daemon:
             Metodo("display.status", lambda _p: self._display(), {}),
             Metodo("display.preview", self.m_preview, {"format": Param(str, opcoes=("png",))}),
             Metodo("config.get", self.m_config_get, {}),
+            Metodo("config.schema", self.m_config_schema, {}),
             Metodo("config.update", self.m_config_update,
                    {"changes": Param(dict, obrigatorio=True), "persist": Param(bool)}, admin=True),
             Metodo("display.set_brightness", self.m_brilho,
@@ -400,7 +401,13 @@ class Daemon:
             valores[k] = v
         arq = cfg.arquivo or arquivo_padrao()
         return {"file": curto(arq), "file_exists": arq.exists(), "values": valores,
-                "editable": list(preferencias.EDITAVEIS), "layouts_live": list(ANIMADOS), "views": list(VISTAS)}
+                "providers_enabled": {pid: pid in cfg.providers for pid in PROVIDERS},
+                "editable": list(preferencias.EDITAVEIS), "live": list(preferencias.AO_VIVO),
+                "layouts_live": list(ANIMADOS), "views": list(VISTAS)}
+
+    def m_config_schema(self, _p) -> dict:
+        """O que dá para mudar, com tipo, valores e se vale na hora: o Ombro.app monta os ajustes a partir disto."""
+        return preferencias.esquema()
 
     def m_config_update(self, p) -> dict:
         return self._mudar_preferencias(p["changes"], p.get("persist", True))
@@ -413,13 +420,19 @@ class Daemon:
 
     def _mudar_preferencias(self, mudancas: dict, persistir: bool) -> dict:
         try:
-            mudancas = preferencias.validar_mudancas(mudancas)
+            mudancas = preferencias.validar_mudancas(mudancas, self._cfg_atual().providers)
         except ConfigInvalida as e:
             raise ErroIPC(VALIDATION_ERROR, str(e)) from None
+        so_ao_reiniciar = [k for k in mudancas if not preferencias.ao_vivo(k)]
+        if so_ao_reiniciar and not persistir:
+            raise ErroIPC(VALIDATION_ERROR, f"{', '.join(so_ao_reiniciar)} só vale(m) depois de reiniciar o ombrod: "
+                                            "use persist para gravar no config.json")
         with self._trava_config:
-            aplicadas, reiniciar = [], []
+            aplicadas, reiniciar = [], list(so_ao_reiniciar)
             if self.app is not None:
                 for chave, valor in mudancas.items():
+                    if chave in so_ao_reiniciar:
+                        continue
                     try:
                         self.app.executar(lambda c=chave, v=valor: self._aplicar(c, v))
                         aplicadas.append(chave)

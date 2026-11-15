@@ -235,6 +235,20 @@ def _valor_cli(texto: str):
 
 
 def cmd_config(args) -> int:
+    if args.acao == "schema":
+        sc = _chamar(args, "config.schema")
+
+        def texto_schema():
+            linhas = []
+            for o in sc["options"]:
+                faixa = ", ".join(map(str, o["choices"])) if "choices" in o else (
+                    f"{o['min']:g} a {o['max']:g}" if "min" in o else "")
+                linhas.append([o["key"], o["type"] + (" | null" if o["nullable"] else ""), faixa[:40],
+                               "agora" if o["live"] else "ao reiniciar"])
+            return tabela(linhas, ["CHAVE", "TIPO", "VALORES", "VALE"])
+
+        _saida(args, sc, texto_schema)
+        return 0
     if args.acao == "set":
         r = _chamar(args, "config.update", {"changes": {args.chave: _valor_cli(args.valor)}, "persist": not args.no_persist})
         partes = []
@@ -302,7 +316,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--persist", action="store_true", help="gravar no config.json (sem isso, vale até reiniciar)")
     novo("health", cmd_health, "a saúde de cada componente")
     s = novo("config", cmd_config, "a configuração em uso, e mudar preferências permitidas")
-    s.add_argument("acao", nargs="?", choices=("get", "set"), default="get")
+    s.add_argument("acao", nargs="?", choices=("get", "set", "schema"), default="get")
     s.add_argument("chave", nargs="?")
     s.add_argument("valor", nargs="?")
     s.add_argument("--no-persist", action="store_true", help="só agora, sem gravar no config.json")

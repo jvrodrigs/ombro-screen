@@ -131,6 +131,38 @@ describe("tela e preferências", () => {
   });
 });
 
+describe("avatares", () => {
+  it("o painel mostra o avatar de cada agente", async () => {
+    renderApp(fakeApi());
+    // animados pelo estado real de cada um; o Cursor, sem a integração, fica parado
+    expect(await screen.findByRole("img", { name: "Claude Code: Ombro Cloud, esperando você" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Codex: Órbita, esperando você" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Cursor: Cubo" })).toBeInTheDocument();
+  });
+
+  it("escolher um avatar grava pela IPC e aparece na hora", async () => {
+    const api = fakeApi();
+    renderApp(api, "appearance");
+    await screen.findByRole("img", { name: "Codex: Órbita" });
+    await userEvent.click(screen.getAllByRole("button", { name: "Escolher…" })[1]);
+    const dialogo = await screen.findByRole("dialog");
+    expect(within(within(dialogo).getByRole("radiogroup", { name: "Avatares" })).getAllByRole("radio")).toHaveLength(11); // padrão, aleatório e os nove
+    await userEvent.click(within(dialogo).getByRole("radio", { name: /^Nova/ }));
+    await userEvent.click(within(dialogo).getByRole("button", { name: "Usar" }));
+    expect(api.configUpdate).toHaveBeenCalledWith({ "avatares.codex": "nova" }, true);
+    expect(await screen.findByRole("img", { name: "Codex: Nova" })).toBeInTheDocument();
+  });
+
+  it("aleatório por sessão e cor do agente", async () => {
+    const api = fakeApi();
+    renderApp(api, "appearance");
+    await userEvent.click(await screen.findByRole("radio", { name: "Um por sessão" }));
+    expect(api.configUpdate).toHaveBeenCalledWith({ avatar_sorteio: "sessao" }, true);
+    await userEvent.click(screen.getByRole("radio", { name: "Sorteada" }));
+    expect(api.configUpdate).toHaveBeenCalledWith({ cor_mascote: null, cor_modo: "sorteada" }, true);
+  });
+});
+
 describe("primeiro uso", () => {
   it("aparece até ser concluído, e grava a conclusão", async () => {
     const api = fakeApi({ prefsGet: () => Promise.resolve({ onboarding_completed: false, notifications: false, owned_daemon_pid: null, autostart: false }) });

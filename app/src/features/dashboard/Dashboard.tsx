@@ -5,6 +5,7 @@ import { useOmbro } from "../../hooks/useOmbro";
 import { DASH, PROVIDER_NAMES, SESSION_STATUS, ago, bytes, percent } from "../../lib/format";
 import type { DaemonStatus, Session } from "../../types/ombro";
 import { ProviderCard } from "./ProviderCard";
+import { SessionAvatar } from "../avatars/ProviderAvatar";
 
 const URGENTES = new Set(["approval", "waiting", "error"]);
 const ORDEM: Record<string, number> = { error: 0, approval: 1, waiting: 2, working: 3, idle: 4, unknown: 5 };
@@ -32,13 +33,19 @@ function useNow(ms = 15_000): Date {
 }
 
 export function SessionList({ sessions, now }: { sessions: Session[]; now: Date }) {
+  const { snapshot } = useOmbro();
+  const provs = new Map((snapshot?.providers?.providers ?? []).map((p) => [p.id, p]));
+  const modo = snapshot?.providers?.random_mode;
   return (
     <ul className="session-list">
       {sessions.map((s) => {
         const st = SESSION_STATUS[s.status] ?? SESSION_STATUS.unknown;
         return (
           <li key={`${s.provider}:${s.session_id}`}>
-            <span className="session-project">{s.project ?? "projeto sem nome"}</span>
+            <span className="session-project">
+              <SessionAvatar provider={provs.get(s.provider)} sessionId={s.session_id} status={s.status} mode={modo} />
+              {s.project ?? "projeto sem nome"}
+            </span>
             <span className="muted">{PROVIDER_NAMES[s.provider] ?? s.provider}</span>
             <Badge tone={st.tone}>{st.label}</Badge>
             <span className="muted mono session-since">{ago(s.status_since ?? s.updated_at, now)}</span>

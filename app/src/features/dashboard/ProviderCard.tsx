@@ -2,16 +2,9 @@ import { AlertTriangle } from "lucide-react";
 import { Badge, Button, Card, UsageBar } from "../../components/ui";
 import { ago, clock, pluralize, providerBadge, providerName, tokens, until } from "../../lib/format";
 import type { ProviderInfo } from "../../types/ombro";
+import { ProviderAvatar } from "../avatars/ProviderAvatar";
 
 const STALE_PARTS: Record<string, string> = { sessions: "sessões", usage: "tokens", quotas: "limites" };
-
-export function ProviderMonogram({ id }: { id: string }) {
-  return (
-    <span className={`monogram mono-${id}`} aria-hidden>
-      {id.slice(0, 2).toUpperCase()}
-    </span>
-  );
-}
 
 /** O cartão de um agente: só mostra o que o provider realmente informa (sem barras vazias nem números inventados). */
 export function ProviderCard({ p, onConfigure, now = new Date() }: { p: ProviderInfo; onConfigure?: () => void; now?: Date }) {
@@ -28,7 +21,7 @@ export function ProviderCard({ p, onConfigure, now = new Date() }: { p: Provider
     <Card className={`provider-card ${ativo ? "" : "inactive"}`} aria-label={providerName(p)}>
       <div className="card-title">
         <h2>
-          <ProviderMonogram id={p.id} />
+          <ProviderAvatar p={p} />
           {providerName(p)}
         </h2>
         <Badge tone={badge.tone}>{badge.label}</Badge>

@@ -22,6 +22,8 @@ import re
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
+import avatares as _av
+
 RAIZ = Path(__file__).resolve().parent
 VERSAO = 1  # versão do formato do arquivo
 
@@ -34,6 +36,7 @@ PROVIDERS = ("claude", "codex", "cursor")  # na ordem em que aparecem na tela
 VISTAS = ("overview", "focus", "attention")  # visões do layout multiagente
 MIN_ROTACAO = 5.0  # segundos: trocar de visão mais rápido que isso deixa a tela instável
 SO_NA_LINHA_DE_COMANDO = ("demo", "demo_ciclo", "png", "arquivo")  # ações de uma vez, não preferências
+AVATAR_CHAVES = PROVIDERS + ("padrao",)  # um avatar por agente, e o do Ombro (sem agente em foco)
 _COR = re.compile(r"#?[0-9a-fA-F]{6}")
 
 
@@ -67,7 +70,11 @@ class OmbroConfig:
     # o que aparece
     layout: str = "auto"
     intervalo: float | None = None  # None: 0,2 s no layout do Ombro, 1 s no clássico
-    cor_mascote: str | None = None  # "#RRGGBB"; None sorteia uma cor a cada estado
+    cor_mascote: str | None = None  # "#RRGGBB": cor fixa, vale por cima do cor_modo
+    cor_modo: str = "agente"  # "agente": a cor de cada agente; "sorteada": uma cor nova a cada troca de estado
+    # avatares (avatars/ e avatares.py); no arquivo: {"avatars": {"claude": "sereno", "default": ..., "random": "sessao"}}
+    avatares: tuple = ()  # pares (agente ou "padrao", "padrao" | "aleatorio" | id); o que falta é "padrao"
+    avatar_sorteio: str = "inicio"  # o "aleatorio": um por inicialização do Ombro, ou um por sessão
     # simulador
     porta_sim: int = 5680
     nao_abrir: bool = False
@@ -103,6 +110,10 @@ class OmbroConfig:
         if self.intervalo is not None:
             return self.intervalo
         return 0.2 if self.animado else 1.0
+
+    def avatar(self, chave: str) -> str:
+        """A escolha de avatar de um agente (ou "padrao", a do Ombro): "padrao", "aleatorio" ou um id."""
+        return dict(self.avatares).get(chave, "padrao")
 
     @property
     def cor_mascote_rgb(self) -> tuple[int, int, int] | None:
@@ -193,11 +204,48 @@ def validar(nome: str, v, base: Path | None = None):
         if not isinstance(v, str) or not _COR.fullmatch(v):
             raise ConfigInvalida(f"cor_mascote deve ser uma cor como \"#3D7A4F\" (veio {v!r})")
         return "#" + v.lstrip("#").upper()
+    if nome == "cor_modo":
+        return _escolha(nome, v, _av.CORES_MODO)
+    if nome == "avatar_sorteio":
+        return _escolha(nome, v, _av.SORTEIOS)
+    if nome == "avatares":
+        pares = v.items() if isinstance(v, dict) else v
+        if not isinstance(pares, (list, tuple)) and not isinstance(v, dict):
+            raise ConfigInvalida(f"avatares deve ser um objeto, como {{\"codex\": \"orbita\"}} (veio {v!r})")
+        limpo = {}
+        for par in pares:
+            if not (isinstance(par, (list, tuple)) and len(par) == 2):
+                raise ConfigInvalida(f"avatares: entrada inválida {par!r}")
+            limpo[_escolha("avatares", par[0], AVATAR_CHAVES)] = _valor_avatar(f"avatares.{par[0]}", par[1])
+        return tuple((k, limpo[k]) for k in AVATAR_CHAVES if k in limpo)
     if nome == "claude_dir":
         return None if v is None else _texto(nome, v)
     if nome in ("lib", "png", "arquivo"):
         return None if v is None and nome != "lib" else _caminho(nome, v, base)
     raise ConfigInvalida(f"opção desconhecida: {nome}")
+
+
+def _valor_avatar(nome: str, v) -> str:
+    """"padrao", "aleatorio" ou o id de um avatar. Um id que não está no catálogo passa (vira o padrão na hora
+    de desenhar, com um aviso ao ler o arquivo): apagar um avatar não pode impedir o Ombro de abrir."""
+    if not isinstance(v, str) or not (v in _av.ESPECIAIS or _av._ID.fullmatch(v)):
+        raise ConfigInvalida(f"{nome} deve ser \"padrao\", \"aleatorio\" ou o id de um avatar (veio {v!r})")
+    return v
+
+
+def _avatars(v) -> dict:
+    """{"claude": "sereno", "codex": "aleatorio", "default": "ombro-cloud", "random": "sessao"}."""
+    if not isinstance(v, dict):
+        raise ConfigInvalida("avatars deve ser um objeto, como {\"codex\": \"orbita\"}")
+    nomes = {**{p: p for p in PROVIDERS}, "default": "padrao"}
+    desconhecidas = set(v) - set(nomes) - {"random"}
+    if desconhecidas:
+        raise ConfigInvalida(f"avatars: opção desconhecida {', '.join(sorted(desconhecidas))} "
+                             f"(use {', '.join([*nomes, 'random'])})")
+    valores = {"avatares": validar("avatares", [(nomes[k], x) for k, x in v.items() if k != "random"])}
+    if "random" in v:
+        valores["avatar_sorteio"] = validar("avatar_sorteio", v["random"])
+    return valores
 
 
 def _providers(v) -> dict:
@@ -255,11 +303,14 @@ def ler_arquivo(arq: Path, obrigatorio: bool = False) -> tuple[dict, list[str]]:
                       "o que ele não conhece fica de fora")
     valores = {}
     for nome, v in dados.items():
-        if nome in ("providers", "multi_agent"):  # os dois blocos aninhados, no formato do README
+        if nome in ("providers", "multi_agent", "avatars"):  # os blocos aninhados, no formato do README
             try:
-                valores.update(_providers(v) if nome == "providers" else _multi_agent(v))
+                valores.update({"providers": _providers, "multi_agent": _multi_agent, "avatars": _avatars}[nome](v))
             except ConfigInvalida as e:
                 raise ConfigInvalida(f"{arq}: {e}") from None
+            for chave, escolha in valores.get("avatares", ()) if nome == "avatars" else ():
+                if escolha not in _av.ESPECIAIS and escolha not in _av.catalogo().avatares:
+                    avisos.append(f"{arq.name}: o avatar \"{escolha}\" ({chave}) não existe; vale o padrão")
         elif nome in SO_NA_LINHA_DE_COMANDO:
             avisos.append(f"{arq.name}: \"{nome}\" só vale na linha de comando; ignorado")
         elif nome not in PERSISTENTES:

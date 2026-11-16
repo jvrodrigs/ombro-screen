@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "pixel",
+  "name": "Pixel",
+  "body": {
+    "path": "M30 14H70V22H78V30H86V70H78V78H70V86H30V78H22V70H14V30H22V22H30Z"
+  },
+  "eyes": {
+    "x": 50,
+    "y": 50,
+    "spacing": 18,
+    "scale": 1.25
+  }
+}

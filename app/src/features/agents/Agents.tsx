@@ -6,7 +6,7 @@ import { useOmbro } from "../../hooks/useOmbro";
 import { errorMessage } from "../../services/api";
 import { ago, providerBadge, providerName, PROVIDER_NAMES } from "../../lib/format";
 import { PROVIDER_IDS, type IntegrationCheck, type IntegrationRunResult, type IntegrationState, type ProviderId } from "../../types/ombro";
-import { ProviderMonogram } from "../dashboard/ProviderCard";
+import { ProviderAvatar } from "../avatars/ProviderAvatar";
 
 const CAPS: Record<string, string> = {
   sessions: "Sessões",
@@ -153,7 +153,7 @@ export function Agents() {
             <Card key={id} className="agent-card" aria-label={PROVIDER_NAMES[id]}>
               <div className="card-title">
                 <h2>
-                  <ProviderMonogram id={id} />
+                  <ProviderAvatar p={p ?? { id, name: PROVIDER_NAMES[id] }} />
                   {p ? providerName(p) : PROVIDER_NAMES[id]}
                 </h2>
                 <div className="row">

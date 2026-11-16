@@ -112,7 +112,7 @@ export function DisplayPage() {
             <h2>Prévia</h2>
             <Badge tone={con.tone}>{con.label}</Badge>
           </div>
-          <Preview />
+          <Preview intervalMs={200} />
           {d?.kind !== "usb" && (
             <p className="muted small" style={{ marginTop: 12 }}>
               Sem a tela USB, o Ombro desenha do mesmo jeito: a prévia é exatamente o que apareceria nela. Ligue a tela em

@@ -36,18 +36,21 @@ export function mockProviders(): ProviderInfo[] {
         ],
       },
       usage: { scope: "today", total_tokens: 18_612_000, input_tokens: 18_400_000, output_tokens: 212_000, messages: 486 },
+      avatar: { avatar: "ombro-cloud", color: "#DF8559", choice: "padrao" },
     },
     {
       id: "codex", name: "Codex", enabled: true, capabilities: ["attention", "events", "sessions"],
       installed: true, integration: "ok", collection: "ok", state: "aprovacao",
       sessions: 1, working: 1, waiting: 1, errors: 0, quota_max_percent: null, stale_parts: [], recovered: false,
       last_collected_at: iso(agora()), last_event_at: null, quotas: null, usage: null,
+      avatar: { avatar: "orbita", color: "#83B596", choice: "padrao" },
     },
     {
       id: "cursor", name: "Cursor", enabled: true, capabilities: ["events", "sessions"],
       installed: true, integration: "not_configured", collection: "ok", state: "nao_configurado",
       sessions: 0, working: 0, waiting: 0, errors: 0, quota_max_percent: null, stale_parts: [], recovered: false,
       last_collected_at: iso(agora()), last_event_at: null, quotas: null, usage: null,
+      avatar: { avatar: "cubo", color: "#79A9D8", choice: "padrao" },
     },
   ];
 }
@@ -77,7 +80,10 @@ export function mockSnapshot(): Snapshot {
       collected_at: iso(agora()), conflicts: [],
       system: { cpu_percent: 23.4, ram_used_bytes: 15_247_133_900, ram_total_bytes: 25_769_803_776, memory_pressure: "normal" },
     },
-    providers: { providers: mockProviders(), collected_at: iso(agora()) },
+    providers: {
+      providers: mockProviders(), collected_at: iso(agora()),
+      ombro_avatar: { avatar: "ombro-cloud", color: "#DF8559", choice: "padrao" }, random_mode: "inicio",
+    },
     sessions: { sessions: mockSessions(), collected_at: iso(agora()) },
     health: {
       status: "healthy",
@@ -104,7 +110,13 @@ export const mockSchema: ConfigSchema = {
     { key: "girar", group: "display", type: "boolean", description: "girar 180°", live: false, nullable: false },
     { key: "porta_sim", group: "display", type: "integer", description: "porta do simulador em localhost", live: false, nullable: false, min: 1024, max: 65535 },
     { key: "layout", group: "appearance", type: "enum", description: "o modelo de tela (de ou para o clássico, só ao reiniciar)", live: true, nullable: false, choices: ["auto", "ombro", "classico", "minimal-v2", "multiagente"] },
-    { key: "cor_mascote", group: "appearance", type: "color", description: "cor fixa do cloud (#RRGGBB; null sorteia a cada estado)", live: true, nullable: true },
+    { key: "cor_mascote", group: "appearance", type: "color", description: "cor fixa do avatar (#RRGGBB; vale por cima do cor_modo)", live: true, nullable: true },
+    { key: "cor_modo", group: "appearance", type: "enum", description: "cor do avatar: a do agente, ou sorteada a cada troca de estado", live: true, nullable: false, choices: ["agente", "sorteada"] },
+    ...(["claude", "codex", "cursor", "padrao"] as const).map((p) => ({
+      key: `avatares.${p}`, group: "avatars", type: "enum" as const, description: `avatar ${p}`, live: true, nullable: false,
+      choices: ["padrao", "aleatorio", "ombro-cloud", "sereno", "orbita", "cubo", "scout", "pixel", "chevron", "maestro", "nova"],
+    })),
+    { key: "avatar_sorteio", group: "avatars", type: "enum", description: "o aleatório: um por inicialização, ou um por sessão", live: true, nullable: false, choices: ["inicio", "sessao"] },
     { key: "intervalo", group: "appearance", type: "number", description: "segundos entre quadros (null: o padrão do layout)", live: false, nullable: true, min: 0.05, max: 10 },
     { key: "vista", group: "multi_agent", type: "enum", description: "visão do layout multiagente", live: true, nullable: false, choices: ["overview", "focus", "attention"] },
     { key: "foco", group: "multi_agent", type: "enum", description: "o agente da visão focus", live: true, nullable: true, choices: ["claude", "codex", "cursor"] },
@@ -122,7 +134,9 @@ export function mockConfig(): ConfigInfo {
   return {
     file: "~/.ombro-screen/config.json", file_exists: false,
     values: {
-      brilho: 30, cor_mascote: null, debug: false, foco: null, girar: false, intervalo: null, intervalo_rotacao: 15,
+      brilho: 30, cor_mascote: null, cor_modo: "agente", avatar_sorteio: "inicio",
+      avatares: { claude: "padrao", codex: "padrao", cursor: "padrao", padrao: "padrao" },
+      debug: false, foco: null, girar: false, intervalo: null, intervalo_rotacao: 15,
       layout: "auto", paisagem: false, porta: "AUTO", porta_sim: 5680, providers: ["claude", "codex", "cursor"],
       revisao: "A", rotacao: false, sem_macmon: false, transporte: "auto", usb: false, vista: "overview",
     },
@@ -200,13 +214,17 @@ export function createMockApi(): OmbroApi {
       Promise.resolve({
         kind: "simulator", connection: "connected", transport: "http", brightness: null, orientation: "portrait",
         layout: String(config.values.layout), frames: 1200, last_frame_at: iso(agora()), url: "http://localhost:5680",
+        mascot: { avatar: "ombro-cloud", provider: "claude", state: "esperando", color: "#DF8559" },
       }),
     displayPreview: () => Promise.resolve({ available: false }),
     configGet: () => Promise.resolve(structuredClone(config)),
     configSchema: () => Promise.resolve(mockSchema),
     configUpdate: async (changes, persist) => {
       const live = new Set(config.live);
-      Object.assign(config.values, changes);
+      for (const [k, v] of Object.entries(changes)) {
+        if (k.startsWith("avatares.")) (config.values.avatares as Record<string, unknown>)[k.slice(9)] = v;
+        else config.values[k] = v;
+      }
       const keys = Object.keys(changes);
       return { applied: keys.filter((k) => live.has(k)), restart_required: keys.filter((k) => !live.has(k)), persisted: persist, file: persist ? config.file : null };
     },

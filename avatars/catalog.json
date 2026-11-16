@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "format": "open-bot-avatar v1 (https://github.com/DominikScholz/open-bot-avatar, MIT): defs/<id>.json",
+  "default": "ombro-cloud",
+  "providers": {
+    "claude": { "avatar": "ombro-cloud", "color": "#DF8559" },
+    "codex": { "avatar": "orbita", "color": "#83B596" },
+    "cursor": { "avatar": "cubo", "color": "#79A9D8" }
+  },
+  "avatars": [
+    {
+      "id": "ombro-cloud",
+      "description": "O personagem do Ombro: uma nuvem que senta numa base macia, com a cúpula puxada para um lado.",
+      "tags": ["ombro", "nuvem", "companheiro"],
+      "color": "#DF8559",
+      "random": true
+    },
+    {
+      "id": "sereno",
+      "description": "Hexágono de cantos macios: calmo, técnico e organizado.",
+      "tags": ["calmo", "técnico"],
+      "color": "#D97757",
+      "random": true
+    },
+    {
+      "id": "orbita",
+      "description": "Planeta com um anel inclinado: objetivo, analítico, sempre em volta do problema.",
+      "tags": ["analítico", "ferramentas"],
+      "color": "#83B596",
+      "random": true
+    },
+    {
+      "id": "cubo",
+      "description": "Bloco macio com um canto dobrado, como uma página: o companheiro de quem constrói.",
+      "tags": ["criativo", "construtor"],
+      "color": "#79A9D8",
+      "random": true
+    },
+    {
+      "id": "scout",
+      "description": "Gota de mapa que aponta o caminho: explorador e pesquisador.",
+      "tags": ["pesquisa", "explorador"],
+      "color": "#E7AF5E",
+      "random": true
+    },
+    {
+      "id": "pixel",
+      "description": "Bloco de cantos em degrau, como um pixel ampliado: interface e design.",
+      "tags": ["interface", "design"],
+      "color": "#C58AD8",
+      "random": true
+    },
+    {
+      "id": "chevron",
+      "description": "Escudo com a ponta em chevron: backend, sistemas e o que precisa ficar de pé.",
+      "tags": ["backend", "sistemas"],
+      "color": "#6FA3A0",
+      "random": true
+    },
+    {
+      "id": "maestro",
+      "description": "Engrenagem macia de oito lobos: coordena e orquestra.",
+      "tags": ["coordenação", "orquestração"],
+      "color": "#E58FB0",
+      "random": true
+    },
+    {
+      "id": "nova",
+      "description": "Estrela cheinha de pontas arredondadas: neutra, limpa e futurista.",
+      "tags": ["neutro", "futurista"],
+      "color": "#E7C25E",
+      "random": true
+    }
+  ]
+}

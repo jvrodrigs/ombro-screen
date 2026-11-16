@@ -1,6 +1,10 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+
+// avatars/ fica na raiz do repositório (a telinha e o app leem os mesmos arquivos)
+const raizDoRepositorio = fileURLToPath(new URL("..", import.meta.url));
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -14,6 +18,7 @@ export default defineConfig({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
+    fs: { allow: [raizDoRepositorio] },
   },
   build: {
     target: "safari16",

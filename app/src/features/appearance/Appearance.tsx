@@ -6,6 +6,9 @@ import { errorMessage } from "../../services/api";
 import { PROVIDER_NAMES } from "../../lib/format";
 import type { ConfigValue } from "../../types/ombro";
 import { Preview } from "../display/Preview";
+import { AvatarSettings } from "../avatars/AvatarSettings";
+
+type ModoCor = "agente" | "sorteada" | "fixa";
 
 const VISTAS: Record<string, { label: string; desc: string }> = {
   overview: { label: "Visão geral", desc: "Os três agentes lado a lado" },
@@ -45,29 +48,54 @@ export function Appearance() {
   };
 
   const fixa = typeof v.cor_mascote === "string";
+  const modoCor: ModoCor = fixa ? "fixa" : v.cor_modo === "sorteada" ? "sorteada" : "agente";
+  const mudarModoCor = async (m: ModoCor) => {
+    setSalvando("cor");
+    setErro(null);
+    try {
+      await api.configUpdate(m === "fixa" ? { cor_mascote: cor.toUpperCase() } : { cor_mascote: null, cor_modo: m }, true);
+      await config.reload();
+    } catch (e) {
+      setErro(errorMessage(e));
+    } finally {
+      setSalvando(null);
+    }
+  };
   const rot = opt.get("intervalo_rotacao");
   const multi = v.layout === "multiagente";
 
   return (
     <>
-      <PageHeader title="Aparência" subtitle="Como o cloud e o layout multiagente aparecem na tela. Tudo muda na hora." />
+      <PageHeader title="Aparência" subtitle="Os avatares, as cores e o layout multiagente da tela. Tudo muda na hora." />
       {erro && <Notice tone="critical">{erro}</Notice>}
       {config.error && <Notice tone="critical">{config.error}</Notice>}
 
       <div className="appearance-layout">
         <div className="stack">
+          <AvatarSettings config={config.data} onChanged={() => config.reload()} />
+
           <Card>
             <div className="card-title">
-              <h2>Cloud</h2>
+              <h2>Cor do avatar</h2>
             </div>
-            <Toggle
-              label="Cor fixa"
-              description="Desligado, o cloud ganha uma cor sorteada a cada troca de estado (o padrão)."
-              checked={fixa}
-              pending={salvando === "cor_mascote"}
-              disabled={!config.data}
-              onChange={(on) => mudar("cor_mascote", on ? cor.toUpperCase() : null)}
+            <Segmented<ModoCor>
+              label="Cor do avatar"
+              value={modoCor}
+              disabled={!config.data || salvando === "cor"}
+              onChange={mudarModoCor}
+              options={[
+                { value: "agente", label: "Do agente", title: "Claude laranja, Codex verde, Cursor azul" },
+                { value: "sorteada", label: "Sorteada", title: "Uma cor nova a cada troca de estado" },
+                { value: "fixa", label: "Fixa", title: "Sempre a mesma cor" },
+              ]}
             />
+            <p className="muted small" style={{ marginTop: 8 }}>
+              {modoCor === "agente"
+                ? "Cada agente com a sua cor: o Claude laranja, o Codex verde e o Cursor azul."
+                : modoCor === "sorteada"
+                  ? "A cada troca de estado, o avatar ganha uma cor sorteada (legível no fundo escuro)."
+                  : "A mesma cor para todos os avatares."}
+            </p>
             {fixa && (
               <div className="color-row">
                 <label htmlFor="cor" className="secondary">
@@ -99,7 +127,7 @@ export function Appearance() {
                 </div>
               </div>
             )}
-            <p className="muted small">A forma e as animações do cloud não mudam.</p>
+            <p className="muted small">As animações do mascote (pulos, zZ, “?”, confete) são as mesmas em todos os avatares.</p>
           </Card>
 
           <Card>
@@ -176,7 +204,7 @@ export function Appearance() {
           <div className="card-title">
             <h2>Prévia</h2>
           </div>
-          <Preview zoomable={false} />
+          <Preview intervalMs={200} zoomable={false} />
         </Card>
       </div>
     </>

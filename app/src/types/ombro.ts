@@ -123,6 +123,15 @@ export interface ProviderInfo {
   last_event_at?: string | null;
   quotas?: Quotas | null;
   usage?: Usage | null;
+  /** O avatar que o ombrod usa para este agente agora (o "aleatório ao iniciar" já sorteado). */
+  avatar?: ResolvedAvatar | null;
+}
+
+export interface ResolvedAvatar {
+  avatar: string;
+  color: string;
+  /** A preferência: "padrao", "aleatorio" ou o id de um avatar. */
+  choice: string;
 }
 
 export type SessionStatus = "working" | "idle" | "waiting" | "approval" | "error" | "unknown";
@@ -154,7 +163,12 @@ export interface Snapshot {
   at_ms: number;
   daemon: DaemonState | null;
   status: DaemonStatus | null;
-  providers: { providers: ProviderInfo[]; collected_at: string | null } | null;
+  providers: {
+    providers: ProviderInfo[];
+    collected_at: string | null;
+    ombro_avatar?: ResolvedAvatar | null;
+    random_mode?: "inicio" | "sessao";
+  } | null;
   sessions: { sessions: Session[]; collected_at: string | null } | null;
   health: Health | null;
   error: AppError | null;
@@ -177,6 +191,8 @@ export interface DisplayStatus {
   connected_since?: string | null;
   last_error?: string | null;
   url?: string | null;
+  /** Quem o mascote da telinha representa agora, com qual avatar, estado e cor. */
+  mascot?: { avatar: string; provider: ProviderId | null; state: string; color: string };
 }
 
 export type Preview =

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import random
 import threading
 import time
 import webbrowser
@@ -25,11 +26,13 @@ from typing import Callable, Optional
 
 import psutil
 
+import avatares
 from apresentacao import uso_claude, uso_mascote
 from coletores.claude import ColetorClaude
 from coletores.demo import Demo
 from coletores.hardware import ColetorHardware, Hardware
 from config import NOMES_LAYOUT, OmbroConfig, pasta_ombro
+from core.models import Activity, Attention
 from core.monitor import Monitor
 from core.resumo import resumir
 from layout_minimal_v2 import desenhar_minimal
@@ -51,6 +54,7 @@ log_usb = logger("usb")
 
 INTERVALO_CLAUDE = 5.0  # segundos entre leituras dos arquivos do Claude Code (e dos eventos dos hooks)
 ESTATISTICAS_S = 60.0  # com --debug, um resumo do laço a cada minuto
+DO_CLAUDE = ("alerta", "reset")  # estados que vêm dos limites do Claude: no multiagente, o mascote é o dele
 ANIMADOS = ("auto", "ombro", "minimal-v2", "multiagente")  # layouts que dá para trocar sem reiniciar
 
 
@@ -146,7 +150,9 @@ class Aplicacao:
         self.resumo, self.uso_multi = None, None
         self._avisos_hw = SoQuandoMuda(log_hw)
         self._ultimo_hw = Hardware(disponivel=False)  # até a primeira leitura boa
-        self.mascote = Mascote(cor_fixa=cfg.cor_mascote_rgb)
+        self.semente = random.getrandbits(32)  # o "aleatório ao iniciar": sorteado agora, o mesmo até reiniciar
+        self.mascote = Mascote(cor_fixa=cfg.cor_mascote_rgb, cor_modo=cfg.cor_modo)
+        self.sujeito_atual: tuple = (None, None)  # (agente, sessão) de quem o mascote está falando agora
         if self.demo and cfg.demo_ciclo > 0:  # no ciclo de demonstração, o "concluído" dura um cenário, não 5 min
             self.mascote.duracao_concluido = cfg.demo_ciclo
         self.mascote.inicio = time.monotonic()
@@ -204,7 +210,10 @@ class Aplicacao:
         try:
             if self.cfg.animado:
                 base = self.uso_multi if self.multi else uso  # no multiagente, o cloud reage a todos os agentes
+                antes = self.mascote.estado
                 self.mascote.ir_para(self.mascote.decidir(base, agora_mono), agora_mono)
+                if self.multi and (antes in DO_CLAUDE) != (self.mascote.estado in DO_CLAUDE):
+                    self.atualizar_avatar(agora_mono)  # entrou ou saiu de alerta/reset: muda de quem é o mascote
                 return self.desenhar_animado(h, uso, agora_mono)
             return desenhar(h, uso, paisagem_=self.cfg.paisagem_efetiva)
         except Exception:
@@ -219,7 +228,9 @@ class Aplicacao:
         self.ler_hw()
         time.sleep(0.5)
         agora = time.monotonic()
-        img = self.quadro(self.ler_hw(), self.ler_claude(), agora)
+        uso = self.ler_claude()
+        self.atualizar_avatar(agora, ja=True)  # o avatar de quem o mascote representa, como no laço
+        img = self.quadro(self.ler_hw(), uso, agora)
         if self.cfg.animado:  # sem mistura com o estado anterior, e já no meio do movimento
             self.mascote.anterior = None
             img = self.desenhar_animado(self.ler_hw(), self.ler_claude(), agora + 1.0)
@@ -264,6 +275,7 @@ class Aplicacao:
                 if self._uso is None or inicio - self._ultimo_uso >= INTERVALO_CLAUDE or demo_ciclo:
                     self._uso, self._ultimo_uso = self.ler_claude(), inicio  # problemas na leitura vão para o log
                     self.coletado_em = datetime.now()
+                    self.atualizar_avatar(inicio)
                     if self.ao_coletar is not None:
                         self.ao_coletar()
                 self.ultimo_hw = self.ler_hw()  # o ombrod publica CPU e RAM a partir desta leitura
@@ -337,13 +349,79 @@ class Aplicacao:
     def definir_cor(self, cor: Optional[str]) -> None:
         self.cfg = replace(self.cfg, cor_mascote=cor)
         self.mascote.cor_fixa = self.cfg.cor_mascote_rgb
-        if self.mascote.cor_fixa:
-            self.mascote.cor = self.mascote.cor_fixa
+        self.mascote.cor = self.mascote._cor_do_estado()  # sem cor fixa, volta à do agente (ou a uma sorteada)
 
     def definir_vista(self, **mudancas) -> None:
         self.cfg = replace(self.cfg, **mudancas)
         c = self.cfg
         self.seletor = SeletorDeVista(c.vista, c.foco, c.rotacao, c.intervalo_rotacao)
+
+    # ---------- o avatar do mascote ----------
+    def _sessao_relevante(self, provider: str) -> Optional[str]:
+        """A sessão que o mascote representa num agente: a que espera você, senão a que trabalha, senão a mais recente."""
+        lista = self.monitor.store.sessions(provider)
+        if not lista:
+            return None
+        def peso(s):
+            esperando = s.attention in (Attention.WAITING_USER, Attention.WAITING_APPROVAL, Attention.ERROR)
+            return (esperando, s.activity is Activity.WORKING, s.updated_at or datetime.min)
+        return max(lista, key=peso).session_id
+
+    def sujeito(self) -> tuple:
+        """(agente, sessão) de quem o mascote fala. Nos layouts de um agente, o Claude. No multiagente: o Claude em
+        alerta e reset (são os limites dele); senão o mais urgente; senão o da visão em foco; senão o único que
+        trabalha (ou o único com sessões); senão ninguém (None: o avatar do Ombro)."""
+        if not self.multi or self.mascote.estado in DO_CLAUDE:
+            return CLAUDE, self._sessao_relevante(CLAUDE)
+        r = self.resumo
+        if r is None:
+            return None, None
+        if r.mais_urgente is not None:
+            urg = r.mais_urgente
+            return urg.provider_id, urg.sessao.session_id if urg.sessao else self._sessao_relevante(urg.provider_id)
+        if self.cfg.vista == "focus" and self.cfg.foco:
+            return self.cfg.foco, self._sessao_relevante(self.cfg.foco)
+        for grupo in ([p for p in r.providers if p.trabalhando], [p for p in r.providers if p.ativo]):
+            if len(grupo) == 1:
+                return grupo[0].provider_id, self._sessao_relevante(grupo[0].provider_id)
+        return None, None
+
+    def avatar_de(self, provider: Optional[str], sessao: Optional[str] = None) -> "avatares.Avatar":
+        pref = self.cfg.avatar(provider or "padrao")
+        return avatares.escolher(pref, provider, self.cfg.avatar_sorteio, self.semente, sessao)
+
+    def cor_de(self, provider: Optional[str], av: "avatares.Avatar") -> tuple:
+        cat = avatares.catalogo()
+        return avatares.cor_hex(cat.cor_agente.get(provider, av.cor) if provider else av.cor)
+
+    def atualizar_avatar(self, agora: float, ja: bool = False) -> None:
+        """Pede ao mascote o avatar de quem ele representa agora (entra na próxima troca de estado)."""
+        provider, sessao = self.sujeito_atual = self.sujeito()
+        av = self.avatar_de(provider, sessao)
+        self.mascote.usar(av, self.cor_de(provider, av), agora, ja=ja)
+
+    def avatares_resolvidos(self) -> dict:
+        """O avatar e a cor de cada agente agora (o "aleatório ao iniciar" já sorteado), para a IPC."""
+        out = {}
+        for p in (*[pid for pid, _ in self.nomes], None):
+            av = self.avatar_de(p)
+            out[p or "padrao"] = {"avatar": av.id, "color": "#%02X%02X%02X" % self.cor_de(p, av),
+                                  "choice": self.cfg.avatar(p or "padrao")}
+        return out
+
+    def definir_avatar(self, chave: str, valor) -> None:
+        """Mudou uma preferência de avatar ou de cor: vale na hora (o mascote troca sem esperar o estado mudar)."""
+        if chave.startswith("avatares."):
+            alvo = chave.split(".", 1)[1]
+            pares = dict(self.cfg.avatares)
+            pares[alvo] = valor
+            self.cfg = replace(self.cfg, avatares=tuple((k, pares[k]) for k in ("claude", "codex", "cursor", "padrao") if k in pares))
+        elif chave == "avatar_sorteio":
+            self.cfg = replace(self.cfg, avatar_sorteio=valor)
+        elif chave == "cor_modo":
+            self.cfg = replace(self.cfg, cor_modo=valor)
+            self.mascote.definir_cor_modo(valor)
+        self.atualizar_avatar(time.monotonic(), ja=True)
 
     # ---------- fim ----------
     def fechar(self) -> None:

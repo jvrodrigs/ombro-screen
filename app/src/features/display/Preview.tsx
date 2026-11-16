@@ -8,7 +8,8 @@ import type { Preview as PreviewData } from "../../types/ombro";
 
 type Zoom = "fit" | "1" | "2";
 
-/** O último quadro que o ombrod mandou para a tela (o mesmo renderer da USB): nada é redesenhado aqui. */
+/** O último quadro que o ombrod mandou para a tela (o mesmo renderer da USB): nada é redesenhado aqui. Nas páginas
+ * Tela e Aparência, a 5 fps (a telinha anda a 5 fps); parado com a janela escondida. */
 export function Preview({ intervalMs = 1000, zoomable = true }: { intervalMs?: number; zoomable?: boolean }) {
   const { api, snapshot } = useOmbro();
   const [data, setData] = useState<PreviewData | null>(null);
@@ -16,15 +17,20 @@ export function Preview({ intervalMs = 1000, zoomable = true }: { intervalMs?: n
   const [zoom, setZoom] = useState<Zoom>("fit");
   const conectado = snapshot?.daemon?.state === "connected";
 
+  const emVoo = useRef(false); // a 5 fps um pedido pode demorar mais que o intervalo: um de cada vez
   const buscar = () => {
-    if (!conectado) return;
+    if (!conectado || emVoo.current) return;
+    emVoo.current = true;
     api
       .displayPreview()
       .then((p) => {
         setData(p);
         setErro(null);
       })
-      .catch(() => setErro("A prévia não respondeu."));
+      .catch(() => setErro("A prévia não respondeu."))
+      .finally(() => {
+        emVoo.current = false;
+      });
   };
   useInterval(buscar, intervalMs, conectado);
   const buscarRef = useRef(buscar);

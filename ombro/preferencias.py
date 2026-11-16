@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
 
+import avatares
 from config import LAYOUTS, PROVIDERS, REVISOES, TRANSPORTES, VERSAO, VISTAS, ConfigInvalida, validar
 
 from .arquivos import assinatura, gravar_atomico
@@ -64,7 +65,10 @@ ESQUEMA: Tuple[Opcao, ...] = (
     Opcao("porta_sim", "display", "integer", "porta do simulador em localhost", False, minimo=1024, maximo=65535),
     # o que aparece
     Opcao("layout", "appearance", "enum", "o modelo de tela (de ou para o clássico, só ao reiniciar)", True, LAYOUTS),
-    Opcao("cor_mascote", "appearance", "color", "cor fixa do cloud (#RRGGBB; null sorteia a cada estado)", True, nulo=True),
+    Opcao("cor_mascote", "appearance", "color", "cor fixa do avatar (#RRGGBB; vale por cima do cor_modo; null: segue o cor_modo)",
+          True, nulo=True),
+    Opcao("cor_modo", "appearance", "enum", "cor do avatar: a do agente, ou sorteada a cada troca de estado", True,
+          avatares.CORES_MODO),
     Opcao("intervalo", "appearance", "number", "segundos entre quadros (null: o padrão do layout)", False,
           minimo=0.05, maximo=10, nulo=True),
     # layout multiagente
@@ -75,6 +79,13 @@ ESQUEMA: Tuple[Opcao, ...] = (
     # agentes
     *(Opcao(f"providers.{p}", "providers", "boolean", f"acompanhar o {nome}", False)
       for p, nome in (("claude", "Claude Code"), ("codex", "Codex"), ("cursor", "Cursor"))),
+    # avatares: o de cada agente e o do Ombro (sem agente em foco); "padrao", "aleatorio" ou o id de um avatar
+    *(Opcao(f"avatares.{p}", "avatars", "enum", f"avatar {nome}", True,
+            avatares.ESPECIAIS + avatares.catalogo().ids())
+      for p, nome in (("claude", "do Claude Code"), ("codex", "do Codex"), ("cursor", "do Cursor"),
+                      ("padrao", "do Ombro, quando nenhum agente está em foco"))),
+    Opcao("avatar_sorteio", "avatars", "enum", "o aleatório: um por inicialização do Ombro, ou um por sessão", True,
+          avatares.SORTEIOS),
     # coleta e diagnóstico
     Opcao("sem_macmon", "hardware", "boolean", "não usar o macmon (só psutil: sem GPU e temperatura)", False),
     Opcao("debug", "diagnostics", "boolean", "logs detalhados (nível DEBUG)", False),
@@ -109,6 +120,12 @@ def validar_mudancas(mudancas: Dict, ligados: Iterable[str] = PROVIDERS) -> Dict
         if chave.startswith("providers."):
             if not isinstance(v, bool):
                 raise ConfigInvalida(f"{chave} deve ser true ou false (veio {v!r})")
+            limpo[chave] = v
+            continue
+        if chave.startswith("avatares."):  # pela IPC, só os avatares que existem (o arquivo aceita mais, com aviso)
+            if v not in o.opcoes:
+                raise ConfigInvalida(f"{chave} deve ser \"padrao\", \"aleatorio\" ou um destes avatares: "
+                                     f"{', '.join(o.opcoes[2:])} (veio {v!r})")
             limpo[chave] = v
             continue
         v = validar(chave, v)
@@ -152,6 +169,11 @@ def gravar(arquivo: Path, mudancas: Dict) -> Tuple[Path, Dict]:
     for chave, valor in mudancas.items():
         if chave in NO_BLOCO_MULTI:
             bloco("multi_agent")[NO_BLOCO_MULTI[chave]] = valor
+        elif chave.startswith("avatares."):
+            alvo = chave.split(".", 1)[1]
+            bloco("avatars")["default" if alvo == "padrao" else alvo] = valor
+        elif chave == "avatar_sorteio":
+            bloco("avatars")["random"] = valor
         elif chave.startswith("providers."):
             pid = chave.split(".", 1)[1]
             atual = bloco("providers").get(pid)

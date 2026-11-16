@@ -216,9 +216,16 @@
   border-color: var(--orange);
   background: var(--orange-soft);
 }
+.choice.pending {
+  border-color: var(--border-strong);
+  border-style: dashed;
+}
 .layout-choices + .notice {
   margin-top: var(--sp-4);
   margin-bottom: 0;
+}
+.layout-choices + .toggle-row {
+  margin-top: var(--sp-4);
 }
 
 .slider-row {

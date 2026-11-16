@@ -170,6 +170,11 @@ def cmd_sessions(args) -> int:
     return 0
 
 
+def _adiado(r: dict) -> str:
+    """A tela USB está fora: a mudança já vale (e a prévia já mudou); a tela recebe quando reconectar."""
+    return "; a tela USB está desconectada e recebe ao reconectar" if r.get("deferred") else ""
+
+
 def cmd_display(args) -> int:
     acao = args.acao
     if acao == "brightness":
@@ -179,11 +184,11 @@ def cmd_display(args) -> int:
         return 0
     if acao == "layout":
         r = _chamar(args, "display.set_layout", {"layout": args.valor, "persist": args.persist})
-        if r["restart_required"]:
-            _saida(args, r, f"layout {args.valor}: {'gravado; ' if args.persist else ''}vale depois de reiniciar o ombrod "
-                            "(o clássico muda a orientação da tela)")
+        if r["restart_required"]:  # só quando o ombrod ainda não está mostrando a tela
+            _saida(args, r, f"layout {args.valor}: {'gravado; ' if args.persist else ''}vale quando o ombrod começar a mostrar a tela")
         else:
-            _saida(args, r, f"layout: {args.valor}" + (" (gravado no config.json)" if args.persist else " (até reiniciar)"))
+            _saida(args, r, f"layout: {args.valor}" + (" (gravado no config.json)" if args.persist else " (até reiniciar)")
+                   + _adiado(r))
         return 0
     if acao == "preview":
         r = _chamar(args, "display.preview", {"format": "png"})
@@ -258,7 +263,7 @@ def cmd_config(args) -> int:
             partes.append("vale depois de reiniciar")
         if r["persisted"]:
             partes.append(f"gravada em {r['file']}")
-        _saida(args, r, f"{args.chave}: " + ", ".join(partes))
+        _saida(args, r, f"{args.chave}: " + ", ".join(partes) + _adiado(r))
         return 0
     c = _chamar(args, "config.get")
 

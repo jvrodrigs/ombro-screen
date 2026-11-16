@@ -189,8 +189,9 @@ class App(Temporaria):
         app.executar(lambda: app.definir_layout("multiagente"))
         time.sleep(0.2)
         self.assertIsNotNone(app.resumo)  # coletou de novo para o multiagente
-        with self.assertRaises(ValueError):
-            app.executar(lambda: app.definir_layout("classico"))
+        app.executar(lambda: app.definir_layout("classico"))  # o clássico também troca com o Ombro rodando
+        self.assertEqual(app.cfg.layout, "classico")
+        app.executar(lambda: app.definir_layout("multiagente"))
         app.executar(lambda: app.definir_cor("#3D7A4F"))
         self.assertEqual(app.mascote.cor_fixa, (0x3D, 0x7A, 0x4F))
         app.executar(lambda: app.definir_vista(vista="attention"))

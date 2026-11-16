@@ -79,6 +79,11 @@ def imagens(lcd):
     return [c for c in lcd.chamadas if c[0] == "img"]
 
 
+def inteiro(w: int = 480, h: int = 320) -> list:
+    """Um quadro inteiro, como vai para a tela: em faixas (o envio pode parar entre duas para atender um pedido)."""
+    return [("img", (w, min(saida.FAIXA, h - y)), 0, y) for y in range(0, h, saida.FAIXA)]
+
+
 class TelaUSBComLibFalsa(unittest.TestCase):
     def setUp(self):
         LcdFalso.presente, LcdFalso.desistir, LcdFalso.quebrar_ao_abrir, LcdFalso.instancias = True, False, False, []
@@ -124,7 +129,95 @@ class TelaUSBComLibFalsa(unittest.TestCase):
         t.mostrar(quadro())
         t.mostrar(quadro())  # igual: nada vai pela serial
         t.mostrar(quadro(30))
-        self.assertEqual(imagens(t.lcd), [("img", (480, 320), 0, 0), ("img", (31, 11), 10, 50)])
+        self.assertEqual(imagens(t.lcd), inteiro() + [("img", (31, 11), 10, 50)])
+
+    # ---------- orientação com o Ombro rodando (girar 180°, clássico em pé ou deitado) ----------
+    def test_girar_muda_a_orientacao_na_conexao_aberta(self):
+        t = self.tela()
+        t.mostrar(quadro())
+        lcd = t.lcd
+        self.assertTrue(t.definir_orientacao(paisagem=True, girar=True))
+        self.assertIs(t.lcd, lcd)  # a mesma conexão: nada de fechar e reabrir o USB
+        self.assertNotIn("close", lcd.chamadas)
+        self.assertEqual(lcd.chamadas[-1], ("orientacao", Orientation.REVERSE_LANDSCAPE))
+        self.assertEqual(t.estado()["orientation"], "reverse_landscape")
+        t.mostrar(quadro())  # o quadro é o mesmo, mas a tela girou: vai inteiro
+        self.assertEqual(imagens(lcd)[-8:], inteiro())
+        self.assertTrue(t.definir_orientacao(paisagem=True, girar=False))  # desligar volta
+        self.assertEqual(t.estado()["orientation"], "landscape")
+        n = len(lcd.chamadas)
+        self.assertTrue(t.definir_orientacao(paisagem=True, girar=False))  # a mesma de novo: nada vai para a tela
+        self.assertEqual(len(lcd.chamadas), n)
+
+    def test_classico_em_pe_e_deitado_trocam_o_tamanho_do_quadro(self):
+        t = self.tela()
+        t.mostrar(quadro())
+        self.assertTrue(t.definir_orientacao(paisagem=False, girar=False))
+        self.assertEqual(t.estado()["orientation"], "portrait")
+        t.mostrar(Image.new("RGB", (320, 480), (18, 17, 16)))
+        self.assertEqual(imagens(t.lcd)[-12:], inteiro(320, 480))
+        self.assertTrue(t.definir_orientacao(paisagem=False, girar=True))
+        self.assertEqual(t.estado()["orientation"], "reverse_portrait")
+
+    def test_orientacao_com_a_tela_fora_vale_ao_reconectar(self):
+        t = self.tela()
+        t.mostrar(quadro())
+        t.lcd.falhar = True
+        t.mostrar(quadro(5))
+        self.assertIsNone(t.lcd)
+        self.assertFalse(t.definir_orientacao(paisagem=True, girar=True))  # guardada: a tela não está lá
+        self.assertEqual(t.estado()["orientation"], "reverse_landscape")
+        self.relogio += saida.RETENTAR_S + 0.1
+        t.mostrar(quadro(5))  # reconecta e configura com a orientação nova
+        self.assertIn(("orientacao", Orientation.REVERSE_LANDSCAPE), LcdFalso.instancias[-1].chamadas)
+
+    def test_tela_que_recusa_a_orientacao_vira_reconexao(self):
+        t = self.tela()
+        t.lcd.SetOrientation = mock.Mock(side_effect=OSError(5, "Input/output error"))
+        self.assertFalse(t.definir_orientacao(paisagem=True, girar=True))
+        self.assertIsNone(t.lcd)
+        self.assertEqual(t.conexao, "error")
+        self.assertIn("não aceitou a orientação", self.stderr.getvalue())
+        self.relogio += saida.RETENTAR_S + 0.1
+        t.mostrar(quadro())
+        self.assertIn(("orientacao", Orientation.REVERSE_LANDSCAPE), LcdFalso.instancias[-1].chamadas)
+
+    # ---------- o envio para entre duas faixas quando há um pedido esperando ----------
+    def test_envio_interrompido_continua_no_proximo_quadro(self):
+        t = self.tela()
+        pedidos = iter([False, True])  # depois da 2ª faixa chega um pedido
+        t.interromper = lambda: next(pedidos, False)
+        t.mostrar(quadro())
+        self.assertEqual(imagens(t.lcd), inteiro()[:2])  # parou: o laço vai atender o pedido
+        t.interromper = lambda: False
+        t.mostrar(quadro())  # o mesmo quadro: só o que faltava
+        self.assertEqual(imagens(t.lcd), inteiro())
+        t.mostrar(quadro())  # agora a tela tem tudo: nada a mandar
+        self.assertEqual(len(imagens(t.lcd)), 8)
+
+    def test_interrompido_e_o_quadro_seguinte_e_outro(self):
+        t = self.tela()
+        t.interromper = lambda: False
+        t.mostrar(quadro())
+        n = len(imagens(t.lcd))
+        outro = Image.new("RGB", (480, 320), (200, 30, 30))  # outro layout: todas as faixas mudam
+        vezes = iter([True])
+        t.interromper = lambda: next(vezes, False)
+        t.mostrar(outro)  # manda a 1ª faixa e para
+        self.assertEqual(imagens(t.lcd)[n:], inteiro()[:1])
+        terceiro = Image.new("RGB", (480, 320), (30, 200, 30))  # e o pedido trocou o layout de novo
+        t.mostrar(terceiro)
+        self.assertEqual(imagens(t.lcd)[n + 1:], inteiro())  # todas as faixas: a 1ª tinha o outro, o resto o antigo
+        t.mostrar(terceiro)
+        self.assertEqual(len(imagens(t.lcd)), n + 9)  # e a tela ficou igual ao último quadro
+
+    def test_sem_pedido_esperando_o_quadro_vai_ate_o_fim(self):
+        t = self.tela()
+        consultas = []
+        t.interromper = lambda: consultas.append(1) and False
+        t.mostrar(quadro())
+        self.assertEqual(imagens(t.lcd), inteiro())
+        self.assertEqual(len(consultas), 7)  # entre as faixas; depois da última não há o que interromper
 
     def test_cabo_solto_nao_derruba_e_reconecta(self):
         t = self.tela()
@@ -145,7 +238,7 @@ class TelaUSBComLibFalsa(unittest.TestCase):
         self.relogio += saida.RETENTAR_S
         t.mostrar(quadro(5))
         self.assertEqual(len(LcdFalso.instancias), 2)
-        self.assertEqual(imagens(t.lcd), [("img", (480, 320), 0, 0)])  # a tela reiniciou: quadro inteiro
+        self.assertEqual(imagens(t.lcd), inteiro())  # a tela reiniciou: quadro inteiro
         self.assertIn("tela USB reconectada", self.stderr.getvalue())
 
     def test_comeca_sem_a_tela_e_conecta_quando_ela_aparece(self):
@@ -156,7 +249,7 @@ class TelaUSBComLibFalsa(unittest.TestCase):
         LcdFalso.presente = True
         self.relogio += saida.RETENTAR_S
         t.mostrar(quadro())
-        self.assertEqual(imagens(t.lcd), [("img", (480, 320), 0, 0)])
+        self.assertEqual(imagens(t.lcd), inteiro())
 
     def test_sys_exit_da_biblioteca_e_contido(self):
         LcdFalso.desistir = True
@@ -173,7 +266,7 @@ class TelaUSBComLibFalsa(unittest.TestCase):
         self.assertIn(("brilho", 30), t.lcd.chamadas)
         self.assertIn(("orientacao", Orientation.LANDSCAPE), t.lcd.chamadas)
         t.mostrar(quadro(8))  # mesmo quadro, mas a tela pode ter perdido tudo: vai inteiro
-        self.assertEqual(imagens(t.lcd)[-1], ("img", (480, 320), 0, 0))
+        self.assertEqual(imagens(t.lcd)[-8:], inteiro())
 
     def test_fechar_solta_a_porta(self):
         t = self.tela()

@@ -2,11 +2,13 @@ import { useState } from "react";
 import { RefreshCw, ShieldCheck } from "lucide-react";
 import { Badge, Button, Card, Dialog, KeyValues, Notice, PageHeader, Spinner, Toggle } from "../../components/ui";
 import { useAsync } from "../../hooks/useAsync";
+import { useConfig } from "../../hooks/useConfig";
 import { useOmbro } from "../../hooks/useOmbro";
 import { errorMessage } from "../../services/api";
 import { ago, providerBadge, providerName, PROVIDER_NAMES } from "../../lib/format";
 import { PROVIDER_IDS, type IntegrationCheck, type IntegrationRunResult, type IntegrationState, type ProviderId } from "../../types/ombro";
 import { ProviderAvatar } from "../avatars/ProviderAvatar";
+import { RestartNotice } from "../display/Display";
 
 const CAPS: Record<string, string> = {
   sessions: "Sessões",
@@ -66,7 +68,7 @@ export function Agents() {
   const { api, snapshot, info } = useOmbro();
   const lista = useAsync(() => api.integrationsList(), []);
   const doctor = useAsync(() => api.doctorRun(), []);
-  const config = useAsync(() => api.configGet(), []);
+  const config = useConfig();
   const [flow, setFlow] = useState<Flow | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [toggleMsg, setToggleMsg] = useState<string | null>(null);
@@ -112,9 +114,7 @@ export function Agents() {
     setToggling(provider);
     setToggleMsg(null);
     try {
-      await api.configUpdate({ [`providers.${provider}`]: v }, true);
-      setToggleMsg(`${PROVIDER_NAMES[provider]}: ${v ? "ligado" : "desligado"}. Vale depois de reiniciar o monitoramento.`);
-      config.reload();
+      await config.update({ [`providers.${provider}`]: v });
     } catch (e) {
       setToggleMsg(errorMessage(e));
     } finally {
@@ -122,6 +122,7 @@ export function Agents() {
     }
   };
 
+  const pendentes = Object.keys(config.pending).filter((k) => k.startsWith("providers."));
   const nome = flow ? PROVIDER_NAMES[flow.provider] : "";
   const texto = flow ? OP_TEXT[flow.op] : null;
 
@@ -138,7 +139,8 @@ export function Agents() {
       />
       {info?.location_problem && <Notice tone="warning" title="Instalar integrações está bloqueado">{info.location_problem}</Notice>}
       {lista.error && <Notice tone="critical" title="Não consegui ler as integrações">{lista.error}</Notice>}
-      {toggleMsg && <Notice tone="info">{toggleMsg}</Notice>}
+      {toggleMsg && <Notice tone="critical">{toggleMsg}</Notice>}
+      {pendentes.length > 0 && <RestartNotice key={pendentes.join(",")} keys={pendentes} onDone={() => config.reload()} />}
       {!lista.data && lista.loading && <Spinner label="Conferindo os agentes" />}
 
       <div className="stack">
@@ -146,7 +148,9 @@ export function Agents() {
           const c: IntegrationCheck | undefined = checks.get(id);
           const p = provs.get(id);
           const integ = c ? INTEGRATION[c.state] : null;
-          const ligado = config.data?.providers_enabled?.[id] ?? p?.enabled ?? true;
+          // o switch mostra o que está gravado (o que você escolheu); se ainda não está em uso, o aviso acima diz
+          const gravado = config.pending[`providers.${id}`];
+          const ligado = typeof gravado === "boolean" ? gravado : (config.config?.providers_enabled?.[id] ?? p?.enabled ?? true);
           const desatualizada = c && (c.desatualizados.length > 0 || c.sobrando.length > 0);
           const badge = p ? providerBadge(p) : null;
           return (

@@ -5,8 +5,11 @@ import type {
   AppPrefs,
   ConfigInfo,
   ConfigSchema,
+  ConfigUpdateResult,
+  ConfigValue,
   DoctorResult,
   IntegrationCheck,
+  ProviderId,
   ProviderInfo,
   Session,
   ServiceStatus,
@@ -106,10 +109,10 @@ export const mockSchema: ConfigSchema = {
     { key: "transporte", group: "display", type: "enum", description: "como falar com a tela: auto, USB direto ou porta serial", live: false, nullable: false, choices: ["auto", "usb", "serial"] },
     { key: "porta", group: "display", type: "string", description: "porta serial (AUTO, ou /dev/cu.<nome>)", live: false, nullable: false },
     { key: "brilho", group: "display", type: "integer", description: "brilho em % (a revisão A esquenta acima de 50)", live: true, nullable: false, min: 0, max: 100 },
-    { key: "paisagem", group: "display", type: "boolean", description: "tela deitada no layout clássico", live: false, nullable: false },
-    { key: "girar", group: "display", type: "boolean", description: "girar 180°", live: false, nullable: false },
+    { key: "paisagem", group: "display", type: "boolean", description: "layout clássico deitado (480x320) em vez de em pé (320x480)", live: true, nullable: false },
+    { key: "girar", group: "display", type: "boolean", description: "girar a tela 180°", live: true, nullable: false },
     { key: "porta_sim", group: "display", type: "integer", description: "porta do simulador em localhost", live: false, nullable: false, min: 1024, max: 65535 },
-    { key: "layout", group: "appearance", type: "enum", description: "o modelo de tela (de ou para o clássico, só ao reiniciar)", live: true, nullable: false, choices: ["auto", "ombro", "classico", "minimal-v2", "multiagente"] },
+    { key: "layout", group: "appearance", type: "enum", description: "o modelo de tela", live: true, nullable: false, choices: ["auto", "ombro", "classico", "minimal-v2", "multiagente"] },
     { key: "cor_mascote", group: "appearance", type: "color", description: "cor fixa do avatar (#RRGGBB; vale por cima do cor_modo)", live: true, nullable: true },
     { key: "cor_modo", group: "appearance", type: "enum", description: "cor do avatar: a do agente, ou sorteada a cada troca de estado", live: true, nullable: false, choices: ["agente", "sorteada"] },
     ...(["claude", "codex", "cursor", "padrao"] as const).map((p) => ({
@@ -117,7 +120,7 @@ export const mockSchema: ConfigSchema = {
       choices: ["padrao", "aleatorio", "ombro-cloud", "sereno", "orbita", "cubo", "scout", "pixel", "chevron", "maestro", "nova"],
     })),
     { key: "avatar_sorteio", group: "avatars", type: "enum", description: "o aleatório: um por inicialização, ou um por sessão", live: true, nullable: false, choices: ["inicio", "sessao"] },
-    { key: "intervalo", group: "appearance", type: "number", description: "segundos entre quadros (null: o padrão do layout)", live: false, nullable: true, min: 0.05, max: 10 },
+    { key: "intervalo", group: "appearance", type: "number", description: "segundos entre quadros (null: o padrão do layout)", live: true, nullable: true, min: 0.05, max: 10 },
     { key: "vista", group: "multi_agent", type: "enum", description: "visão do layout multiagente", live: true, nullable: false, choices: ["overview", "focus", "attention"] },
     { key: "foco", group: "multi_agent", type: "enum", description: "o agente da visão focus", live: true, nullable: true, choices: ["claude", "codex", "cursor"] },
     { key: "rotacao", group: "multi_agent", type: "boolean", description: "alternar sozinho entre a visão geral e cada agente", live: true, nullable: false },
@@ -143,8 +146,11 @@ export function mockConfig(): ConfigInfo {
     providers_enabled: { claude: true, codex: true, cursor: true },
     editable: mockSchema.options.map((o) => o.key),
     live: mockSchema.options.filter((o) => o.live).map((o) => o.key),
-    layouts_live: ["auto", "ombro", "minimal-v2", "multiagente"],
+    layouts_live: ["auto", "ombro", "classico", "minimal-v2", "multiagente"],
     views: ["overview", "focus", "attention"],
+    pending: {},
+    revision: 0,
+    instance: "mock-1",
   };
 }
 
@@ -194,6 +200,39 @@ export function createMockApi(): OmbroApi {
   let prefs: AppPrefs = { onboarding_completed: true, notifications: false, owned_daemon_pid: null, autostart: false };
   const integrations = mockIntegrations();
   const ok = <T,>(result: T) => Promise.resolve({ exit_code: 0, result });
+  let instancias = 1;
+  // O contrato do ombrod: `values` é o que está em uso; o que só vale ao reiniciar fica em `pending`.
+  const emUso = (k: string): ConfigValue =>
+    k.startsWith("avatares.")
+      ? ((config.values.avatares as Record<string, ConfigValue>)[k.slice(9)] ?? "padrao")
+      : k.startsWith("providers.")
+        ? config.providers_enabled[k.slice(10) as ProviderId]
+        : (config.values[k] as ConfigValue);
+  const aplicar = (k: string, v: ConfigValue) => {
+    if (k.startsWith("avatares.")) (config.values.avatares as Record<string, unknown>)[k.slice(9)] = v;
+    else if (k.startsWith("providers.")) config.providers_enabled[k.slice(10) as ProviderId] = v === true;
+    else config.values[k] = v;
+  };
+  const mudar = (changes: Record<string, ConfigValue>, persist: boolean): ConfigUpdateResult => {
+    const live = new Set(config.live);
+    const pending = { ...(config.pending ?? {}) };
+    for (const [k, v] of Object.entries(changes)) {
+      if (live.has(k)) {
+        aplicar(k, v);
+        delete pending[k];
+      } else if (emUso(k) === v) delete pending[k];
+      else pending[k] = v;
+    }
+    config.pending = pending;
+    config.revision = (config.revision ?? 0) + 1;
+    const keys = Object.keys(changes);
+    return {
+      applied: keys.filter((k) => live.has(k)), restart_required: keys.filter((k) => k in pending), deferred: [],
+      persisted: persist, file: persist ? config.file : null,
+      values: Object.fromEntries(keys.map((k) => [k, emUso(k)])), pending: { ...pending }, revision: config.revision,
+      instance: config.instance,
+    };
+  };
   return {
     kind: "mock",
     getSnapshot: () => Promise.resolve(mockSnapshot()),
@@ -209,33 +248,29 @@ export function createMockApi(): OmbroApi {
         service_installed: false, legacy_installed: false, arch: "aarch64", os_version: "27.0.1",
       }),
     daemonStart: () => Promise.resolve({ state: "connected", owner: "app", pid: 4321 }),
-    daemonRestart: () => Promise.resolve({ state: "connected", owner: "app", pid: 4322 }),
+    daemonRestart: async () => {
+      // como o ombrod: ao reiniciar, o que estava gravado entra em uso e as revisões recomeçam
+      for (const [k, v] of Object.entries(config.pending ?? {})) aplicar(k, v);
+      config.pending = {};
+      config.revision = 0;
+      config.instance = `mock-${++instancias}`;
+      return { state: "connected", owner: "app", pid: 4322 };
+    },
     displayStatus: () =>
       Promise.resolve({
-        kind: "simulator", connection: "connected", transport: "http", brightness: null, orientation: "portrait",
+        kind: "simulator", connection: "connected", transport: "http", brightness: null,
+        orientation: config.values.layout === "classico" && config.values.paisagem !== true ? "portrait" : "landscape",
+        width: config.values.layout === "classico" && config.values.paisagem !== true ? 320 : 480,
+        height: config.values.layout === "classico" && config.values.paisagem !== true ? 480 : 320,
         layout: String(config.values.layout), frames: 1200, last_frame_at: iso(agora()), url: "http://localhost:5680",
         mascot: { avatar: "ombro-cloud", provider: "claude", state: "esperando", color: "#DF8559" },
       }),
     displayPreview: () => Promise.resolve({ available: false }),
     configGet: () => Promise.resolve(structuredClone(config)),
     configSchema: () => Promise.resolve(mockSchema),
-    configUpdate: async (changes, persist) => {
-      const live = new Set(config.live);
-      for (const [k, v] of Object.entries(changes)) {
-        if (k.startsWith("avatares.")) (config.values.avatares as Record<string, unknown>)[k.slice(9)] = v;
-        else config.values[k] = v;
-      }
-      const keys = Object.keys(changes);
-      return { applied: keys.filter((k) => live.has(k)), restart_required: keys.filter((k) => !live.has(k)), persisted: persist, file: persist ? config.file : null };
-    },
-    setBrightness: async (value, persist) => {
-      config.values.brilho = value;
-      return { applied: ["brilho"], restart_required: [], persisted: persist, file: null };
-    },
-    setLayout: async (layout, persist) => {
-      config.values.layout = layout;
-      return { applied: ["layout"], restart_required: [], persisted: persist, file: null };
-    },
+    configUpdate: (changes, persist) => Promise.resolve(mudar(changes, persist)),
+    setBrightness: (value, persist) => Promise.resolve(mudar({ brilho: value }, persist)),
+    setLayout: (layout, persist) => Promise.resolve(mudar({ layout }, persist)),
     integrationsList: () => ok({ integrations }),
     integrationRun: (provider, action, dryRun) =>
       ok({

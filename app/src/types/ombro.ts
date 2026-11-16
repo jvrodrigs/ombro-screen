@@ -186,6 +186,9 @@ export interface DisplayStatus {
   brightness?: number | null;
   orientation?: string | null;
   layout: string;
+  /** O tamanho do quadro na orientação em uso (o clássico em pé é 320×480). */
+  width?: number;
+  height?: number;
   frames: number;
   last_frame_at: string | null;
   connected_since?: string | null;
@@ -204,12 +207,19 @@ export type ConfigValue = string | number | boolean | null;
 export interface ConfigInfo {
   file: string;
   file_exists: boolean;
+  /** O que está em uso agora no ombrod (não o que está no arquivo). */
   values: Record<string, unknown>;
   providers_enabled: Record<ProviderId, boolean>;
   editable: string[];
   live: string[];
   layouts_live: string[];
   views: string[];
+  /** Gravado no config.json, mas só entra em uso ao reiniciar o ombrod: {chave: valor gravado}. */
+  pending?: Record<string, ConfigValue>;
+  /** Sobe a cada mudança de preferência neste ombrod: uma resposta com revisão menor é velha. */
+  revision?: number;
+  /** Qual ombrod respondeu: as revisões só se comparam dentro da mesma instância (reiniciou, recomeçam). */
+  instance?: string;
 }
 
 export interface SchemaOption {
@@ -230,10 +240,19 @@ export interface ConfigSchema {
 }
 
 export interface ConfigUpdateResult {
+  /** Em uso agora. */
   applied: string[];
+  /** Gravadas, mas só entram em uso ao reiniciar o ombrod. */
   restart_required: string[];
+  /** Em uso, mas a tela USB está fora: ela recebe (brilho, orientação) quando reconectar. */
+  deferred?: string[];
   persisted: boolean;
   file: string | null;
+  /** O valor em uso de cada chave pedida, depois da operação. */
+  values?: Record<string, ConfigValue>;
+  pending?: Record<string, ConfigValue>;
+  revision?: number;
+  instance?: string;
 }
 
 /** O que a CLI imprimiu (`result`) e o código de saída. */

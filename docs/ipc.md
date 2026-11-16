@@ -73,9 +73,9 @@ laço atende entre dois quadros.
 | `health` | | `{status, components}`; ver "Saúde" |
 | `providers.list` | | `providers`: `id`, `name`, `enabled`, `capabilities`, `installed`, `integration` (`ok`, `not_installed`, `not_configured`), `collection` (`ok`, `partial`, `error`), `state`, `sessions`, `working`, `waiting`, `errors`, `quota_max_percent`, `stale_parts`, `recovered`, `last_collected_at`, `last_event_at`, `quotas`, `usage` |
 | `sessions.list` | `provider`: `claude`, `codex`, `cursor` ou `null` | `sessions`: `provider`, `session_id`, `project` (nome curto da pasta, nunca o caminho), `status` (`working`, `idle`, `waiting`, `approval`, `error`, `unknown`), `activity`, `attention`, `started_at`, `status_since`, `updated_at` |
-| `display.status` | | `kind` (`usb`, `simulator`, `none`), `connection` (`connected`, `disconnected`, `error`, `conflict`), `transport`, `revision`, `port` (só o nome), `brightness`, `orientation`, `layout`, `frames`, `last_frame_at`, `connected_since`, `last_error`, `url` (simulador) |
+| `display.status` | | `kind` (`usb`, `simulator`, `none`), `connection` (`connected`, `disconnected`, `error`, `conflict`), `transport`, `revision`, `port` (só o nome), `brightness`, `orientation`, `width`, `height` (o quadro na orientação em uso), `layout`, `frames`, `last_frame_at`, `connected_since`, `last_error`, `url` (simulador) |
 | `display.preview` | `format`: `png` | `{available: false}` sem quadro ainda; senão `available`, `format`, `width`, `height`, `captured_at`, `data_base64` |
-| `config.get` | | `file`, `file_exists`, `values` (a configuração em uso, caminhos com `~`), `providers_enabled` (`{id: bool}`), `editable`, `live`, `layouts_live`, `views` |
+| `config.get` | | `file`, `file_exists`, `values` (a configuração **em uso**, caminhos com `~`), `providers_enabled` (`{id: bool}`), `pending` (`{chave: valor}`: gravado no arquivo, mas só entra em uso ao reiniciar), `revision`, `instance`, `editable`, `live`, `layouts_live`, `views` |
 | `config.schema` | | `{version, options}`: cada preferência que a IPC aceita, com `key`, `group`, `type`, `description`, `live`, `nullable` e, quando há, `choices`, `min`, `max` |
 
 Campos acrescentados para o Ombro.app (ainda v1; quem não os conhece os ignora):
@@ -103,20 +103,20 @@ Horários em ISO 8601, hora local, sem fuso, como no resto do Ombro.
 
 | Método | Params | O que faz |
 | --- | --- | --- |
-| `config.update` | `changes` (objeto, obrigatório), `persist` (padrão `true`) | valida, aplica o que vale na hora e, com `persist`, grava no `config.json` |
+| `config.update` | `changes` (objeto, obrigatório), `persist` (padrão `true`) | valida, põe em uso o que vale na hora e, com `persist`, grava no `config.json` |
 | `display.set_brightness` | `value` (0–100, obrigatório), `persist` (padrão `false`) | muda o brilho da tela USB na hora |
-| `display.set_layout` | `layout` (obrigatório), `persist` (padrão `false`) | troca o layout entre `auto`, `ombro`, `minimal-v2` e `multiagente` na hora |
+| `display.set_layout` | `layout` (obrigatório), `persist` (padrão `false`) | troca o layout na hora: `auto`, `ombro`, `minimal-v2`, `multiagente` ou `classico` |
 
 Toda a configuração que não é caminho de pasta pode mudar por aqui. `config.schema` devolve a lista, que é a
 fonte da verdade (`ombro/preferencias.py`); o Ombro.app monta a tela de ajustes a partir dela, sem lista própria.
 
 | Grupo | Chaves | Vale |
 | --- | --- | --- |
-| `display` | `brilho` | na hora |
-| `display` | `usb`, `revisao`, `transporte`, `porta` (`AUTO` ou `/dev/cu.<nome>`), `paisagem`, `girar`, `porta_sim` (1024–65535) | ao reiniciar |
-| `appearance` | `layout` (de ou para o `classico`, só ao reiniciar), `cor_mascote`, `cor_modo` (`agente`, `sorteada`) | na hora |
+| `display` | `brilho`, `girar` (a tela física gira 180°), `paisagem` (o layout clássico deitado, 480×320, em vez de em pé, 320×480) | na hora |
+| `display` | `usb`, `revisao`, `transporte`, `porta` (`AUTO` ou `/dev/cu.<nome>`), `porta_sim` (1024–65535) | ao reiniciar |
+| `appearance` | `layout` (todos, incluindo o `classico`), `cor_mascote`, `cor_modo` (`agente`, `sorteada`) | na hora |
 | `avatars` | `avatares.claude`, `avatares.codex`, `avatares.cursor`, `avatares.padrao` (`padrao`, `aleatorio` ou o id de um avatar do catálogo), `avatar_sorteio` (`inicio`, `sessao`) | na hora |
-| `appearance` | `intervalo` (0,05–10 s, ou `null` para o padrão do layout) | ao reiniciar |
+| `appearance` | `intervalo` (0,05–10 s, ou `null` para o padrão do layout) | na hora |
 | `multi_agent` | `vista`, `foco`, `rotacao`, `intervalo_rotacao` | na hora |
 | `providers` | `providers.claude`, `providers.codex`, `providers.cursor` (`true`/`false`) | ao reiniciar |
 | `hardware` | `sem_macmon` | ao reiniciar |
@@ -130,8 +130,27 @@ Regras:
   pedido é recusado com `VALIDATION_ERROR`.
 - Ficam de fora, de propósito: `lib` e `claude_dir` (caminhos de pastas para ler: a IPC não aceita caminhos do
   cliente), `nao_abrir` (só faz sentido no terminal) e as ações de uma vez (`demo`, `demo_ciclo`, `png`).
-- A resposta diz o que valeu na hora (`applied`), o que vale ao reiniciar (`restart_required`) e onde gravou
-  (`file`). Os agentes vão para o bloco `providers` do arquivo (`{"codex": {"enabled": false}}`), e as opções do
+- Vale na hora o que o laço consegue pôr em uso sem refazer o que abriu ao iniciar. Fica para o reinício o que
+  escolhe a saída e as fontes: a tela (USB ou simulador, revisão, transporte, portas), os agentes ligados, o
+  macmon e o nível de log.
+- **Uma mudança é uma operação só**, e elas são atendidas uma de cada vez, na ordem em que chegam: validar, pôr em
+  uso no laço (todas as chaves juntas, entre dois quadros), gravar, responder. Se pôr em uso falha, nada muda e
+  nada é gravado. Se gravar falha, o que entrou em uso volta atrás e a resposta é um erro: sucesso só com as duas
+  coisas feitas. Trocar de layout, girar ou deitar não reabre a tela USB nem mexe nos agentes, nas sessões e no
+  banco: a orientação muda na conexão que já está aberta e o quadro seguinte vai inteiro.
+- **Em uso e gravado nunca se confundem.** A resposta traz:
+  - `applied`: as chaves que estão em uso agora;
+  - `restart_required`: as gravadas que só entram em uso ao reiniciar o ombrod;
+  - `deferred`: as que estão em uso, mas cujo efeito na tela física espera ela reconectar (`brilho`, `girar`,
+    `paisagem` ou `layout` com a tela USB fora): o desenho e a prévia já mudaram, e a tela recebe ao voltar;
+  - `values`: o valor em uso de cada chave pedida, depois da operação;
+  - `pending`: tudo o que está gravado e ainda não em uso (`{chave: valor gravado}`), o mesmo do `config.get`.
+    Gravar de novo o valor que já está em uso tira a chave daqui;
+  - `revision` e `instance`: a revisão sobe a cada mudança; quem lê descarta uma resposta com revisão menor que a
+    última vista (um `config.get` pedido antes de uma mudança e respondido depois). As revisões só se comparam
+    dentro da mesma `instance` (o ombrod que respondeu): ao reiniciar, recomeçam;
+  - `persisted` e `file`: se gravou, e onde.
+- No arquivo, os agentes vão para o bloco `providers` (`{"codex": {"enabled": false}}`), as opções do
   multiagente, para o bloco `multi_agent`, e os avatares, para o bloco `avatars` (`{"codex": "nova", "default": ...,
   "random": "sessao"}`), no mesmo formato que o README ensina. Pela IPC só entram avatares que existem no
   catálogo; no arquivo, um id desconhecido vira aviso e vale o padrão do agente.

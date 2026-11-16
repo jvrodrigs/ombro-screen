@@ -199,6 +199,13 @@ React (app/src) ──comandos Tauri tipados──► Rust (app/src-tauri)
 
 - **Fonte da verdade:** o ombrod. O app não lê o banco, os arquivos dos agentes nem o `config.json`; a prévia da tela
   é o último quadro que o ombrod desenhou (`display.preview`), não um desenho refeito em HTML.
+- **Preferências, um caminho só:** uma mudança sai do app (`useConfig`), passa pelo comando Tauri e pela IPC
+  (`config.update`) e chega ao `Daemon._mudar_preferencias`, que valida, põe em uso no laço
+  (`Aplicacao.aplicar_cfg`: brilho, orientação, layout, cores, avatares, visão), grava no `config.json` e responde
+  com o que vale agora. O app mostra o que voltou na resposta, não o que foi clicado: `values` é o que está em uso,
+  `pending` o que está gravado e só vale ao reiniciar. As mudanças saem em fila (uma de cada vez) e uma resposta
+  mais velha que a última vista é descartada pela revisão. Layout, girar 180° e clássico deitado mudam na conexão
+  USB que já está aberta; só o que escolhe a tela e os agentes pede reinício. Detalhes em [ipc.md](ipc.md).
 - **Um laço só:** `monitor.rs` pede `status`, `providers.list`, `sessions.list` e `health` (a cada 3 s com a janela
   visível, 10 s escondida) e alimenta a janela (evento), a Menu Bar e as notificações. Com a janela escondida, a
   página não recebe nada; ao reabrir, recebe o retrato na hora.

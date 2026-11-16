@@ -39,10 +39,13 @@ def uso_claude(snap: Optional[ProviderSnapshot]) -> UsoClaude:
     if snap.quotas is not None:
         q = snap.quotas
         u.configurado, u.fonte, u.coletado_em, u.desatualizado = True, q.source, q.fetched_at, q.stale
+        u.escopo = q.scope
         for window_id, _, campo in JANELAS:
             w = q.window(window_id)
             if w is not None and w.used_percent is not None:
                 setattr(u, campo, Janela(w.used_percent, w.resets_at))
+            elif w is not None and w.expired and w.resets_at is not None:
+                u.expiradas[campo] = w.resets_at
     if snap.usage is not None:
         m = snap.usage
         u.tokens_entrada, u.tokens_saida = m.input_tokens or 0, m.output_tokens or 0

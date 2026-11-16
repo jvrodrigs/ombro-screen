@@ -241,14 +241,15 @@ class Fontes(PastaTemporaria):
                   "seven_day": {"utilization": 40, "resets_at": self.reset}})
         u = self.c.ler()
         self.assertTrue(u.configurado)
-        self.assertIsNone(u.cinco_horas)
+        self.assertIsNone(u.cinco_horas)  # o 99% de antes do reset não vale: sem número, nunca 0%
+        self.assertEqual(list(u.expiradas), ["cinco_horas"])  # e fica marcado que está aguardando um número novo
         self.assertEqual(u.semana.pct, 40)
         self.assertIsNotNone(u.semana.reseta_em)
 
-    def test_desatualizado_a_partir_de_30_minutos(self):
-        self.tap({"fetchedAt": self.ms(timedelta(minutes=29)), "five_hour": {"utilization": 1}})
+    def test_desatualizado_a_partir_de_15_minutos(self):
+        self.tap({"fetchedAt": self.ms(timedelta(minutes=14)), "five_hour": {"utilization": 1}})
         self.assertFalse(self.c.ler().desatualizado)
-        self.tap({"fetchedAt": self.ms(timedelta(minutes=31)), "five_hour": {"utilization": 1}})
+        self.tap({"fetchedAt": self.ms(timedelta(minutes=16)), "five_hour": {"utilization": 1}})
         self.assertTrue(self.c.ler().desatualizado)
 
 

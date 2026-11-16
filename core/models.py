@@ -145,6 +145,9 @@ class QuotaWindow:
     label: str
     used_percent: Optional[float] = None
     resets_at: Optional[datetime] = None
+    # a janela reiniciou depois da última observação: o percentual de antes não vale mais e o novo ainda não
+    # chegou (nunca se assume 0%); `resets_at` é quando ela reiniciou
+    expired: bool = False
 
     def __post_init__(self):
         _texto("window_id", self.window_id)
@@ -160,6 +163,10 @@ class QuotaReport:
     fetched_at: datetime
     stale: bool = False  # velho demais para confiar (cada provider define o prazo)
     windows: Tuple[QuotaWindow, ...] = ()
+    # o que os percentuais cobrem: "account" (a assinatura inteira, no instante da observação) ou "unknown"
+    scope: str = "unknown"
+    # a fonte se atualiza sozinha? Falso: só há número novo quando o agente (o CLI) faz algo que o produz
+    auto_update: bool = False
 
     def __post_init__(self):
         _texto("source", self.source)

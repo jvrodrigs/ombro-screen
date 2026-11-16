@@ -151,6 +151,38 @@ def cmd_providers(args) -> int:
     return 0
 
 
+ESTADO_QUOTA = {"fresh": "atualizado", "stale": "último valor conhecido", "awaiting_update": "aguardando atualização"}
+ESCOPO_QUOTA = {"account": "a assinatura inteira", "unknown": "não informado pela fonte"}
+
+
+def cmd_quotas(args) -> int:
+    """Os limites da assinatura: de onde vieram, quando foram observados e o que cobrem."""
+    r = _chamar(args, "providers.list")
+    limites = {p["id"]: p.get("quotas") for p in r["providers"] if p.get("enabled") and "quota_windows" in (p.get("capabilities") or [])}
+
+    def texto():
+        if not limites:
+            return "Nenhum agente ligado informa limites de uso."
+        blocos = []
+        for pid, q in limites.items():
+            nome = NOMES.get(pid, pid)
+            if not q:
+                blocos.append(f"{nome}\n  Dados indisponíveis: nenhuma fonte de limites (veja a seção 4 do README).")
+                continue
+            linhas = [[w["label"], "aguardando" if w.get("expired") else (f"{w['used_percent']:g} %" if w.get("used_percent") is not None else "-"),
+                       ("reiniciou " if w.get("expired") else "reinicia ") + (w.get("resets_at") or "-")] for w in q["windows"]]
+            cab = (f"{nome}\n  Fonte:        {q['source']}\n  Estado:       {ESTADO_QUOTA.get(q.get('state'), q.get('state'))}"
+                   f"\n  Observado:    {q.get('observed_at')} (há {ha_quanto(q.get('observed_at'))})"
+                   f"\n  Cobre:        {ESCOPO_QUOTA.get(q.get('scope'), q.get('scope'))}"
+                   f"\n  Atualização:  " + ("automática" if q.get("auto_update") else
+                                             "só quando o Claude Code no terminal conversa ou roda /usage (o app Claude não atualiza)"))
+            blocos.append(cab + "\n" + "\n".join("  " + linha for linha in tabela(linhas, ["JANELA", "USO", "RESET"]).splitlines()))
+        return "\n\n".join(blocos)
+
+    _saida(args, {"quotas": limites}, texto)
+    return 0
+
+
 def cmd_sessions(args) -> int:
     params = {"provider": args.provider} if args.provider else {}
     r = _chamar(args, "sessions.list", params)
@@ -312,6 +344,7 @@ def parser() -> argparse.ArgumentParser:
 
     novo("status", cmd_status, "estado do ombrod: tela, providers, sessões, armazenamento")
     novo("providers", cmd_providers, "os agentes monitorados e o estado de cada um")
+    novo("quotas", cmd_quotas, "os limites da assinatura: fonte, idade, o que cobrem e como se atualizam")
     s = novo("sessions", cmd_sessions, "as sessões conhecidas agora")
     s.add_argument("--provider", choices=tuple(NOMES), help="só deste agente")
     s.add_argument("--full", action="store_true", help="mostrar o id inteiro das sessões")

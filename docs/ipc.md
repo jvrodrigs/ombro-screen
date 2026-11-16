@@ -81,8 +81,20 @@ laço atende entre dois quadros.
 Campos acrescentados para o Ombro.app (ainda v1; quem não os conhece os ignora):
 
 - `providers.list[].quotas`: `null` quando o provider não tem fonte de limites (hoje, Codex e Cursor); senão
-  `{source, fetched_at, stale, windows: [{id, label, used_percent, resets_at}]}`, exatamente o que o provider
-  entregou (`used_percent` e `resets_at` podem ser `null`; nada é recalculado nem inventado).
+  `{source, fetched_at, stale, windows: [{id, label, used_percent, resets_at, expired}]}`, exatamente o que o
+  provider entregou (`used_percent` e `resets_at` podem ser `null`; nada é recalculado nem inventado). O que mais
+  vem, para a idade e a confiabilidade ficarem explícitas:
+  - `observed_at` (igual a `fetched_at`): quando o dado foi **observado**, não quando o ombrod leu o arquivo de
+    novo. Ler de novo um dado velho não o rejuvenesce; a última leitura é o `last_collected_at` do provider;
+  - `age_seconds`: a idade na hora da resposta;
+  - `state`: `fresh` (observado há menos de 15 min), `stale` (o último valor conhecido) ou `awaiting_update`
+    (as janelas reiniciaram depois da última observação e ainda não há número novo);
+  - `scope`: `account` (os limites da assinatura inteira, incluindo o app Claude e o claude.ai) ou `unknown`;
+  - `auto_update`: `false` hoje em todas as fontes. Só há número novo quando o Claude Code no terminal recebe uma
+    resposta (statusline) ou roda `/usage`; o app Claude Desktop não atualiza nenhuma. O ombrod não consulta nada
+    pela rede e não lê credenciais;
+  - `windows[].expired`: a janela reiniciou depois da última observação. Vem com `used_percent: null` (nunca 0%
+    presumido) e `resets_at` com a hora em que reiniciou.
 - `providers.list[].usage`: `null` quando o provider não informa uso; senão os totais de hoje
   `{scope, total_tokens, input_tokens, output_tokens, messages}`, só números.
 - `providers.list[].avatar`: `{avatar, color, choice}`: o avatar que o ombrod usa para o agente agora (com o

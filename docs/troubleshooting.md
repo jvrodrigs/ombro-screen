@@ -75,6 +75,8 @@ mostrado no terminal; só vai para um arquivo com `--output`, e esse arquivo nas
 | simulador `error`: porta indisponível | Outra coisa usa a porta 5680. Use `--porta-sim` (ou `porta_sim` no config.json). |
 | `integração parcial` ou `desatualizada` | `python3 -m ombro integrations install <agente>` (veja `--dry-run` antes). |
 | `conflito` numa integração | Há uma entrada com `ombro_hook.py` que o Ombro não reconhece. Ajuste à mão (veja [integrations.md](integrations.md)). |
+| Os limites de 5 h e da semana não batem com a página de uso do Claude | Veja a idade do dado (`python3 -m ombro quotas`, ou o cartão do Claude no app). Os limites só são observados quando o Claude Code no terminal conversa ou roda `/usage`; usando só o app Claude, o Ombro mostra o último valor, marcado como "último valor conhecido". Envie uma mensagem ou rode `/usage` num terminal para atualizar. Não há interface suportada para o Ombro buscar isso sozinho (README, seção 4). |
+| `Aguardando atualização` num limite | A janela reiniciou depois da última observação. O Ombro não presume 0%: o número volta na próxima observação. |
 | A CLI demora ou diz que o ombrod não respondeu | `--timeout 10`; se continuar, o log do ombrod (abaixo). |
 
 ## Logs

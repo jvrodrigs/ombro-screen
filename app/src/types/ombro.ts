@@ -72,12 +72,24 @@ export interface QuotaWindow {
   label: string;
   used_percent: number | null;
   resets_at: string | null;
+  /** A janela reiniciou depois da última observação: sem número até a próxima (nunca 0% presumido). */
+  expired?: boolean;
 }
+
+/** fresh: observado há pouco; stale: o último valor conhecido; awaiting_update: reiniciou e não há número novo. */
+export type QuotaState = "fresh" | "stale" | "awaiting_update";
 
 export interface Quotas {
   source: string;
+  /** Quando o dado foi observado (não quando o ombrod leu o arquivo de novo). */
   fetched_at: string | null;
+  observed_at?: string | null;
   stale: boolean;
+  state?: QuotaState;
+  /** O que os percentuais cobrem: a assinatura inteira, ou não informado pela fonte. */
+  scope?: "account" | "unknown";
+  /** A fonte se atualiza sozinha? Falso: só há número novo quando o agente no terminal faz algo que o produz. */
+  auto_update?: boolean;
   windows: QuotaWindow[];
 }
 

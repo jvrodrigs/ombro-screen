@@ -48,9 +48,15 @@ def snapshot_de_uso(u, agora: datetime) -> ProviderSnapshot:
                              cache_tokens=u.tokens_cache, messages=u.mensagens_hoje, hourly_tokens=tuple(u.tokens_por_hora))
     quotas = None
     if u.configurado and u.fonte and u.coletado_em:
-        janelas = tuple(QuotaWindow(wid, rotulo, j.pct, j.reseta_em)
-                        for wid, rotulo, campo in JANELAS for j in (getattr(u, campo),) if j is not None)
-        quotas = QuotaReport(u.fonte, u.coletado_em, stale=u.desatualizado, windows=janelas)
+        janelas = []
+        for wid, rotulo, campo in JANELAS:
+            j, reiniciou = getattr(u, campo), getattr(u, "expiradas", {}).get(campo)
+            if j is not None:
+                janelas.append(QuotaWindow(wid, rotulo, j.pct, j.reseta_em))
+            elif reiniciou is not None:  # reiniciou depois da última observação: sem número até a próxima
+                janelas.append(QuotaWindow(wid, rotulo, None, reiniciou, expired=True))
+        quotas = QuotaReport(u.fonte, u.coletado_em, stale=u.desatualizado, windows=tuple(janelas),
+                             scope=getattr(u, "escopo", "unknown"))
     return ProviderSnapshot(
         PROVIDER_ID, agora,
         status=SnapshotStatus.PARTIAL if falhas else SnapshotStatus.OK,

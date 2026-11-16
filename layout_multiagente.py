@@ -274,7 +274,8 @@ def _plano_focus(resumo: ResumoGlobal, pid: str, h_texto: str, agora: datetime) 
             w = snap.quotas.window(wid) if snap.quotas else None
             janelas.append((w.used_percent, _reseta(Janela(w.used_percent, w.resets_at), agora)) if w and w.used_percent is not None else None)
         u = SimpleNamespace(configurado=snap.quotas is not None, desatualizado=bool(snap.quotas and snap.quotas.stale),
-                            coletado_em=snap.quotas.fetched_at if snap.quotas else None)
+                            coletado_em=snap.quotas.fetched_at if snap.quotas else None,
+                            expiradas=[w.window_id for w in snap.quotas.windows if w.expired] if snap.quotas else [])
         itens.append(Bloco("quotas", (tuple(janelas), aviso_uso(u, agora))))
     if tem_uso:
         m = snap.usage

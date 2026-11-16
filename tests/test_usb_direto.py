@@ -165,7 +165,9 @@ class TelaUSBComUsbDireto(unittest.TestCase):
             t = saida.TelaUSB("A", "AUTO", 30, Path("/nao/existe"), paisagem=True, transporte="usb")
             t.mostrar(Image.new("RGB", (480, 320)))
             pixels = [d for _, d in t.lcd.lcd_serial.envios if len(d) > 16]
-        self.assertEqual([len(p) for p in pixels], [480 * 320 * 2])
+        # o quadro inteiro, em 8 faixas de 40 linhas (o envio pode parar entre duas para atender um pedido)
+        self.assertEqual([len(p) for p in pixels], [480 * saida.FAIXA * 2] * 8)
+        self.assertEqual(sum(len(p) for p in pixels), 480 * 320 * 2)
 
 
 if __name__ == "__main__":

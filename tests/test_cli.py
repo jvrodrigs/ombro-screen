@@ -134,7 +134,10 @@ class ComDaemon(unittest.TestCase):
         self.assertEqual(codigo, 1)
         self.assertIn("VALIDATION_ERROR", err)
         codigo, out, _ = rodar("display", "layout", "classico", "--json")
-        self.assertEqual(json.loads(out)["restart_required"], ["layout"])
+        r = json.loads(out)  # o clássico também entra na hora (a orientação muda com o Ombro rodando)
+        self.assertEqual((r["applied"], r["restart_required"]), (["layout"], []))
+        codigo, out, _ = rodar("display", "status", "--json")
+        self.assertEqual((json.loads(out)["layout"], json.loads(out)["orientation"]), ("classico", "portrait"))
 
     def test_config_e_health(self):
         codigo, out, _ = rodar("config", "--json")

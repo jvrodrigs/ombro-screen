@@ -55,7 +55,10 @@ log_usb = logger("usb")
 INTERVALO_CLAUDE = 5.0  # segundos entre leituras dos arquivos do Claude Code (e dos eventos dos hooks)
 ESTATISTICAS_S = 60.0  # com --debug, um resumo do laço a cada minuto
 DO_CLAUDE = ("alerta", "reset")  # estados que vêm dos limites do Claude: no multiagente, o mascote é o dele
-ANIMADOS = ("auto", "ombro", "minimal-v2", "multiagente")  # layouts que dá para trocar sem reiniciar
+ANIMADOS = ("auto", "ombro", "minimal-v2", "multiagente")  # os layouts com o mascote (sempre 480x320)
+SEM_TELA_S = 1.0  # com a tela USB fora, um quadro por segundo: a prévia do app segue viva sem gastar à toa
+# o que muda a tela de quem olha (a orientação do quadro ou da tela física)
+DA_ORIENTACAO = ("layout", "paisagem", "girar")
 
 
 class Indisponivel(RuntimeError):
@@ -120,15 +123,26 @@ def ao_vivo(cfg: OmbroConfig) -> bool:
 
 
 class _Pedido:
-    __slots__ = ("fn", "feito", "resultado", "erro", "cancelado")
+    __slots__ = ("fn", "feito", "resultado", "erro", "cancelado", "iniciado", "_trava")
 
     def __init__(self, fn: Optional[Callable]):
         self.fn, self.feito, self.resultado, self.erro, self.cancelado = fn, threading.Event(), None, None, False
+        self.iniciado, self._trava = False, threading.Lock()
+
+    def cancelar(self) -> bool:
+        """Desiste do pedido, se o laço ainda não começou a atendê-lo. Falso: já está rodando (vai terminar)."""
+        with self._trava:
+            if self.iniciado:
+                return False
+            self.cancelado = True
+            return True
 
     def executar(self) -> None:
-        if self.fn is None or self.cancelado:
-            self.feito.set()
-            return
+        with self._trava:
+            if self.fn is None or self.cancelado:
+                self.feito.set()
+                return
+            self.iniciado = True
         try:
             self.resultado = self.fn()
         except Exception as e:  # noqa: BLE001 - o erro volta para quem pediu; o laço segue
@@ -168,6 +182,8 @@ class Aplicacao:
         self.coletado_em: Optional[datetime] = None
         self.ultimo_hw: Optional[Hardware] = None
         self.ao_coletar: Optional[Callable[[], None]] = None  # chamado no laço depois de cada coleta
+        self._redesenhar = False  # uma preferência mudou: o próximo quadro sai já, sem esperar o intervalo
+        self._ultimo_desenho = 0.0
 
     # ---------- leitura ----------
     @property
@@ -262,16 +278,23 @@ class Aplicacao:
 
     # ---------- o laço ----------
     def laco(self, parar: Callable[[], bool]) -> None:
-        intervalo, demo_ciclo = self.cfg.intervalo_efetivo, bool(self.demo and self.cfg.demo_ciclo > 0)
+        demo_ciclo = bool(self.demo and self.cfg.demo_ciclo > 0)
         estat = Estatisticas(self.saida, time.monotonic())
+        if hasattr(self.saida, "interromper"):  # a tela USB para de mandar um quadro quando chega um pedido
+            self.saida.interromper = lambda: not self._pedidos.empty()
         self._atendendo = True
         try:
             while not parar():
                 inicio = time.monotonic()
-                if not self.saida.pronta():  # tela USB fora e ainda não é hora de tentar de novo: nada a desenhar
+                intervalo = self.cfg.intervalo_efetivo  # lido a cada volta: o layout (e o intervalo) mudam ao vivo
+                pronta = self.saida.pronta()
+                # tela USB fora e ainda não é hora de tentar de novo: nada a mandar. O quadro ainda é desenhado de
+                # vez em quando (e logo depois de uma mudança de preferência), para a prévia não parar no passado
+                if not pronta and not self._redesenhar and inicio - self._ultimo_desenho < SEM_TELA_S:
                     estat.contar(inicio, None)
                     self.esperar(max(0.05, intervalo), parar)
                     continue
+                self._redesenhar = False
                 if self._uso is None or inicio - self._ultimo_uso >= INTERVALO_CLAUDE or demo_ciclo:
                     self._uso, self._ultimo_uso = self.ler_claude(), inicio  # problemas na leitura vão para o log
                     self.coletado_em = datetime.now()
@@ -280,8 +303,10 @@ class Aplicacao:
                         self.ao_coletar()
                 self.ultimo_hw = self.ler_hw()  # o ombrod publica CPU e RAM a partir desta leitura
                 img = self.quadro(self.ultimo_hw, self._uso, inicio)
-                self.saida.mostrar(img)
+                if pronta:
+                    self.saida.mostrar(img)
                 self.ultimo_quadro, self.ultimo_quadro_em = img, datetime.now()
+                self._ultimo_desenho = inicio
                 self.quadros += 1
                 estat.contar(time.monotonic(), (time.monotonic() - inicio) * 1000)
                 self.esperar(max(0.05, intervalo - (time.monotonic() - inicio)), parar)
@@ -300,7 +325,7 @@ class Aplicacao:
             except queue.Empty:
                 return
             pedido.executar()
-            if parar():
+            if parar() or self._redesenhar:  # fechando, ou uma preferência mudou: o quadro novo sai agora
                 return
 
     def acordar(self) -> None:
@@ -314,8 +339,9 @@ class Aplicacao:
         pedido = _Pedido(fn)
         self._pedidos.put(pedido)
         if not pedido.feito.wait(timeout):
-            pedido.cancelado = True
-            raise TimeoutError("o laço do Ombro não respondeu a tempo")
+            if pedido.cancelar():
+                raise TimeoutError("o laço do Ombro não respondeu a tempo")
+            pedido.feito.wait()  # o laço já começou a atender: espera terminar, para não dizer "nada mudou" errado
         if pedido.erro is not None:
             raise pedido.erro
         return pedido.resultado
@@ -332,29 +358,53 @@ class Aplicacao:
             pedido.feito.set()
 
     # ---------- mudanças ao vivo (só dentro do laço, via executar) ----------
+    def aplicar_cfg(self, novo: OmbroConfig) -> list:
+        """O único caminho de uma mudança de preferência com o Ombro rodando: põe `novo` em uso e acerta tudo o
+        que depende dele (brilho e orientação da tela, layout, cores, avatares, visão). Não reabre a tela nem mexe
+        nos agentes, nas sessões ou no banco. Voltar atrás é chamar de novo com a configuração de antes.
+
+        Devolve as chaves cujo efeito na tela física ficou para quando ela reconectar (a tela USB está fora): a
+        configuração já vale, o desenho e a prévia já mudaram, e a tela recebe brilho e orientação ao voltar."""
+        antes, self.cfg = self.cfg, novo
+        adiadas = []
+        if novo.brilho != antes.brilho:
+            definir = getattr(self.saida, "definir_brilho", None)
+            if definir is not None and not definir(novo.brilho):
+                adiadas.append("brilho")
+        if (novo.paisagem_efetiva, novo.girar) != (antes.paisagem_efetiva, antes.girar):
+            definir = getattr(self.saida, "definir_orientacao", None)
+            if definir is not None and not definir(novo.paisagem_efetiva, novo.girar):
+                adiadas += [k for k in DA_ORIENTACAO if getattr(novo, k) != getattr(antes, k)]
+        if novo.layout != antes.layout:
+            self._uso = None  # a próxima volta do laço coleta de novo (o multiagente precisa do resumo)
+            log.info("layout: %s", NOMES_LAYOUT[novo.layout])
+        if novo.cor_mascote != antes.cor_mascote:
+            self.mascote.cor_fixa = novo.cor_mascote_rgb
+            self.mascote.cor = self.mascote._cor_do_estado()  # sem cor fixa, volta à do agente (ou a uma sorteada)
+        if novo.cor_modo != antes.cor_modo:
+            self.mascote.definir_cor_modo(novo.cor_modo)
+        if (novo.vista, novo.foco, novo.rotacao, novo.intervalo_rotacao) != (antes.vista, antes.foco, antes.rotacao,
+                                                                              antes.intervalo_rotacao):
+            self.seletor = SeletorDeVista(novo.vista, novo.foco, novo.rotacao, novo.intervalo_rotacao)
+        if (novo.avatares, novo.avatar_sorteio, novo.cor_modo, novo.layout, novo.vista, novo.foco) != (
+                antes.avatares, antes.avatar_sorteio, antes.cor_modo, antes.layout, antes.vista, antes.foco):
+            self.atualizar_avatar(time.monotonic(), ja=True)  # o mascote troca sem esperar o estado mudar
+        self._redesenhar = True
+        return adiadas
+
     def definir_brilho(self, valor: int) -> bool:
         """Muda o brilho. Verdadeiro se chegou a uma tela de verdade agora (no simulador, não há brilho)."""
-        self.cfg = replace(self.cfg, brilho=valor)
-        definir = getattr(self.saida, "definir_brilho", None)
-        return bool(definir(valor)) if definir is not None else False
+        adiadas = self.aplicar_cfg(replace(self.cfg, brilho=valor))
+        return hasattr(self.saida, "definir_brilho") and "brilho" not in adiadas
 
     def definir_layout(self, layout: str) -> None:
-        if layout not in ANIMADOS or self.cfg.layout not in ANIMADOS:
-            raise ValueError("trocar de ou para o layout clássico muda a orientação da tela: reinicie o Ombro")
-        if layout == self.cfg.layout:
-            return
-        self.cfg = replace(self.cfg, layout=layout)
-        self._uso = None  # a próxima volta do laço coleta de novo (o multiagente precisa do resumo)
+        self.aplicar_cfg(replace(self.cfg, layout=layout))
 
     def definir_cor(self, cor: Optional[str]) -> None:
-        self.cfg = replace(self.cfg, cor_mascote=cor)
-        self.mascote.cor_fixa = self.cfg.cor_mascote_rgb
-        self.mascote.cor = self.mascote._cor_do_estado()  # sem cor fixa, volta à do agente (ou a uma sorteada)
+        self.aplicar_cfg(replace(self.cfg, cor_mascote=cor))
 
     def definir_vista(self, **mudancas) -> None:
-        self.cfg = replace(self.cfg, **mudancas)
-        c = self.cfg
-        self.seletor = SeletorDeVista(c.vista, c.foco, c.rotacao, c.intervalo_rotacao)
+        self.aplicar_cfg(replace(self.cfg, **mudancas))
 
     # ---------- o avatar do mascote ----------
     def _sessao_relevante(self, provider: str) -> Optional[str]:
@@ -411,17 +461,9 @@ class Aplicacao:
 
     def definir_avatar(self, chave: str, valor) -> None:
         """Mudou uma preferência de avatar ou de cor: vale na hora (o mascote troca sem esperar o estado mudar)."""
-        if chave.startswith("avatares."):
-            alvo = chave.split(".", 1)[1]
-            pares = dict(self.cfg.avatares)
-            pares[alvo] = valor
-            self.cfg = replace(self.cfg, avatares=tuple((k, pares[k]) for k in ("claude", "codex", "cursor", "padrao") if k in pares))
-        elif chave == "avatar_sorteio":
-            self.cfg = replace(self.cfg, avatar_sorteio=valor)
-        elif chave == "cor_modo":
-            self.cfg = replace(self.cfg, cor_modo=valor)
-            self.mascote.definir_cor_modo(valor)
-        self.atualizar_avatar(time.monotonic(), ja=True)
+        from .preferencias import aplicar_em
+
+        self.aplicar_cfg(aplicar_em(self.cfg, {chave: valor}))
 
     # ---------- fim ----------
     def fechar(self) -> None:

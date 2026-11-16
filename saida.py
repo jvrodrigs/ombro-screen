@@ -54,9 +54,12 @@ class Simulador:
 .moldura{padding:14px;border-radius:14px;background:#26231f;box-shadow:0 10px 40px #000a}
 img{display:block;width:__W__px;height:__H__px;image-rendering:pixelated}
 p{color:#8c857c;font:12px ui-monospace,monospace;text-align:center;margin:10px 0 0}</style></head>
-<body><div><div class="moldura"><img id="q" src="/quadro.png"></div><p>simulador · __W__x__H__</p></div>
-<script>const q=document.getElementById('q');
-setInterval(()=>{const n=new Image();n.onload=()=>q.src=n.src;n.src='/quadro.png?'+Date.now()},250)</script>
+<body><div><div class="moldura"><img id="q" src="/quadro.png"></div><p id="t">simulador · __W__x__H__</p></div>
+<script>const q=document.getElementById('q'),t=document.getElementById('t');
+// o tamanho vem do próprio quadro: a orientação pode mudar com o Ombro rodando (layout clássico em pé ou deitado)
+setInterval(()=>{const n=new Image();n.onload=()=>{q.src=n.src;q.style.width=n.naturalWidth+'px';
+q.style.height=n.naturalHeight+'px';t.textContent='simulador · '+n.naturalWidth+'x'+n.naturalHeight};
+n.src='/quadro.png?'+Date.now()},250)</script>
 </body></html>"""
 
     def __init__(self, porta: int = 5680, paisagem: bool = False):
@@ -97,6 +100,11 @@ setInterval(()=>{const n=new Image();n.onload=()=>q.src=n.src;n.src='/quadro.png
                 else "portrait"}
 
     def pronta(self) -> bool:
+        return True
+
+    def definir_orientacao(self, paisagem: bool, girar: bool) -> bool:
+        """O simulador mostra o quadro como você o vê (de pé ou deitado); girar 180° é coisa da tela física."""
+        self.tamanho = (480, 320) if paisagem else (320, 480)
         return True
 
     def mostrar(self, img: Image.Image) -> None:
@@ -152,14 +160,15 @@ class TelaUSB:
 
             self._classe = getattr(lcd_mod, classe)
         self.porta, self.brilho = porta, brilho
-        if paisagem:
-            self._orientacao = Orientation.REVERSE_LANDSCAPE if girar else Orientation.LANDSCAPE
-        else:
-            self._orientacao = Orientation.REVERSE_PORTRAIT if girar else Orientation.PORTRAIT
+        self._Orientation = Orientation
+        self._orientacao = self._orientacao_de(paisagem, girar)
         self.revisao = revisao
         self.lcd = None
         self._serial = None  # a porta aberta, para notar quando a biblioteca a reabre sozinha
-        self.anterior: Image.Image | None = None
+        self.anterior: Image.Image | None = None  # o que a tela tem agora (None: não se sabe)
+        self._inteiras: set = set()  # faixas de `anterior` que a tela ainda não tem: vão inteiras
+        # o laço diz aqui se há um pedido esperando (mudar de layout, por exemplo): o envio para entre duas faixas
+        self.interromper = None
         self._proxima_tentativa = 0.0
         self._avisos = SoQuandoMuda(log)
         self._ja_conectou = False
@@ -172,10 +181,39 @@ class TelaUSB:
 
     def estado(self) -> dict:
         nomes = {0: "portrait", 1: "reverse_portrait", 2: "landscape", 3: "reverse_landscape"}
+        nome = nomes.get(int(self._orientacao), str(self._orientacao))
+        w, h = (480, 320) if "landscape" in nome else (320, 480)
         return {"kind": "usb", "connection": self.conexao, "transport": "usb" if self.usb_direto else "serial",
+                "width": w, "height": h,
                 "revision": self.revisao, "port": "auto" if self.porta.upper() == "AUTO" else Path(self.porta).name,
-                "brightness": self.brilho, "orientation": nomes.get(int(self._orientacao), str(self._orientacao)),
+                "brightness": self.brilho, "orientation": nome,
                 "last_error": self.ultimo_erro, "connected_since": self.conectada_em}
+
+    def _orientacao_de(self, paisagem: bool, girar: bool):
+        o = self._Orientation
+        if paisagem:
+            return o.REVERSE_LANDSCAPE if girar else o.LANDSCAPE
+        return o.REVERSE_PORTRAIT if girar else o.PORTRAIT
+
+    def definir_orientacao(self, paisagem: bool, girar: bool) -> bool:
+        """Deita ou gira a tela agora, na conexão que já está aberta (e nas próximas reconexões). Verdadeiro se a
+        tela estava ligada e aceitou; com ela fora, vale quando reconectar. O próximo quadro vai inteiro."""
+        nova = self._orientacao_de(paisagem, girar)
+        if nova == self._orientacao:
+            return self.lcd is not None
+        self._orientacao = nova
+        self.anterior = None  # o quadro anterior estava na outra orientação: nada de mandar só a diferença
+        if self.lcd is None:
+            return False
+        try:
+            self.lcd.SetOrientation(orientation=nova)
+        except (Exception, SystemExit) as e:  # a mesma regra do envio: erro aqui vira reconexão (que já usa a nova)
+            log.warning("a tela USB não aceitou a orientação (%s); tentando reconectar a cada %.0f s", self._motivo(e), RETENTAR_S)
+            self._falhou(e)
+            self._desconectar()
+            return False
+        log.info("orientação da tela: %s", self.estado()["orientation"])
+        return True
 
     def definir_brilho(self, nivel: int) -> bool:
         """Muda o brilho agora (e nas próximas reconexões). Verdadeiro se a tela estava ligada e aceitou."""
@@ -261,16 +299,34 @@ class TelaUSB:
         self.lcd.DisplayPILImage(img, x, y)
         self.bytes_enviados += img.width * img.height * 2  # RGB565
 
-    def _enviar(self, img: Image.Image) -> None:
-        if self.anterior is None:
-            self._pedaco(img, 0, 0)
-            return
-        for y in range(0, img.height, FAIXA):
+    def _enviar(self, img: Image.Image) -> bool:
+        """Manda o que mudou, faixa por faixa. Falso se parou no meio para atender um pedido: o que já foi fica
+        registrado, e o resto vai no próximo quadro (um quadro inteiro pelo USB leva perto de 2 s; ninguém espera
+        isso para trocar de layout de novo)."""
+        ys = list(range(0, img.height, FAIXA))
+        if self.anterior is None or self.anterior.size != img.size:  # primeira vez, reconexão ou outra orientação
+            tela, inteiras = Image.new("RGB", img.size), set(ys)  # nada do que está na tela é conhecido
+        else:
+            tela, inteiras = self.anterior, self._inteiras
+        copiada = False
+        for i, y in enumerate(ys):
             caixa = (0, y, img.width, min(y + FAIXA, img.height))
-            bbox = ImageChops.difference(img.crop(caixa), self.anterior.crop(caixa)).getbbox()
-            if bbox:
-                x0, y0, x1, y1 = bbox
-                self._pedaco(img.crop((x0, y + y0, x1, y + y1)), x0, y + y0)
+            if y in inteiras:
+                bbox = (0, 0, img.width, caixa[3] - y)
+            else:
+                bbox = ImageChops.difference(img.crop(caixa), tela.crop(caixa)).getbbox()
+            if not bbox:
+                continue
+            x0, y0, x1, y1 = bbox
+            self._pedaco(img.crop((x0, y + y0, x1, y + y1)), x0, y + y0)
+            if not copiada:
+                tela, inteiras, copiada = tela.copy(), set(inteiras), True
+            tela.paste(img.crop(caixa), caixa[:2])
+            inteiras.discard(y)
+            self.anterior, self._inteiras = tela, inteiras  # o que a tela tem agora
+            if i + 1 < len(ys) and self.interromper is not None and self.interromper():
+                return False
+        return True
 
     def mostrar(self, img: Image.Image) -> None:
         if self.lcd is None:
@@ -279,7 +335,7 @@ class TelaUSB:
             if not self._conectar():
                 return
         try:
-            self._enviar(img)
+            completo = self._enviar(img)
             if self.lcd.lcd_serial is not self._serial:
                 # A biblioteca reabriu a porta no meio do envio (a tela pode ter reiniciado):
                 # reconfigura e manda o quadro inteiro na próxima vez.
@@ -296,7 +352,8 @@ class TelaUSB:
             self._falhou(e)
             self._desconectar()
             return
-        self.anterior = img
+        if completo:
+            self.anterior, self._inteiras = img, set()
 
     def fechar(self) -> None:
         self._desconectar()

@@ -30,7 +30,7 @@ mostrando antes o que muda), mostra a prévia da telinha e cuida do serviço em 
 
 - **Painel**: agentes (cada um com o seu avatar), sessões, quem espera você, limites de uso com o horário de reset, tokens de hoje, CPU e RAM
 - **Agentes**: instalar, conferir, reparar e remover as integrações do Claude Code, Codex e Cursor
-- **Tela**: a prévia ao vivo do que a telinha mostra (o mesmo desenho, sem a tela USB), layout, brilho e hardware
+- **Tela**: a prévia ao vivo do que a telinha mostra (o mesmo desenho, sem a tela USB), layout, orientação, brilho e hardware. Layout, girar 180°, clássico deitado e brilho mudam na hora, sem reiniciar nada
 - **Aparência**: o avatar de cada agente (galeria com nove, ou aleatório), a cor e o layout multiagente
 - **Diagnóstico** (o `ombro doctor`, com relatório para issues) e **Ajustes**
 - **Menu Bar**: o cloud com o resumo; notificações opcionais quando uma sessão espera você
@@ -193,7 +193,8 @@ python3 tela.py --usb --revisao A
   Para descobrir a sua: <https://github.com/mathoudebine/turing-smart-screen-python/wiki/Hardware-revisions>.
   A tela com serial `USB35INCHIPSV2` é a revisão A.
 - `--porta /dev/cu.usbmodemXXXX` se a detecção automática falhar (na revisão A ela costuma ser `/dev/cu.usbmodemUSB35INCHIPSV21`).
-- `--girar` se ela aparecer de cabeça para baixo no case.
+- `--girar` se ela aparecer de cabeça para baixo no case: gira a tela física 180°. Os dados e o desenho são os mesmos (a prévia do app e o simulador mostram o quadro de pé).
+- `--paisagem` é só do layout clássico: deitado (480×320) em vez de em pé (320×480). Os outros layouts são sempre deitados e ignoram a opção.
 - `--brilho 30` é o padrão: a revisão A esquenta acima de 50 %.
 - `--intervalo 0.2` é o padrão do layout do Ombro (5 quadros por segundo). O cloud anima, então o ritmo é maior que no painel clássico (1 por segundo).
 - Feche outros programas que usem a tela (o app do fabricante, por exemplo): só um processo consegue abrir a porta serial.
@@ -366,10 +367,11 @@ IPC:           v1 (ombrod 0.4.0, PID 4321)
 | `sessions [--provider codex] [--full]` | as sessões conhecidas (projeto = nome da pasta, nunca o caminho) |
 | `display` | tela: tipo, conexão, revisão, transporte, brilho, orientação, layout, último quadro e erro |
 | `display brightness 40 [--persist]` | brilho na hora (`--persist` grava no config.json) |
-| `display layout multiagente [--persist]` | troca o layout na hora (de ou para o `classico`, só ao reiniciar) |
+| `display layout multiagente [--persist]` | troca o layout na hora, qualquer um (o `classico` também) |
 | `display preview quadro.png` | o último quadro da tela, sem desenhar de novo |
 | `config` / `config set brilho 40` | a configuração em uso, e mudar qualquer preferência (`config set providers.codex false`) |
 | `config schema` | todas as preferências que dá para mudar, com os valores aceitos e se valem na hora ou ao reiniciar |
+| `config set girar true` / `config set paisagem true` | gira a tela 180°, ou deita o layout clássico, na hora e sem reabrir o USB |
 | `health` | a saúde de cada componente |
 | `integrations ...` | os hooks dos agentes (seção 9) |
 | `service ...` | o LaunchAgent (seção 6) |

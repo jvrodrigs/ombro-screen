@@ -42,11 +42,11 @@ from logging_config import SoQuandoMuda, curto, logger, sem_casa
 
 from . import VERSAO
 from . import preferencias
-from .app import ANIMADOS, Aplicacao, Indisponivel
+from .app import Aplicacao, Indisponivel
 from .caminhos import CaminhoInseguro
 from .instancia import OutraInstancia, Trava
 from .ipc import (
-    PROTOCOLO, SERVICE_UNAVAILABLE, VALIDATION_ERROR, ErroIPC, Metodo, Param, ServidorIPC,
+    INTERNAL_ERROR, PROTOCOLO, SERVICE_UNAVAILABLE, VALIDATION_ERROR, ErroIPC, Metodo, Param, ServidorIPC,
 )
 from .processos import conflitos
 
@@ -144,6 +144,9 @@ class Daemon:
         self._avisos = SoQuandoMuda(log)
         self.publicado: Dict = {"providers": [], "sessions": [], "collected_at": None}
         self._preview_cache: Optional[tuple] = None  # (quadro, PNG em base64) do último display.preview
+        self._pendentes: Dict = {}  # preferências gravadas que só entram em uso ao reiniciar: {chave: valor gravado}
+        self._revisao = 0  # sobe a cada mudança de preferência: quem lê descarta uma resposta mais velha
+        self._instancia = f"{os.getpid()}-{int(self.iniciado_em * 1000)}"  # a revisão só se compara no mesmo ombrod
 
     # ---------- ciclo de vida ----------
     def _mudar(self, novo: str) -> None:
@@ -447,7 +450,9 @@ class Daemon:
         return {"file": curto(arq), "file_exists": arq.exists(), "values": valores,
                 "providers_enabled": {pid: pid in cfg.providers for pid in PROVIDERS},
                 "editable": list(preferencias.EDITAVEIS), "live": list(preferencias.AO_VIVO),
-                "layouts_live": list(ANIMADOS), "views": list(VISTAS)}
+                "layouts_live": list(LAYOUTS), "views": list(VISTAS),
+                # `values` é o que está em uso; `pending`, o que está gravado e só vale ao reiniciar o ombrod
+                "pending": dict(self._pendentes), "revision": self._revisao, "instance": self._instancia}
 
     def m_config_schema(self, _p) -> dict:
         """O que dá para mudar, com tipo, valores e se vale na hora: o Ombro.app monta os ajustes a partir disto."""
@@ -463,58 +468,91 @@ class Daemon:
         return self._mudar_preferencias({"layout": p["layout"]}, p.get("persist", False))
 
     def _mudar_preferencias(self, mudancas: dict, persistir: bool) -> dict:
+        """O único caminho de uma mudança de preferência pela IPC, uma de cada vez (na ordem em que chegam):
+
+            validar -> pôr em uso no laço (tudo junto) -> gravar no config.json -> responder com o que vale agora
+
+        Se pôr em uso falha, nada muda e nada é gravado. Se gravar falha, o que entrou em uso volta atrás: a
+        resposta de sucesso só sai com as duas coisas feitas. O que só vale ao reiniciar é gravado e fica em
+        `pending` (no config.get também) até o ombrod reiniciar: gravado e em uso nunca se confundem."""
         try:
             mudancas = preferencias.validar_mudancas(mudancas, self._cfg_atual().providers)
         except ConfigInvalida as e:
             raise ErroIPC(VALIDATION_ERROR, str(e)) from None
-        so_ao_reiniciar = [k for k in mudancas if not preferencias.ao_vivo(k)]
-        if so_ao_reiniciar and not persistir:
-            raise ErroIPC(VALIDATION_ERROR, f"{', '.join(so_ao_reiniciar)} só vale(m) depois de reiniciar o ombrod: "
+        vivas = {k: v for k, v in mudancas.items() if preferencias.ao_vivo(k)}
+        frias = {k: v for k, v in mudancas.items() if k not in vivas}
+        if frias and not persistir:
+            raise ErroIPC(VALIDATION_ERROR, f"{', '.join(frias)} só vale(m) depois de reiniciar o ombrod: "
                                             "use persist para gravar no config.json")
         with self._trava_config:
-            aplicadas, reiniciar = [], list(so_ao_reiniciar)
-            if self.app is not None:
-                for chave, valor in mudancas.items():
-                    if chave in so_ao_reiniciar:
-                        continue
-                    try:
-                        self.app.executar(lambda c=chave, v=valor: self._aplicar(c, v))
-                        aplicadas.append(chave)
-                    except ValueError:
-                        reiniciar.append(chave)
-                    except (Indisponivel, TimeoutError):
-                        raise ErroIPC(SERVICE_UNAVAILABLE, "o laço do Ombro não está atendendo agora; tente de novo") from None
-            elif not persistir:
-                raise ErroIPC(SERVICE_UNAVAILABLE, "o ombrod ainda não está mostrando a tela (esperando outro Ombro sair?); "
-                                                   "nada mudou. Com persist, a preferência é gravada para o próximo início")
-            else:
-                reiniciar = list(mudancas)
+            app, antes, adiadas = self.app, None, []
+            if app is None:
+                if not persistir:
+                    raise ErroIPC(SERVICE_UNAVAILABLE, "o ombrod ainda não está mostrando a tela (esperando outro Ombro sair?); "
+                                                       "nada mudou. Com persist, a preferência é gravada para o próximo início")
+                frias, vivas = dict(mudancas), {}
+            elif vivas:
+                antes, adiadas = self._no_laco(lambda: self._por_em_uso(vivas))
             arquivo = None
             if persistir:
                 try:
                     arq, _ = preferencias.gravar(self._cfg_atual().arquivo or arquivo_padrao(), mudancas)
                     arquivo = curto(arq)
-                except ConfigInvalida as e:
-                    raise ErroIPC(VALIDATION_ERROR, sem_casa(e)) from None
-                except OSError as e:
+                except (ConfigInvalida, OSError) as e:
+                    desfeito = self._desfazer(antes)
+                    if isinstance(e, ConfigInvalida):
+                        raise ErroIPC(VALIDATION_ERROR, sem_casa(e) + self._sobre_desfazer(desfeito)) from None
                     log.warning("não consegui gravar o config.json (%s)", sem_casa(e))
-                    raise ErroIPC(SERVICE_UNAVAILABLE, "não consegui gravar o config.json; veja o log do ombrod") from None
+                    raise ErroIPC(SERVICE_UNAVAILABLE, "não consegui gravar o config.json; veja o log do ombrod"
+                                  + self._sobre_desfazer(desfeito)) from None
                 log.info("preferências gravadas: %s", ", ".join(sorted(mudancas)))
-        return {"applied": aplicadas, "restart_required": reiniciar, "persisted": persistir, "file": arquivo}
+            cfg = self._cfg_atual()
+            for k in vivas:
+                self._pendentes.pop(k, None)
+            for k, v in frias.items():  # gravado, mas só entra em uso ao reiniciar (a não ser que já seja o valor em uso)
+                if preferencias.valor(cfg, k) == v:
+                    self._pendentes.pop(k, None)
+                else:
+                    self._pendentes[k] = v
+            self._revisao += 1
+            return {"applied": list(vivas), "restart_required": [k for k in frias if k in self._pendentes],
+                    "deferred": adiadas, "persisted": persistir, "file": arquivo,
+                    "values": {k: preferencias.valor(cfg, k) for k in mudancas},
+                    "pending": dict(self._pendentes), "revision": self._revisao, "instance": self._instancia}
 
-    def _aplicar(self, chave: str, valor) -> None:
-        """Roda dentro do laço (via Aplicacao.executar)."""
+    def _no_laco(self, fn):
+        try:
+            return self.app.executar(fn)
+        except (Indisponivel, TimeoutError):
+            raise ErroIPC(SERVICE_UNAVAILABLE, "o laço do Ombro não está atendendo agora; nada mudou. Tente de novo") from None
+
+    def _por_em_uso(self, vivas: dict):
+        """Roda dentro do laço (via Aplicacao.executar): tudo junto, ou nada."""
         app = self.app
-        if chave == "brilho":
-            app.definir_brilho(valor)
-        elif chave == "layout":
-            app.definir_layout(valor)
-        elif chave == "cor_mascote":
-            app.definir_cor(valor)
-        elif chave.startswith("avatares.") or chave in ("avatar_sorteio", "cor_modo"):
-            app.definir_avatar(chave, valor)
-        else:
-            app.definir_vista(**{chave: valor})
+        antes = app.cfg
+        try:
+            return antes, app.aplicar_cfg(preferencias.aplicar_em(antes, vivas))
+        except Exception:
+            log.error("não consegui pôr em uso %s; voltando ao que estava", ", ".join(sorted(vivas)), exc_info=True)
+            app.aplicar_cfg(antes)
+            raise ErroIPC(INTERNAL_ERROR, "não consegui pôr a mudança em uso; nada mudou. Veja o log do ombrod") from None
+
+    def _desfazer(self, antes) -> Optional[bool]:
+        """Volta ao que estava em uso antes (a gravação falhou). None: não havia nada a desfazer."""
+        if antes is None:
+            return None
+        try:
+            self.app.executar(lambda: self.app.aplicar_cfg(antes))
+            return True
+        except Exception:  # noqa: BLE001 - o laço parou no meio: o estado em uso fica o novo, e a resposta diz isso
+            log.error("não consegui desfazer a mudança que entrou em uso e não foi gravada", exc_info=True)
+            return False
+
+    @staticmethod
+    def _sobre_desfazer(desfeito: Optional[bool]) -> str:
+        if desfeito is None:
+            return ""
+        return ". Nada mudou" if desfeito else ". A mudança ficou em uso, mas não foi gravada: vale até o ombrod reiniciar"
 
 
 def argumentos(argv=None):

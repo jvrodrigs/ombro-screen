@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, Notice, PageHeader, Segmented, Toggle } from "../../components/ui";
-import { useAsync } from "../../hooks/useAsync";
-import { useOmbro } from "../../hooks/useOmbro";
+import { useConfig } from "../../hooks/useConfig";
 import { errorMessage } from "../../services/api";
 import { PROVIDER_NAMES } from "../../lib/format";
 import type { ConfigValue } from "../../types/ombro";
@@ -19,11 +18,9 @@ const SUGESTOES = ["#DF8559", "#79A9D8", "#83B596", "#E7AF5E", "#C58AD8", "#3D7A
 
 /** Preferências visuais da telinha, aplicadas pelo ombrod (fonte da verdade) e vistas na prévia real. */
 export function Appearance() {
-  const { api } = useOmbro();
-  const config = useAsync(() => api.configGet(), []);
-  const schema = useAsync(() => api.configSchema(), []);
-  const opt = useMemo(() => new Map((schema.data?.options ?? []).map((o) => [o.key, o])), [schema.data]);
-  const v = config.data?.values ?? {};
+  const config = useConfig(); // o mesmo caminho da página Tela: o que aparece é o que o ombrod confirmou
+  const opt = config.options;
+  const v = config.values;
   const [salvando, setSalvando] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [cor, setCor] = useState<string>("#DF8559");
@@ -38,8 +35,7 @@ export function Appearance() {
     setSalvando(chave);
     setErro(null);
     try {
-      await api.configUpdate({ [chave]: valor }, true);
-      await config.reload();
+      await config.update({ [chave]: valor });
     } catch (e) {
       setErro(errorMessage(e));
     } finally {
@@ -53,8 +49,7 @@ export function Appearance() {
     setSalvando("cor");
     setErro(null);
     try {
-      await api.configUpdate(m === "fixa" ? { cor_mascote: cor.toUpperCase() } : { cor_mascote: null, cor_modo: m }, true);
-      await config.reload();
+      await config.update(m === "fixa" ? { cor_mascote: cor.toUpperCase() } : { cor_mascote: null, cor_modo: m });
     } catch (e) {
       setErro(errorMessage(e));
     } finally {
@@ -72,7 +67,7 @@ export function Appearance() {
 
       <div className="appearance-layout">
         <div className="stack">
-          <AvatarSettings config={config.data} onChanged={() => config.reload()} />
+          <AvatarSettings config={config.config} onChanged={() => config.reload()} />
 
           <Card>
             <div className="card-title">
@@ -81,7 +76,7 @@ export function Appearance() {
             <Segmented<ModoCor>
               label="Cor do avatar"
               value={modoCor}
-              disabled={!config.data || salvando === "cor"}
+              disabled={!config.config || salvando === "cor"}
               onChange={mudarModoCor}
               options={[
                 { value: "agente", label: "Do agente", title: "Claude laranja, Codex verde, Cursor azul" },
@@ -144,7 +139,7 @@ export function Appearance() {
               <Segmented
                 label="Visão do multiagente"
                 value={String(v.vista ?? "overview")}
-                disabled={salvando === "vista" || !config.data}
+                disabled={salvando === "vista" || !config.config}
                 onChange={(x) => mudar("vista", x)}
                 options={(opt.get("vista")?.choices ?? ["overview", "focus", "attention"]).map((c) => ({
                   value: String(c),
@@ -155,7 +150,7 @@ export function Appearance() {
             </div>
             <div className="field">
               <label htmlFor="foco">Agente em foco</label>
-              <select id="foco" value={String(v.foco ?? "")} disabled={salvando === "foco" || !config.data} onChange={(e) => mudar("foco", e.target.value || null)}>
+              <select id="foco" value={String(v.foco ?? "")} disabled={salvando === "foco" || !config.config} onChange={(e) => mudar("foco", e.target.value || null)}>
                 <option value="">Automático</option>
                 {(opt.get("foco")?.choices ?? []).map((c) => (
                   <option key={String(c)} value={String(c)}>
@@ -169,7 +164,7 @@ export function Appearance() {
               description="Passa pela visão geral e por cada agente, um de cada vez."
               checked={v.rotacao === true}
               pending={salvando === "rotacao"}
-              disabled={!config.data}
+              disabled={!config.config}
               onChange={(x) => mudar("rotacao", x)}
             />
             {v.rotacao === true && (

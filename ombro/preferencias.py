@@ -2,8 +2,10 @@
 
 `ESQUEMA` é a fonte da verdade: a IPC (`config.schema`) entrega essa lista para o Ombro.app montar a tela de
 ajustes sem saber nada de antemão. Cada opção diz o tipo, os valores permitidos, o grupo e se vale na hora
-(`live`) ou só depois de reiniciar o ombrod. A validação é a mesma do config.json (`config.validar`), mais as
-regras daqui.
+(`live`) ou só depois de reiniciar o ombrod. Vale na hora tudo o que o laço consegue pôr em uso sem refazer o que
+abriu ao iniciar (brilho, layout, girar, paisagem, cores, avatares, visão); fica para o reinício o que escolhe a
+saída e as fontes (usb, revisão, transporte, portas, agentes ligados, macmon, debug). A validação é a mesma do
+config.json (`config.validar`), mais as regras daqui.
 
 Ficam de fora, de propósito:
   lib, claude_dir    caminhos de pastas para ler: a IPC não aceita caminhos vindos do cliente
@@ -17,12 +19,12 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
 
 import avatares
-from config import LAYOUTS, PROVIDERS, REVISOES, TRANSPORTES, VERSAO, VISTAS, ConfigInvalida, validar
+from config import AVATAR_CHAVES, LAYOUTS, PROVIDERS, REVISOES, TRANSPORTES, VERSAO, VISTAS, ConfigInvalida, validar
 
 from .arquivos import assinatura, gravar_atomico
 
@@ -60,16 +62,17 @@ ESQUEMA: Tuple[Opcao, ...] = (
     Opcao("transporte", "display", "enum", "como falar com a tela: auto, USB direto ou porta serial", False, TRANSPORTES),
     Opcao("porta", "display", "string", "porta serial (AUTO, ou /dev/cu.<nome>)", False),
     Opcao("brilho", "display", "integer", "brilho em % (a revisão A esquenta acima de 50)", True, minimo=0, maximo=100),
-    Opcao("paisagem", "display", "boolean", "tela deitada no layout clássico", False),
-    Opcao("girar", "display", "boolean", "girar 180°", False),
+    Opcao("paisagem", "display", "boolean", "layout clássico deitado (480x320) em vez de em pé (320x480); os outros "
+          "layouts são sempre deitados", True),
+    Opcao("girar", "display", "boolean", "girar a tela 180° (para o case que a deixa de cabeça para baixo)", True),
     Opcao("porta_sim", "display", "integer", "porta do simulador em localhost", False, minimo=1024, maximo=65535),
     # o que aparece
-    Opcao("layout", "appearance", "enum", "o modelo de tela (de ou para o clássico, só ao reiniciar)", True, LAYOUTS),
+    Opcao("layout", "appearance", "enum", "o modelo de tela", True, LAYOUTS),
     Opcao("cor_mascote", "appearance", "color", "cor fixa do avatar (#RRGGBB; vale por cima do cor_modo; null: segue o cor_modo)",
           True, nulo=True),
     Opcao("cor_modo", "appearance", "enum", "cor do avatar: a do agente, ou sorteada a cada troca de estado", True,
           avatares.CORES_MODO),
-    Opcao("intervalo", "appearance", "number", "segundos entre quadros (null: o padrão do layout)", False,
+    Opcao("intervalo", "appearance", "number", "segundos entre quadros (null: o padrão do layout)", True,
           minimo=0.05, maximo=10, nulo=True),
     # layout multiagente
     Opcao("vista", "multi_agent", "enum", "visão do layout multiagente", True, VISTAS),
@@ -98,6 +101,29 @@ NO_BLOCO_MULTI = {"vista": "view", "foco": "focus_provider", "rotacao": "auto_ro
 
 def ao_vivo(chave: str) -> bool:
     return POR_CHAVE[chave].ao_vivo
+
+
+def valor(cfg, chave: str):
+    """O valor de uma preferência numa configuração (a efetiva, por exemplo), na forma em que a IPC a recebe."""
+    if chave.startswith("providers."):
+        return chave.split(".", 1)[1] in cfg.providers
+    if chave.startswith("avatares."):
+        return cfg.avatar(chave.split(".", 1)[1])
+    return getattr(cfg, chave)
+
+
+def aplicar_em(cfg, mudancas: Dict):
+    """`cfg` com `mudancas` (já validadas). Só gera a configuração nova: quem a põe em uso é a Aplicacao."""
+    simples, avs, provs = {}, dict(cfg.avatares), set(cfg.providers)
+    for chave, v in mudancas.items():
+        if chave.startswith("avatares."):
+            avs[chave.split(".", 1)[1]] = v
+        elif chave.startswith("providers."):
+            (provs.add if v else provs.discard)(chave.split(".", 1)[1])
+        else:
+            simples[chave] = v
+    return replace(cfg, **simples, avatares=tuple((k, avs[k]) for k in AVATAR_CHAVES if k in avs),
+                   providers=tuple(p for p in PROVIDERS if p in provs))
 
 
 def esquema() -> dict:

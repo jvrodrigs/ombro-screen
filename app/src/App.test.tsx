@@ -111,23 +111,45 @@ describe("integrações (consentimento)", () => {
   });
 });
 
+describe("ligar e desligar um agente", () => {
+  it("o switch mostra o que foi gravado, e o aviso diz que vale ao reiniciar", async () => {
+    const api = fakeApi();
+    renderApp(api, "agents");
+    const codex = await screen.findByRole("region", { name: "Codex" });
+    const sw = within(codex).getByRole("switch", { name: "Acompanhar este agente" });
+    expect(sw).toBeChecked();
+    await userEvent.click(sw);
+    expect(api.configUpdate).toHaveBeenCalledWith({ "providers.codex": false }, true);
+    await waitFor(() => expect(sw).not.toBeChecked()); // antes voltava a aparecer ligado
+    expect(await screen.findByRole("button", { name: "Reiniciar agora" })).toBeInTheDocument();
+    await userEvent.click(sw); // voltou atrás: nada mais a reiniciar
+    await waitFor(() => expect(sw).toBeChecked());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Reiniciar agora" })).toBeNull());
+  });
+});
+
 describe("tela e preferências", () => {
   it("layout troca na hora pelo ombrod", async () => {
     const api = fakeApi();
     renderApp(api, "display");
-    await userEvent.click(await screen.findByRole("radio", { name: /Multiagente/ }));
-    expect(api.setLayout).toHaveBeenCalledWith("multiagente", true);
+    const multi = await screen.findByRole("radio", { name: /Multiagente/ });
+    await userEvent.click(multi);
+    expect(api.configUpdate).toHaveBeenCalledWith({ layout: "multiagente" }, true);
+    await waitFor(() => expect(multi).toHaveAttribute("aria-checked", "true")); // o que o ombrod confirmou
+    expect(screen.queryByText(/vale depois de reiniciar/)).toBeNull();
   });
 
-  it("hardware mostra 'não salvo' até gravar", async () => {
+  it("hardware mostra 'não salvo' até gravar, e depois o que ficou pendente", async () => {
     const api = fakeApi();
     renderApp(api, "display");
     expect(await screen.findByText("Sem alterações")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("switch", { name: "Girar 180°" }));
+    await userEvent.click(screen.getByRole("switch", { name: "Usar a tela USB" }));
     expect(screen.getByText("Alterações não salvas")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(api.configUpdate).toHaveBeenCalledWith({ girar: true }, true);
-    expect(await screen.findByText(/vale depois de reiniciar o monitoramento/)).toBeInTheDocument();
+    expect(api.configUpdate).toHaveBeenCalledWith({ usb: true }, true);
+    expect(await screen.findByText("Gravado; vale depois de reiniciar o monitoramento", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Usar a tela USB" })).toBeChecked(); // o que foi gravado
+    expect(screen.getByRole("button", { name: "Reiniciar agora" })).toBeInTheDocument();
   });
 });
 

@@ -36,7 +36,7 @@ jobs:
     env:
       ASSINAR: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.sign }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Versão (a tag, o package.json e o Cargo.toml precisam bater)
         id: versao
@@ -50,10 +50,10 @@ jobs:
           echo "versao=$app" >> "$GITHUB_OUTPUT"
           [[ "$app" == *-* ]] && echo "pre=true" >> "$GITHUB_OUTPUT" || echo "pre=false" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -141,7 +141,7 @@ jobs:
           (cd dist-release && shasum -a 256 "$NOME" > SHA256SUMS.txt && cat SHA256SUMS.txt)
           echo "nome=$NOME" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: ombro-macos-arm64
           path: dist-release/

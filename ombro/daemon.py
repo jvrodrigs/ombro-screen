@@ -35,7 +35,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from config import LAYOUTS, PERSISTENTES, PROVIDERS, VISTAS, ConfigInvalida, OmbroConfig, arquivo_padrao, pasta_ombro
+from config import AVATAR_CHAVES, LAYOUTS, PERSISTENTES, PROVIDERS, VISTAS, ConfigInvalida, OmbroConfig, arquivo_padrao, pasta_ombro
 from core.models import Activity, Attention
 from core.resumo import resumir_provider
 from logging_config import SoQuandoMuda, curto, logger, sem_casa
@@ -143,6 +143,7 @@ class Daemon:
         self._trava_config = threading.Lock()  # um config.update por vez
         self._avisos = SoQuandoMuda(log)
         self.publicado: Dict = {"providers": [], "sessions": [], "collected_at": None}
+        self._preview_cache: Optional[tuple] = None  # (quadro, PNG em base64) do último display.preview
 
     # ---------- ciclo de vida ----------
     def _mudar(self, novo: str) -> None:
@@ -245,6 +246,7 @@ class Daemon:
         store, registry = app.monitor.store, app.monitor.registry
         provs, sessoes = [], []
         ligados = {p.provider_id: p for p in registry}
+        avs = app.avatares_resolvidos()
         for pid in PROVIDERS:
             p = ligados.get(pid)
             if p is None:
@@ -268,6 +270,7 @@ class Daemon:
                 "last_collected_at": _iso(snap.collected_at) if snap else None,
                 "last_event_at": _iso(ultimo_evento),
                 "quotas": quotas_do_snapshot(snap), "usage": uso_do_snapshot(snap),
+                "avatar": avs.get(pid),
             })
             for s in lista:
                 sessoes.append({
@@ -275,7 +278,8 @@ class Daemon:
                     "status": status_da_sessao(s), "activity": s.activity.value, "attention": s.attention.value,
                     "started_at": _iso(s.started_at), "status_since": _iso(s.status_since), "updated_at": _iso(s.updated_at),
                 })
-        self.publicado = {"providers": provs, "sessions": sessoes, "collected_at": _iso(app.coletado_em)}
+        self.publicado = {"providers": provs, "sessions": sessoes, "collected_at": _iso(app.coletado_em),
+                          "avatar_ombro": avs.get("padrao"), "avatar_sorteio": app.cfg.avatar_sorteio}
         self._reavaliar()
 
     def _reavaliar(self) -> None:
@@ -295,6 +299,11 @@ class Daemon:
         d.setdefault("brightness", self.cfg.brilho if d.get("kind") == "usb" else None)
         d["layout"] = (app.cfg if app else self.cfg).layout
         d["last_frame_at"] = _iso(app.ultimo_quadro_em) if app else None
+        sujeito = getattr(app, "sujeito_atual", None)
+        if isinstance(sujeito, tuple):  # quem o mascote representa agora, e com qual avatar (v1: campo novo)
+            m = app.mascote
+            d["mascot"] = {"avatar": m.forma.avatar, "provider": sujeito[0], "state": m.estado,
+                           "color": "#%02X%02X%02X" % m.cor}
         d["frames"] = app.quadros if app else 0
         if d.get("connected_since"):
             d["connected_since"] = _iso(d["connected_since"])
@@ -396,7 +405,8 @@ class Daemon:
         }
 
     def m_providers(self, _p) -> dict:
-        return {"providers": self.publicado["providers"], "collected_at": self.publicado["collected_at"]}
+        return {"providers": self.publicado["providers"], "collected_at": self.publicado["collected_at"],
+                "ombro_avatar": self.publicado.get("avatar_ombro"), "random_mode": self.publicado.get("avatar_sorteio")}
 
     def m_sessions(self, p) -> dict:
         lista = self.publicado["sessions"]
@@ -410,10 +420,13 @@ class Daemon:
         img = app.ultimo_quadro if app else None
         if img is None:
             return {"available": False}
-        buf = io.BytesIO()
-        img.save(buf, "PNG")
+        cache = self._preview_cache
+        if cache is None or cache[0] is not img:  # o app pede a 5 fps: o mesmo quadro é codificado uma vez só
+            buf = io.BytesIO()
+            img.save(buf, "PNG")
+            cache = self._preview_cache = (img, base64.b64encode(buf.getvalue()).decode("ascii"))
         return {"available": True, "format": "png", "width": img.width, "height": img.height,
-                "captured_at": _iso(app.ultimo_quadro_em), "data_base64": base64.b64encode(buf.getvalue()).decode("ascii")}
+                "captured_at": _iso(app.ultimo_quadro_em), "data_base64": cache[1]}
 
     def _cfg_atual(self) -> OmbroConfig:
         return self.app.cfg if self.app is not None else self.cfg
@@ -425,6 +438,8 @@ class Daemon:
             v = getattr(cfg, k)
             if isinstance(v, Path) or (k == "claude_dir" and v):
                 v = curto(v)
+            elif k == "avatares":
+                v = {chave: cfg.avatar(chave) for chave in AVATAR_CHAVES}  # todas, com "padrao" no que falta
             elif isinstance(v, tuple):
                 v = list(v)
             valores[k] = v
@@ -496,6 +511,8 @@ class Daemon:
             app.definir_layout(valor)
         elif chave == "cor_mascote":
             app.definir_cor(valor)
+        elif chave.startswith("avatares.") or chave in ("avatar_sorteio", "cor_modo"):
+            app.definir_avatar(chave, valor)
         else:
             app.definir_vista(**{chave: valor})
 

@@ -85,11 +85,17 @@ Campos acrescentados para o Ombro.app (ainda v1; quem não os conhece os ignora)
   entregou (`used_percent` e `resets_at` podem ser `null`; nada é recalculado nem inventado).
 - `providers.list[].usage`: `null` quando o provider não informa uso; senão os totais de hoje
   `{scope, total_tokens, input_tokens, output_tokens, messages}`, só números.
+- `providers.list[].avatar`: `{avatar, color, choice}`: o avatar que o ombrod usa para o agente agora (com o
+  "aleatório ao iniciar" já sorteado), a cor dele e a preferência (`padrao`, `aleatorio` ou um id). No resultado
+  também: `ombro_avatar` (o do Ombro, sem agente em foco) e `random_mode` (`inicio` ou `sessao`).
+- `display.status.mascot`: `{avatar, provider, state, color}`: quem o mascote da telinha representa agora.
 - `status.system`: `null` até a primeira leitura boa; senão `{cpu_percent, ram_used_bytes, ram_total_bytes,
   memory_pressure}` (`normal`, `warning`, `critical` ou `null` fora do macOS), da mesma leitura que vai para a tela.
 
 `display.preview` devolve o último quadro que foi para a tela: nada é desenhado de novo. São 50–120 KiB em
-base64, em ~2 ms. Não há streaming: quem quer acompanhar pede de novo (o simulador atualiza 4 vezes por segundo).
+base64, em ~2 ms (codificado uma vez por quadro: pedir de novo o mesmo quadro sai do cache). Não há streaming: quem
+quer acompanhar pede de novo (o simulador atualiza 4 vezes por segundo; o Ombro.app, 5 vezes por segundo nas páginas
+Tela e Aparência, e só com a janela à vista).
 
 Horários em ISO 8601, hora local, sem fuso, como no resto do Ombro.
 
@@ -108,7 +114,8 @@ fonte da verdade (`ombro/preferencias.py`); o Ombro.app monta a tela de ajustes 
 | --- | --- | --- |
 | `display` | `brilho` | na hora |
 | `display` | `usb`, `revisao`, `transporte`, `porta` (`AUTO` ou `/dev/cu.<nome>`), `paisagem`, `girar`, `porta_sim` (1024–65535) | ao reiniciar |
-| `appearance` | `layout` (de ou para o `classico`, só ao reiniciar), `cor_mascote` | na hora |
+| `appearance` | `layout` (de ou para o `classico`, só ao reiniciar), `cor_mascote`, `cor_modo` (`agente`, `sorteada`) | na hora |
+| `avatars` | `avatares.claude`, `avatares.codex`, `avatares.cursor`, `avatares.padrao` (`padrao`, `aleatorio` ou o id de um avatar do catálogo), `avatar_sorteio` (`inicio`, `sessao`) | na hora |
 | `appearance` | `intervalo` (0,05–10 s, ou `null` para o padrão do layout) | ao reiniciar |
 | `multi_agent` | `vista`, `foco`, `rotacao`, `intervalo_rotacao` | na hora |
 | `providers` | `providers.claude`, `providers.codex`, `providers.cursor` (`true`/`false`) | ao reiniciar |
@@ -125,7 +132,9 @@ Regras:
   cliente), `nao_abrir` (só faz sentido no terminal) e as ações de uma vez (`demo`, `demo_ciclo`, `png`).
 - A resposta diz o que valeu na hora (`applied`), o que vale ao reiniciar (`restart_required`) e onde gravou
   (`file`). Os agentes vão para o bloco `providers` do arquivo (`{"codex": {"enabled": false}}`), e as opções do
-  multiagente, para o bloco `multi_agent`, no mesmo formato que o README ensina.
+  multiagente, para o bloco `multi_agent`, e os avatares, para o bloco `avatars` (`{"codex": "nova", "default": ...,
+  "random": "sessao"}`), no mesmo formato que o README ensina. Pela IPC só entram avatares que existem no
+  catálogo; no arquivo, um id desconhecido vira aviso e vale o padrão do agente.
 
 A gravação muda só essas chaves (as outras, a ordem e o `versao` ficam), é atômica e é recusada se o
 `config.json` não for um JSON válido. Opções dadas na linha de comando do ombrod vencem o arquivo no próximo

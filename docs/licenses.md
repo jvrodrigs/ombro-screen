@@ -19,12 +19,18 @@ próprio Ombro e fala com o endpoint USB sem a biblioteca. As outras revisões c
 repositório, com a biblioteca clonada à parte, como antes (README, seção 1). Rodar a biblioteca em outro processo não
 foi usado como justificativa para embarcá-la: ela simplesmente não é distribuída.
 
-## O desenho do cloud
+## O desenho do mascote
 
-O README e o `dados_cloud.py` dizem que o contorno e os olhos do cloud foram medidos na "KEY de formas dos avatares
-do Grok Bot". O ícone da Menu Bar e a marca do app são gerados a partir desses mesmos pontos. **Antes de uma release
-pública, confirme que esse desenho pode ser redistribuído** (de quem é a KEY, sob quais termos) ou substitua-o por um
-desenho próprio. Isso não é uma questão de código e não foi decidido aqui.
+O contorno antigo do cloud (`dados_cloud.py`) tinha sido medido num desenho de terceiros (a "KEY de formas dos
+avatares do Grok Bot"). Ele **saiu do projeto**, e com ele o ícone do app e o da Menu Bar que vinham dele. O
+mascote agora é um avatar, e o padrão é o **Ombro Cloud**, desenhado do zero para o Ombro, como os outros oito
+da coleção ([avatars.md](avatars.md)). O ícone do app, o da Menu Bar e a marca da barra lateral são gerados dele
+(`app/scripts/gen_tray_icon.py`).
+
+O **formato** dos avatares e o **motor** que os desenha no app são do
+[open-bot-avatar](https://github.com/DominikScholz/open-bot-avatar) (MIT, © 2026 Dominik Scholz): o pacote npm
+`open-bot-avatar` vai no Ombro.app com a licença dele nos avisos de terceiros. Da galeria do projeto, nada foi
+usado: os nove avatares são próprios.
 
 ## O que vai dentro do Ombro.app
 
@@ -43,6 +49,7 @@ um componente não tiver texto. No app: Ajustes > Sobre > Avisos de terceiros.
 | importlib_resources, libusb-package | Apache-2.0 | |
 | 249 crates Rust do app | MIT, Apache-2.0, BSD, Zlib, Unicode-3.0, MPL-2.0 (5 crates do Servo) | nenhum GPL/LGPL/AGPL; os 18 que não publicam o arquivo de licença recebem o texto padrão da licença declarada, com os autores do Cargo.toml |
 | React, React DOM, scheduler, @tauri-apps/api | MIT; Apache-2.0 ou MIT | |
+| open-bot-avatar (o motor dos avatares no app) | MIT | o formato dos avatares (`avatars/`) também é o dele |
 | Lucide (ícones da interface) | ISC | |
 | JetBrains Mono (fonte da telinha) | OFL-1.1 | |
 

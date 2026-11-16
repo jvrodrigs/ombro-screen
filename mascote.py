@@ -1,8 +1,9 @@
-"""O cloud, mascote do Ombro Screen: uma animação por estado do Claude Code.
+"""O mascote do Ombro Screen: uma animação por estado dos agentes, com o avatar de cada um.
 
-A forma e os olhos vêm da KEY de formas (ver dados_cloud.py). O movimento é o do mockup
-aprovado (cloud-v3): troca de estado suave, pulos com antecipação e aterrissagem, olhos com
-atraso em relação ao corpo, e extras (zZ, “?”, três pontinhos, gota de suor, confete).
+A forma e os olhos vêm do avatar (avatars/, formato do open-bot-avatar; ver avatares.py): o padrão é o
+Ombro Cloud, e cada agente pode ter o seu. O movimento é o do mockup aprovado (cloud-v3): troca de estado
+suave, pulos com antecipação e aterrissagem, olhos com atraso em relação ao corpo, e extras (zZ, “?”, três
+pontinhos, gota de suor, confete), que acompanham o contorno de cada avatar.
 
 Estados: ocioso, trabalhando, esperando, alerta, reset e concluido (o Claude terminou o que fazia;
 dura até 5 min, ou até começar outra coisa, e depois o cloud volta a dormir).
@@ -17,14 +18,16 @@ from datetime import datetime, timedelta
 
 from PIL import Image, ImageDraw
 
-from dados_cloud import BBOX, OLHOS, PONTOS
+import avatares
 from render import S, VERDE, fonte
 
 TAU = math.tau
 
-# ---------- onde o cloud fica na tela de 480x320 ----------
+# ---------- onde o mascote fica na tela de 480x320 ----------
 COL_X, COL_Y, COL_W, COL_H = 316, 26, 156, 170  # coluna reservada; nada passa daqui
-BX0, BY0, BX1, BY1 = BBOX
+# A área onde o avatar cabe, em unidades da camada (as mesmas do desenho de sempre: os extras e o movimento
+# foram ajustados nelas). O avatar é escalado para caber aqui, com a base em BY1 e centrado em CX.
+BX0, BY0, BX1, BY1 = 130.0, 100.0, 569.0, 449.0
 CX = (BX0 + BX1) / 2
 W, H = BX1 - BX0, BY1 - BY0
 _VBX, _VBY, _VBW, _VBH = BX0 - 70, BY0 - 165, W + 140, H + 185  # janela da forma, com folga para os extras
@@ -191,14 +194,14 @@ def _com_alpha(cor: tuple[int, int, int], a: float) -> tuple[int, int, int, int]
     return cor[0], cor[1], cor[2], int(255 * max(0.0, min(1.0, a)))
 
 
-def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float) -> None:
-    """zZ, “?”, três pontinhos, gota de suor e confete (escolhas minhas, não vêm da KEY)."""
-    topo = BY0
+def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float, forma: "Forma") -> None:
+    """zZ, “?”, três pontinhos, gota de suor e confete, presos ao contorno do avatar (o topo e os lados dele)."""
+    topo, esq, dir_ = forma.y0, forma.x0, forma.x1
     branco = (237, 232, 225)
     if estado == "ocioso":
         u = (t % 2.6) / 2.6
-        d.text(_pt(BX1 - 30, topo - 6 - u * 34), "z", font=fonte("Bold", 34 * ESC), fill=_com_alpha(branco, (1 - u) * a), anchor="ls")
-        d.text(_pt(BX1 + 4, topo - 40 - u * 28), "Z", font=fonte("Bold", 50 * ESC), fill=_com_alpha(cor, (1 - u) * a), anchor="ls")
+        d.text(_pt(dir_ - 30, topo - 6 - u * 34), "z", font=fonte("Bold", 34 * ESC), fill=_com_alpha(branco, (1 - u) * a), anchor="ls")
+        d.text(_pt(dir_ + 4, topo - 40 - u * 28), "Z", font=fonte("Bold", 50 * ESC), fill=_com_alpha(cor, (1 - u) * a), anchor="ls")
     elif estado == "trabalhando":
         for i in range(3):
             w = max(0.0, _sn(TAU * t / 1.2 - i * 1.1))
@@ -208,7 +211,8 @@ def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float) -> Non
     elif estado == "esperando":
         p = .5 + .5 * _sn(TAU * t / 1.9)
         sc, op = .9 + .25 * p, (.6 + .4 * p) * a
-        ox, oy = CX, topo - 46
+        pulo = parametros("esperando", t)["dy"]  # acompanha o pulo, para não encostar no topo do avatar
+        ox, oy = CX, topo - 60 + pulo
 
         def loc(x, y):
             return _pt(ox + x * sc, oy + y * sc)
@@ -225,7 +229,7 @@ def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float) -> Non
         d.ellipse((qx - r, qy - r, qx + r, qy + r), fill=cor_q)
     elif estado == "alerta":
         u = (t % 1.1) / 1.1
-        x, y = BX1 - 14, topo + 50 + u * 80
+        x, y = dir_ - 14, topo + 50 + u * 80
         forma = _quad((x, y), (x - 14, y + 22), (x, y + 34))[:-1] + _quad((x, y + 34), (x + 14, y + 22), (x, y))
         d.polygon([_pt(px, py) for px, py in forma], fill=_com_alpha((207, 233, 247), (1 - u) * a))
     elif estado == "reset":
@@ -236,7 +240,7 @@ def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float) -> Non
             for i in range(12):
                 ang = i * .9 + .2
                 r = 40 + q * (150 + i * 8)
-                x, y = CX + math.cos(ang) * r, BY0 + 40 + math.sin(ang) * r * .7 + q * q * 90
+                x, y = CX + math.cos(ang) * r, topo + 40 + math.sin(ang) * r * .7 + q * q * 90
                 giro = math.radians(i * 40 + q * 200)
                 meio = 6  # confete de 12x12 (unidades da KEY)
                 quad = [(-meio, -meio), (meio, -meio), (meio, meio), (-meio, meio)]
@@ -257,7 +261,7 @@ def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float) -> Non
             for px, py in (pts[0], pts[-1]):  # pontas redondas
                 d.ellipse((px - larg / 2, py - larg / 2, px + larg / 2, py + larg / 2), fill=cor_v)
         # dois brilhinhos que piscam alternados, nos lados de cima
-        for i, (bx, by) in enumerate(((BX0 + 40, topo + 10), (BX1 - 30, topo - 12))):
+        for i, (bx, by) in enumerate(((esq + 40, topo + 10), (dir_ - 30, topo - 12))):
             w = _sn(TAU * t / 3.0 - i * math.pi)
             if w <= 0:
                 continue
@@ -267,26 +271,96 @@ def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float) -> Non
             d.polygon([_pt(x, y) for x, y in estrela], fill=_com_alpha(branco, w * a))
 
 
-def desenhar_cloud(p: dict, estado: str, t: float, cor: tuple[int, int, int], alpha_extras: float = 1.0) -> Image.Image:
-    """Camada RGBA (COL_W x COL_H, em 2x) com o cloud no estado e instante dados."""
+@dataclass(frozen=True)
+class Forma:
+    """Um avatar já posto na área do mascote (unidades da camada): os polígonos, os olhos e o contorno."""
+    avatar: str
+    poligonos: tuple  # tuplas de pontos; mais de um = regra nonzero (furos, como o anel da Órbita)
+    olhos: tuple  # dicts com cx, cy, larg, comp, ang (como os de sempre)
+    x0: float
+    y0: float
+    x1: float
+
+
+_FORMAS: dict = {}
+
+
+def forma_de(av: "avatares.Avatar") -> Forma:
+    """O avatar escalado para caber em BX0..BX1 x BY0..BY1, com a base em BY1 e centrado em CX (em cache)."""
+    f = _FORMAS.get(av.id)
+    if f is not None:
+        return f
+    ax0, ay0, ax1, ay1 = av.limites
+    k = min(W / (ax1 - ax0), H / (ay1 - ay0))
+    acx = (ax0 + ax1) / 2
+
+    def m(x: float, y: float) -> tuple[float, float]:
+        return CX + (x - acx) * k, BY1 - (ay1 - y) * k
+
+    polys = tuple(tuple(m(x, y) for x, y in p) for p in av.poligonos)
+    o, boost = av.olhos, av.aumento_olhos()
+    larg = avatares.EYE_W * o.scale * boost * k
+    comp = avatares.EYE_H * o.scale * boost * k
+    olhos = tuple(dict(zip(("cx", "cy"), m(x, o.y)), larg=larg, comp=comp, ang=0.0)
+                  for x in (o.x - o.spacing / 2, o.x + o.spacing / 2))
+    xs = [x for p in polys for x, _ in p]
+    ys = [y for p in polys for _, y in p]
+    f = _FORMAS[av.id] = Forma(av.id, polys, olhos, min(xs), min(ys), max(xs))
+    return f
+
+
+def _corpo_nonzero(d: ImageDraw.ImageDraw, camada: Image.Image, polys: list, cor: tuple) -> None:
+    """Vários subpaths: soma o sentido de cada um (nonzero), como o SVG e o motor do open-bot-avatar."""
+    import numpy as np
+
+    soma = np.zeros((camada.height, camada.width), dtype=np.int16)
+    for poly in polys:
+        area = sum(poly[i - 1][0] * poly[i][1] - poly[i][0] * poly[i - 1][1] for i in range(len(poly)))
+        m = Image.new("L", camada.size, 0)
+        ImageDraw.Draw(m).polygon(poly, fill=1)
+        soma += np.asarray(m, dtype=np.int16) * (1 if area > 0 else -1)
+    mascara = Image.fromarray(((soma != 0) * 255).astype(np.uint8), "L")
+    camada.paste(Image.new("RGBA", camada.size, cor + (255,)), (0, 0), mascara)
+
+
+def desenhar_cloud(p: dict, estado: str, t: float, cor: tuple[int, int, int], alpha_extras: float = 1.0,
+                   forma: Forma | None = None) -> Image.Image:
+    """Camada RGBA (COL_W x COL_H, em 2x) com o mascote (o avatar `forma`) no estado e instante dados."""
+    forma = forma or forma_de(avatares.catalogo().padrao_de(None))
     camada = Image.new("RGBA", (COL_W * S, COL_H * S), (0, 0, 0, 0))
     d = ImageDraw.Draw(camada)
-    d.polygon([_pt(*_corpo(p, x, y)) for x, y in PONTOS], fill=cor + (255,))
-    if estado == "concluido":
-        _olhos_felizes(d, p)
+    polys = [[_pt(*_corpo(p, x, y)) for x, y in poly] for poly in forma.poligonos]
+    if len(polys) == 1:
+        d.polygon(polys[0], fill=cor + (255,))
     else:
-        _olhos(d, p)
-    _extras(d, estado, t, cor, alpha_extras)
+        _corpo_nonzero(d, camada, polys, cor)
+    if estado == "concluido":
+        _olhos_felizes(d, p, forma)
+    else:
+        _olhos(d, p, forma)
+    _extras(d, estado, t, cor, alpha_extras, forma)
     return camada
 
 
-def _olhos_felizes(d: ImageDraw.ImageDraw, p: dict) -> None:
+# Altura dos olhos do cloud antigo acima da base (unidades da camada). Na inclinação (esperando, concluído) o corpo
+# gira em torno da base e os olhos andam de lado na proporção dessa altura; num avatar de olhos mais baixos eles
+# andariam menos. A diferença vira um deslize a mais, para o olhar acompanhar a cabeça como antes.
+ALTURA_OLHAR = 204.0
+
+
+def _olhar_x(p: dict, e: dict) -> float:
+    """O olhar horizontal do quadro mais o que falta para os olhos andarem na inclinação como no cloud antigo."""
+    falta = max(0.0, ALTURA_OLHAR - (BY1 - e["cy"]))
+    return p["olhaX"] + falta * math.sin(math.radians(p["rot"]))
+
+
+def _olhos_felizes(d: ImageDraw.ImageDraw, p: dict, forma: Forma) -> None:
     """Olhos em arco (^ ^), de satisfação, no lugar das pílulas."""
     preto = (26, 27, 29, 255)
-    for e in OLHOS:
-        r = e["larg"] * .62
+    for e in forma.olhos:
+        r = max(e["larg"] * .62, e["comp"] * .26)
         a = math.radians(e["ang"])
-        cx, cy = e["cx"] + p["olhaX"], e["cy"] + p["olhaY"] + r * .35
+        cx, cy = e["cx"] + _olhar_x(p, e), e["cy"] + p["olhaY"] + r * .35
         arco = []
         for i in range(13):  # meia-volta por cima, de um lado ao outro
             ang = math.pi + math.pi * i / 12
@@ -298,11 +372,11 @@ def _olhos_felizes(d: ImageDraw.ImageDraw, p: dict) -> None:
             d.ellipse((px - larg / 2, py - larg / 2, px + larg / 2, py + larg / 2), fill=preto)
 
 
-def _olhos(d: ImageDraw.ImageDraw, p: dict) -> None:
-    for e in OLHOS:
+def _olhos(d: ImageDraw.ImageDraw, p: dict, forma: Forma) -> None:
+    for e in forma.olhos:
         comp = max(10.0, e["comp"] * p["kL"] * (1 - .9 * p["pisca"]))
         larg = e["larg"] * p["kW"]
-        pts = _capsula(e["cx"] + p["olhaX"], e["cy"] + p["olhaY"], larg, comp, e["ang"])
+        pts = _capsula(e["cx"] + _olhar_x(p, e), e["cy"] + p["olhaY"], larg, comp, e["ang"])
         d.polygon([_pt(*_corpo(p, x, y)) for x, y in pts], fill=(26, 27, 29, 255))
 
 
@@ -311,6 +385,10 @@ def cor_sorteada() -> tuple[int, int, int]:
     """Matiz livre; saturação e luminosidade limitadas para ler bem sobre o fundo escuro."""
     r, g, b = colorsys.hls_to_rgb(random.random(), .5 + random.random() * .1, .58 + random.random() * .14)
     return int(r * 255), int(g * 255), int(b * 255)
+
+
+TRANSICAO = 0.6  # s: a troca de avatar. O corpo encolhe e fecha os olhos, troca no meio e volta
+REALCE = 0.5  # s: no modo "agente" (a cor não muda de um estado para outro), a cor clareia e volta na troca
 
 
 @dataclass
@@ -326,17 +404,87 @@ class Mascote:
     duracao_concluido: float = DURACAO_CONCLUIDO
     _havia_trabalho: bool = False  # alguma sessão estava trabalhando na leitura anterior?
     _terminou_em: float | None = None  # quando a última sessão parou de trabalhar sem esperar você
+    cor_modo: str = "agente"  # "agente": a cor do agente do avatar; "sorteada": uma nova a cada estado
+    forma: Forma = field(default_factory=lambda: forma_de(avatares.catalogo().padrao_de(None)))
+    cor_base: tuple[int, int, int] = field(default_factory=lambda: avatares.cor_hex(avatares.catalogo().padrao_de(None).cor))
+    _troca: tuple | None = None  # (forma, cor do agente, desde quando) da troca de avatar em andamento
+    _trocou: bool = False  # a troca em andamento já passou do meio (a forma nova já está valendo)
+    _realce_desde: float | None = None
 
     def __post_init__(self) -> None:
         if self.cor_fixa:  # --cor-mascote vale desde o primeiro quadro, não só depois da primeira troca de estado
             self.cor = self.cor_fixa
+        elif self.cor_modo == "agente":
+            self.cor = self.cor_base
+
+    def _cor_do_estado(self) -> tuple[int, int, int]:
+        if self.cor_fixa:
+            return self.cor_fixa
+        return self.cor_base if self.cor_modo == "agente" else cor_sorteada()
+
+    def usar(self, av: "avatares.Avatar", cor_agente: tuple[int, int, int] | None, agora: float, ja: bool = False) -> None:
+        """Pede o avatar `av` (com a cor do agente dele). Troca numa transição de TRANSICAO s (encolhe e pisca,
+        a forma muda no meio, com os olhos fechados); `ja` (uma mudança de preferência, um PNG) troca agora.
+        Pedir o mesmo de novo não faz nada."""
+        forma = forma_de(av)
+        cor = cor_agente or avatares.cor_hex(av.cor)
+        if ja:
+            self._troca = None
+            self._aplicar(forma, cor)
+            return
+        if self._troca:
+            if self._troca[0] is forma and self._troca[1] == cor:
+                return  # já está a caminho
+            if not self._trocou:  # ainda de olhos fechados: só muda o destino
+                self._troca = (forma, cor, self._troca[2])
+                return
+        elif forma is self.forma and cor == self.cor_base:
+            return
+        self._troca, self._trocou = (forma, cor, agora), False
+
+    def _aplicar(self, forma: Forma, cor: tuple[int, int, int]) -> None:
+        self.forma, self.cor_base = forma, cor
+        if not self.cor_fixa and self.cor_modo == "agente":
+            self.cor = cor
+
+    def _avancar_troca(self, agora: float) -> float:
+        """Anda a troca de avatar; devolve o quanto o corpo está encolhido agora (0..1)."""
+        if not self._troca:
+            return 0.0
+        forma, cor, desde = self._troca
+        u = (agora - desde) / TRANSICAO
+        if u >= .5 and not self._trocou:
+            self._aplicar(forma, cor)
+            self._trocou = True
+        if u >= 1:
+            self._troca = None
+            return 0.0
+        return math.sin(math.pi * max(0.0, u))
+
+    def definir_cor_modo(self, modo: str) -> None:
+        self.cor_modo = modo
+        self.cor = self._cor_do_estado()
 
     def ir_para(self, novo: str, agora: float) -> None:
+        self._avancar_troca(agora)
         if novo == self.estado:
             return
         self.anterior = (self.estado, self.inicio)
         self.estado, self.inicio = novo, agora
-        self.cor = self.cor_fixa or cor_sorteada()
+        self.cor = self._cor_do_estado()
+        if not self.cor_fixa and self.cor_modo == "agente":
+            self._realce_desde = agora  # a cor é a mesma: um realce curto marca a troca, como a cor nova marcava
+
+    def cor_atual(self, agora: float) -> tuple[int, int, int]:
+        """A cor do quadro: a do estado, clareada logo depois de uma troca de estado no modo "agente"."""
+        if self._realce_desde is None:
+            return self.cor
+        v = (agora - self._realce_desde) / REALCE
+        if not 0 <= v < 1:
+            self._realce_desde = None if v >= 1 else self._realce_desde
+            return self.cor
+        f = .38 * (1 - _ss(v))
+        return tuple(int(round(c + (255 - c) * f)) for c in self.cor)
 
     def decidir(self, u, agora: float) -> str:
         """Estado do cloud a partir do que o Claude Code está fazendo."""
@@ -387,5 +535,8 @@ class Mascote:
         return atual, 1.0
 
     def camada(self, agora: float) -> Image.Image:
+        k = self._avancar_troca(agora)
         p, u = self.parametros_atuais(agora)
-        return desenhar_cloud(p, self.estado, agora - self.inicio, self.cor, alpha_extras=u)
+        if k:  # trocando de avatar: encolhe e fecha os olhos; a forma muda no meio
+            p = dict(p, sy=p["sy"] * (1 - .14 * k), sx=p["sx"] * (1 + .08 * k), pisca=max(p["pisca"], min(1.0, k * 1.4)))
+        return desenhar_cloud(p, self.estado, agora - self.inicio, self.cor_atual(agora), alpha_extras=u, forma=self.forma)

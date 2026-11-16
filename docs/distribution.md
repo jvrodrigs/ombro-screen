@@ -133,7 +133,7 @@ o LaunchAgent aponta para o mesmo caminho do app, então a versão nova vale no 
 
 Antes de criar a tag:
 
-- [ ] O repositório tem LICENSE e a origem do desenho do cloud está resolvida ([licenses.md](licenses.md)).
+- [ ] O repositório tem LICENSE ([licenses.md](licenses.md)).
 - [ ] A versão foi atualizada em `app/package.json` e `app/src-tauri/Cargo.toml`.
 - [ ] CI verde: `tests.yml` e `app.yml`.
 - [ ] `npm run build:app` passa localmente (o build confere binários, a execução sem Homebrew e as licenças).

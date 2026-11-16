@@ -180,6 +180,15 @@ esperam, até 5000 e 24 h), não deixa o hook esperando um servidor, não precis
 quando o socket não responde, e já tem as garantias de ordem, repetição e atraso. O custo é a latência de até
 5 s (o ritmo da coleta), a mesma de antes.
 
+## O mascote e os avatares
+
+O `mascote.py` cuida do movimento (a máquina de estados, os pulos, os extras); a forma vem de um avatar
+(`avatars/`, no formato do open-bot-avatar), lido pelo `avatares.py`, que transforma o path em polígonos e decide
+qual avatar e qual cor usar. A cada coleta, o laço (`ombro/app.py`) diz ao mascote de quem ele fala (o Claude nos
+layouts de um agente; o agente mais urgente, o em foco ou o único ativo no multiagente) e o avatar dele entra na
+próxima troca de estado. O Ombro.app desenha os mesmos arquivos com o motor do open-bot-avatar. Detalhes:
+[avatars.md](avatars.md).
+
 ## Ombro.app: a interface gráfica
 
 ```

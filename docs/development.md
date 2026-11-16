@@ -73,7 +73,15 @@ cd app/src-tauri && cargo clippy --all-targets -- -D warnings && cargo test
 
 ## Ícones
 
-`app/scripts/gen_tray_icon.py` gera o ícone da Menu Bar (template monocromático) e a marca SVG do app a partir de
-`dados_cloud.py`, a mesma forma do mascote da tela. O ícone do app vem de `docs/icon.png` (`npx tauri icon`).
+`app/scripts/gen_tray_icon.py` gera o ícone da Menu Bar (template monocromático), a marca SVG da barra lateral e o
+`docs/icon.png` a partir do avatar Ombro Cloud (`avatars/defs/ombro-cloud.json`), a mesma forma do mascote da tela.
+Os tamanhos do macOS saem do `docs/icon.png` com `npx tauri icon ../docs/icon.png -o src-tauri/icons`.
+
+## Avatares
+
+`src/features/avatars/`: o catálogo (os mesmos arquivos de `avatars/` que a telinha usa, validados pelo motor do
+open-bot-avatar), a regra de escolha (igual à do `avatares.py`, inclusive o hash do aleatório por sessão), o
+`AvatarView` (estático nas listas, animado só na prévia da galeria) e a seção Aparência > Avatares. Detalhes:
+[avatars.md](avatars.md).
 
 Montar, assinar e publicar: [distribution.md](distribution.md).

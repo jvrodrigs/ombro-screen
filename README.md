@@ -28,10 +28,11 @@ O jeito mais simples de usar: um app para Mac que traz tudo o que precisa (não 
 terminal). Ele mostra os agentes e o Mac numa janela e na Menu Bar, configura as integrações com um clique (sempre
 mostrando antes o que muda), mostra a prévia da telinha e cuida do serviço em segundo plano.
 
-- **Painel**: agentes, sessões, quem espera você, limites de uso com o horário de reset, tokens de hoje, CPU e RAM
+- **Painel**: agentes (cada um com o seu avatar), sessões, quem espera você, limites de uso com o horário de reset, tokens de hoje, CPU e RAM
 - **Agentes**: instalar, conferir, reparar e remover as integrações do Claude Code, Codex e Cursor
 - **Tela**: a prévia ao vivo do que a telinha mostra (o mesmo desenho, sem a tela USB), layout, brilho e hardware
-- **Aparência**, **Diagnóstico** (o `ombro doctor`, com relatório para issues) e **Ajustes**
+- **Aparência**: o avatar de cada agente (galeria com nove, ou aleatório), a cor e o layout multiagente
+- **Diagnóstico** (o `ombro doctor`, com relatório para issues) e **Ajustes**
 - **Menu Bar**: o cloud com o resumo; notificações opcionais quando uma sessão espera você
 
 **Requisitos:** Mac com Apple Silicon e macOS 13 ou mais novo. Baixe o `Ombro-<versão>-macos-arm64.dmg` em
@@ -127,9 +128,13 @@ O estado vem do que o Claude Code grava, na ordem de prioridade abaixo:
 
 O **concluído** começa com um pulinho e um ✓ acima da cabeça, com olhos em arco (^ ^), e depois só respira devagar. Ele dura até 5 min; se nesse tempo o Claude voltar a trabalhar (outra mensagem, na mesma sessão ou em outra), o cloud volta para trabalhando, e os 5 min recomeçam quando ele terminar de novo. Passados os 5 min sem nada, o cloud volta a dormir (ocioso, com o zZ). Uma sessão que esperava você e foi cancelada não conta como concluída. No `--demo-ciclo`, o concluído dura um cenário em vez de 5 min.
 
-A cada troca de estado, o cloud ganha uma cor sorteada (matiz livre, saturação e luminosidade limitadas para ler bem sobre o fundo escuro). Para fixar uma cor: `--cor-mascote "#3D7A4F"`.
+**Cor:** por padrão, a cor do agente (o Claude laranja, o Codex verde, o Cursor azul). Com `"cor_modo": "sorteada"`, o cloud ganha uma cor sorteada a cada troca de estado (matiz livre, saturação e luminosidade limitadas para ler bem sobre o fundo escuro). Para fixar uma cor: `--cor-mascote "#3D7A4F"`.
 
-A forma do cloud e os olhos vêm da KEY de formas dos avatares do Grok Bot; os pontos do contorno estão em `dados_cloud.py`.
+**Avatares:** a forma do mascote é um avatar, no formato do [open-bot-avatar](https://github.com/DominikScholz/open-bot-avatar) (MIT). O padrão é o **Ombro Cloud**; cada agente pode ter o seu (Codex: Órbita; Cursor: Cubo), um específico ou um aleatório, e os estados e animações acima valem para todos. Os nove avatares, como escolher e como criar um: [docs/avatars.md](docs/avatars.md).
+
+<p align="center">
+  <img src="docs/avatares.png" width="760" alt="Os nove avatares do Ombro como a telinha os desenha">
+</p>
 
 ## 4. De onde vem o uso de 5 h e da semana
 
@@ -252,7 +257,7 @@ Tudo funciona sem ele. Se quiser deixar opções fixas sem repetir na linha de c
 }
 ```
 
-- As chaves têm o nome das opções da linha de comando, com `_` no lugar de `-`: `usb`, `revisao`, `porta`, `transporte`, `brilho`, `lib`, `paisagem`, `girar`, `sem_macmon`, `claude_dir`, `layout`, `intervalo`, `cor_mascote`, `porta_sim`, `nao_abrir` e `debug`. `--demo`, `--demo-ciclo` e `--png` só valem na linha de comando.
+- As chaves têm o nome das opções da linha de comando, com `_` no lugar de `-`: `usb`, `revisao`, `porta`, `transporte`, `brilho`, `lib`, `paisagem`, `girar`, `sem_macmon`, `claude_dir`, `layout`, `intervalo`, `cor_mascote`, `cor_modo`, `porta_sim`, `nao_abrir` e `debug`. Os avatares ficam num bloco: `"avatars": {"codex": "aleatorio", "random": "sessao"}` ([docs/avatars.md](docs/avatars.md)). `--demo`, `--demo-ciclo` e `--png` só valem na linha de comando.
 - **Precedência:** opção dada na linha de comando > arquivo > padrão. Uma opção que você não deu na linha de comando não apaga a do arquivo.
 - As opções de ligar e desligar têm a forma negativa, para a linha de comando desfazer o arquivo: `--no-usb`, `--no-paisagem`, `--no-girar`, `--no-sem-macmon`, `--no-nao-abrir`, `--no-debug`.
 - Outro arquivo: `--config /caminho/arquivo.json`. A pasta segue a variável `OMBRO_SCREEN_DIR`, a mesma do `uso.json` do `statusline_tap.py`.
@@ -410,8 +415,8 @@ agentes, os hooks e o layout multiagente estão na seção 9; o ombrod, a IPC e 
 | `logging_config.py` | Formato dos logs, `--debug` e o filtro que evita repetir o mesmo aviso |
 | `layout_ombro.py` | O layout do Ombro (480×320): texto, barras, curva de tokens, aviso e o cloud |
 | `layout_minimal_v2.py` | O layout Minimal v2 (`--layout minimal-v2`), com CPU e RAM em barras e a política de cores |
-| `mascote.py` | O cloud: animação por estado, extras (zZ, "?", pontinhos, suor, confete) e a máquina de estados |
-| `dados_cloud.py` | Contorno e olhos do cloud, extraídos da KEY de formas |
+| `mascote.py` | O mascote: animação por estado, extras (zZ, "?", pontinhos, suor, confete) e a máquina de estados, com a forma do avatar |
+| `avatares.py`, `avatars/` | Os avatares (formato do open-bot-avatar): o catálogo, a geometria para a telinha e a escolha por agente |
 | `render.py` | Cores, fontes, formatação pt-BR e o painel clássico |
 | `saida.py` | Simulador no navegador e envio para a tela USB (com reconexão) |
 | `usb_direto.py` | Driver da revisão A direto no endpoint USB, para o Mac |
@@ -421,7 +426,7 @@ agentes, os hooks e o layout multiagente estão na seção 9; o ombrod, a IPC e 
 | `statusline_tap.py` | Captura o uso de 5 h e semanal do statusline (opcional) |
 | `app/` | O Ombro.app: a interface (`app/src`, React + TypeScript), o lado nativo (`app/src-tauri`, Tauri 2 + Rust) e o empacotamento (`app/scripts/build_backend.py`) |
 | `tests/` | Testes (`unittest`, sem dependências extras) |
-| `scripts/` | `benchmark.py` (quanto custa cada parte), `benchmark_hub.py` (ombrod, IPC e CLI) e `quadros_referencia.py` (confere que nenhum pixel mudou) |
+| `scripts/` | `benchmark.py` (quanto custa cada parte), `benchmark_hub.py` (ombrod, IPC e CLI), `quadros_referencia.py` (confere que nenhum pixel mudou) e `imagens_readme.py` (refaz as imagens do README) |
 | `.github/workflows/tests.yml` | CI: os testes do Python 3.9 ao 3.14 e o lint, a cada push e pull request |
 | `.github/workflows/app.yml`, `release.yml` | CI do app (interface e Rust) e a montagem do DMG para as releases ([docs/distribution.md](docs/distribution.md)) |
 

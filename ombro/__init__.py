@@ -12,4 +12,4 @@
 
 Só biblioteca padrão aqui dentro (fora o que o laço do app já usava). Detalhes em docs/architecture.md.
 """
-VERSAO = "0.9.0-beta.1"  # versão do Ombro Hub (o protocolo da IPC tem a sua: ombro.ipc.PROTOCOLO)
+VERSAO = "0.9.0-beta.2"  # versão do Ombro Hub (o protocolo da IPC tem a sua: ombro.ipc.PROTOCOLO)

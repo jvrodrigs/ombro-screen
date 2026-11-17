@@ -405,7 +405,7 @@ Providers:     3 configurados, 2 instalados, 2 operacionais
 Sessões:       3
 Aguardando:    1
 Armazenamento: persistent
-IPC:           v1 (ombrod 0.9.0-beta.1, PID 4321)
+IPC:           v1 (ombrod 0.9.0-beta.2, PID 4321)
 ```
 
 | Comando | O que mostra ou faz |

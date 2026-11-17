@@ -78,7 +78,7 @@ export function mockSnapshot(): Snapshot {
     seq: 1, at_ms: Date.now(),
     daemon: { state: "connected", owner: "app", pid: 4321 },
     status: {
-      daemon: "running", version: "0.4.0", protocol: 1, pid: 4321, started_at: mais(-75), uptime_s: 4500,
+      daemon: "running", version: "0.9.0-beta.1", protocol: 1, pid: 4321, started_at: mais(-75), uptime_s: 4500,
       health: "healthy", providers: { configured: 3, installed: 3, operational: 3 }, sessions: 4, waiting: 2, errors: 0,
       display: { kind: "simulator", connection: "connected", layout: "auto" }, storage: "persistent", demo: true,
       collected_at: iso(agora()), conflicts: [],
@@ -181,7 +181,7 @@ export function mockService(): ServiceStatus {
 
 export function mockDoctor(): DoctorResult {
   return {
-    schema: "ombro.doctor", schema_version: 1, ombro_version: "0.4.0", ipc_protocol: 1, generated_at: iso(agora()),
+    schema: "ombro.doctor", schema_version: 1, ombro_version: "0.9.0-beta.1", ipc_protocol: 1, generated_at: iso(agora()),
     summary: { status: "WARN", pass: 5, warn: 1, fail: 0, skip: 1 },
     checks: [
       { id: "env.macos", category: "environment", status: "PASS", title: "Versão do macOS", message: "27.0.1", action: null },
@@ -245,7 +245,7 @@ export function createMockApi(): OmbroApi {
     refresh: () => Promise.resolve(),
     appInfo: () =>
       Promise.resolve({
-        version: "0.5.0-alpha.1", protocol: 1, mode: null, backend_error: null, location_problem: null,
+        version: "0.9.0-beta.1", protocol: 1, mode: null, backend_error: null, location_problem: null,
         service_installed: false, legacy_installed: false, arch: "aarch64", os_version: "27.0.1",
       }),
     daemonStart: () => Promise.resolve({ state: "connected", owner: "app", pid: 4321 }),

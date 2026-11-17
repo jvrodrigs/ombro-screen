@@ -7,25 +7,40 @@ opcionais, e a telinha USB também: sem ela, o app mostra a prévia do que a tel
 
 ## Instalar
 
-1. Em [Releases](https://github.com/jvrodrigs/ombro-screen/releases), baixe `Ombro-<versão>-macos-arm64.dmg`.
+1. Em [Releases](https://github.com/jvrodrigs/ombro-screen/releases), baixe `Ombro-v<versão>-macos-arm64.dmg`
+   (por exemplo, `Ombro-v0.9.0-beta.1-macos-arm64.dmg`) e o `SHA256SUMS.txt`.
 2. Abra o DMG e arraste o **Ombro** para **Aplicativos**.
 3. Abra o Ombro pela pasta Aplicativos (ou pelo Spotlight). O assistente de primeiro uso explica o resto.
 
 Abra sempre a partir de Aplicativos. Aberto direto do DMG ou da pasta Downloads, o macOS roda o app de um lugar
 temporário, e o Ombro não deixa instalar integrações nem o serviço em segundo plano (eles gravam o caminho do app).
 
-### Versões alpha sem assinatura da Apple
+### Primeira abertura (beta sem notarização)
 
-Enquanto as versões não forem assinadas e notarizadas pela Apple (as notas da release dizem qual é o caso), o macOS
-recusa abrir o app com um duplo clique. Para abrir mesmo assim, se você confia na origem:
+As versões beta têm **assinatura ad-hoc** e **não são notarizadas pela Apple**: o projeto não usa um certificado
+Developer ID. A assinatura ad-hoc garante que o app não foi alterado depois de montado, mas não identifica quem o
+montou, e a Apple não o conferiu. Por isso, na primeira vez, o macOS avisa que não pôde verificar o Ombro e não o
+abre. Se você confia na origem (este repositório), autorize uma vez, como a Apple explica em
+[Abrir apps com segurança no Mac](https://support.apple.com/pt-br/102445):
 
-1. Tente abrir o Ombro uma vez e feche o aviso.
-2. Em **Ajustes do Sistema > Privacidade e Segurança**, perto do fim, clique em **Abrir Mesmo Assim** ao lado do
-   Ombro e confirme.
+1. Abra o Ombro pela pasta Aplicativos. O macOS mostra o aviso: feche-o (sem mover o app para o Lixo).
+2. Abra **Ajustes do Sistema > Privacidade e Segurança**, role até o fim e clique em **Abrir Mesmo Assim** ao lado
+   do Ombro. O macOS pode pedir a senha de um administrador do Mac.
+3. O aviso aparece de novo: clique em **Abrir**.
 
-### Conferir o download (opcional)
+Depois disso o Ombro fica registrado como exceção e abre normalmente, com duplo clique. Uma versão nova baixada
+depois pede a mesma autorização uma vez.
 
-Cada release traz um `SHA256SUMS.txt`. Na pasta onde estão os dois arquivos:
+- Não é preciso (nem recomendado) desligar o Gatekeeper, mexer no SIP ou remover atributos pelo terminal.
+- Macs gerenciados por uma empresa ou escola (MDM) podem não mostrar o botão **Abrir Mesmo Assim**. Nesse caso, a
+  instalação depende da política de quem administra o Mac.
+- Se o botão não aparecer, tente abrir o Ombro de novo e volte em **Privacidade e Segurança**: ele só aparece
+  depois de uma tentativa de abrir o app.
+
+### Conferir o download (recomendado)
+
+Como a beta não é notarizada, conferir o hash é a forma de saber que o DMG é o mesmo que o GitHub Actions montou.
+Cada release traz um `SHA256SUMS.txt` (o hash também está nas notas da release). Na pasta onde estão os dois arquivos:
 
 ```bash
 shasum -a 256 -c SHA256SUMS.txt

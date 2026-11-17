@@ -70,9 +70,17 @@ def quotas_do_snapshot(snap) -> Optional[dict]:
     q = getattr(snap, "quotas", None)
     if q is None:
         return None
+    com_numero = [w for w in q.windows if w.used_percent is not None]
+    # fresh: observado há pouco; stale: o último valor conhecido, velho; awaiting_update: as janelas reiniciaram
+    # depois da última observação e ainda não há número novo (nunca se assume 0%)
+    estado = "awaiting_update" if not com_numero and any(w.expired for w in q.windows) else "stale" if q.stale else "fresh"
+    idade = max(0, int((datetime.now() - q.fetched_at).total_seconds()))
     return {"source": q.source, "fetched_at": _iso(q.fetched_at), "stale": q.stale,
+            # `fetched_at`/`observed_at`: quando o dado foi observado (não quando o Ombro leu o arquivo de novo)
+            "observed_at": _iso(q.fetched_at), "age_seconds": idade, "state": estado,
+            "scope": q.scope, "auto_update": q.auto_update,
             "windows": [{"id": w.window_id, "label": w.label, "used_percent": w.used_percent,
-                         "resets_at": _iso(w.resets_at)} for w in q.windows]}
+                         "resets_at": _iso(w.resets_at), "expired": w.expired} for w in q.windows]}
 
 
 def uso_do_snapshot(snap) -> Optional[dict]:

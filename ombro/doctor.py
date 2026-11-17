@@ -395,6 +395,60 @@ def agentes(amb: Ambiente, daemon: Optional[dict]) -> List[Verificacao]:
         elif p.get("last_event_at"):
             msg += f"; último evento {p['last_event_at']}"
         v.append(Verificacao(f"provider.{pid}", "providers", st, nome, msg, acao, detalhes))
+        if p.get("enabled"):
+            v.extend(_coletas(pid, nome, p))
+    return v
+
+
+def _idade(segundos: Optional[int]) -> str:
+    if segundos is None:
+        return "?"
+    return f"{segundos // 60} min" if segundos < 7200 else f"{segundos // 3600} h"
+
+
+def _coletas(pid: str, nome: str, p: dict) -> List[Verificacao]:
+    """Três coisas diferentes, cada uma com o seu resultado: as sessões, os tokens locais e os limites da assinatura.
+    Ter sessões e tokens em dia não diz nada sobre os limites: eles vêm de outra fonte."""
+    caps, velhas = set(p.get("capabilities") or []), set(p.get("stale_parts") or [])
+    v = []
+    if "sessions" in caps:
+        ok = "sessions" not in velhas and p.get("collection") != "error"
+        v.append(Verificacao(f"sessions.{pid}", "providers", PASS if ok else WARN, f"{nome}: sessões",
+                             f"{p.get('sessions', 0)} sessão(ões) agora" if ok else "a última leitura falhou; mostrando a anterior",
+                             detalhes={"sessions": p.get("sessions"), "last_collected_at": p.get("last_collected_at")}))
+    if "token_usage" in caps:
+        uso = p.get("usage") or {}
+        ok = "usage" not in velhas and bool(uso)
+        v.append(Verificacao(f"tokens.{pid}", "providers", PASS if ok else WARN, f"{nome}: tokens locais",
+                             (f"{uso.get('total_tokens') or 0} tokens hoje, do histórico desta máquina (não são os limites da assinatura)"
+                              if ok else "sem leitura dos tokens de hoje"),
+                             detalhes={"scope": uso.get("scope"), "total_tokens": uso.get("total_tokens")}))
+    if "quota_windows" in caps:
+        q = p.get("quotas")
+        if not q:
+            v.append(Verificacao(f"quotas.{pid}", "providers", WARN, f"{nome}: limites da assinatura",
+                                 "dados indisponíveis: nenhuma fonte de limites configurada",
+                                 "ligue o statusline (README, seção 4) ou rode /usage no Claude Code",
+                                 {"source": None, "state": "unavailable", "auto_update": False}))
+            return v
+        estado, idade = q.get("state"), _idade(q.get("age_seconds"))
+        cobre = "a assinatura inteira" if q.get("scope") == "account" else "escopo não informado pela fonte"
+        como = ("atualização automática" if q.get("auto_update") else
+                "só há número novo quando o Claude Code no terminal conversa ou roda /usage; o app Claude não atualiza")
+        detalhes = {"source": q.get("source"), "state": estado, "observed_at": q.get("observed_at"),
+                    "last_read_at": p.get("last_collected_at"), "age_seconds": q.get("age_seconds"),
+                    "scope": q.get("scope"), "auto_update": bool(q.get("auto_update")),
+                    "next_attempt": None,  # não há consulta agendada: o Ombro não consulta nada pela rede
+                    "windows": [{"id": w.get("id"), "expired": bool(w.get("expired"))} for w in q.get("windows", [])]}
+        if estado == "fresh":
+            st, msg, acao = PASS, f"fonte {q.get('source')}, observado há {idade} ({cobre}); {como}", None
+        elif estado == "awaiting_update":
+            st, msg = WARN, f"a janela reiniciou depois da última observação (há {idade}) e ainda não há número novo; {como}"
+            acao = "envie uma mensagem ou rode /usage no Claude Code no terminal"
+        else:
+            st, msg = WARN, f"último valor conhecido, de há {idade} (fonte {q.get('source')}, {cobre}); {como}"
+            acao = "envie uma mensagem ou rode /usage no Claude Code no terminal"
+        v.append(Verificacao(f"quotas.{pid}", "providers", st, f"{nome}: limites da assinatura", msg, acao, detalhes))
     return v
 
 

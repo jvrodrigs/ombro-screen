@@ -138,20 +138,30 @@ O **concluído** começa com um pulinho e um ✓ acima da cabeça, com olhos em 
 
 ## 4. De onde vem o uso de 5 h e da semana
 
-A tela usa a fonte mais recente entre as três abaixo:
+A tela usa a observação mais recente entre as três fontes abaixo (no empate, a primeira da lista):
 
-1. `~/.ombro-screen/uso.json`, gravado pelo `statusline_tap.py` (ao vivo; opcional)
-2. `~/.habblaud/usage/<conta>.json`, se o Habblaud estiver instalado (opcional)
-3. o que o Claude Code guarda ao rodar `/usage` (só atualiza quando você roda o comando)
+1. `~/.ombro-screen/uso.json`, gravado pelo `statusline_tap.py` (a cada resposta do Claude Code no terminal; opcional)
+2. o que o Claude Code guarda ao rodar `/usage` (só atualiza quando você roda o comando)
+3. `~/.habblaud/usage/<conta>.json`, se o Habblaud estiver instalado (opcional)
 
-Números com mais de 30 min aparecem em âmbar como "números de N min atrás". Uma janela cujo horário de reset já passou é descartada.
+**O que esses números são.** São os limites da assinatura inteira: o que você gasta no app Claude e no claude.ai conta neles. Mas quem os observa é só o Claude Code no terminal, quando recebe uma resposta (statusline) ou roda `/usage`. O app Claude Desktop, incluindo a aba Code, não escreve em nenhuma dessas fontes. Usando só o app, os percentuais do Ombro ficam parados no último valor observado até você conversar com o Claude Code num terminal.
+
+**Por que o Ombro não busca sozinho.** Não existe interface suportada para um app de fora consultar o uso da assinatura, e a Anthropic não permite que terceiros usem as credenciais da assinatura ([Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)). O Ombro não consulta nada pela rede, não lê credenciais e não abre sessões para forçar uma atualização.
+
+**Por isso a idade está sempre à vista.**
+
+- No Ombro.app, cada limite mostra "Atualizado há 2 min" ou, depois de 15 min, "Último valor conhecido · há 38 min". Sem nenhuma fonte: "Dados indisponíveis".
+- Na telinha, depois de 15 min aparece em âmbar "números de N min atrás".
+- Uma janela cujo horário de reset já passou fica sem número ("Aguardando atualização" no app, "—" na telinha) até a próxima observação. O Ombro nunca presume 0%.
+- Depois de trocar de conta no Claude Code, o que foi observado antes é descartado.
+- `python3 -m ombro quotas` mostra a fonte, quando foi observado, o que cobre e como se atualiza. O `ombro doctor` confere sessões, tokens locais e limites em separado: ter sessões e tokens em dia não diz nada sobre os limites.
 
 ### Sem o Habblaud
 
 O Habblaud é opcional: sem ele, a tela cai sozinha para a próxima fonte disponível. Você tem duas saídas:
 
-1. **Não fazer nada.** Rode `/usage` no Claude Code de vez em quando. O Claude Code guarda o resultado em `~/.claude.json` e a tela o usa. Os números só atualizam quando você roda o comando, então depois de 30 min aparecem em âmbar como "números de N min atrás".
-2. **Ligar o `statusline_tap.py`** (próxima seção). Os números passam a chegar ao vivo, a cada resposta do Claude Code, sem precisar do Habblaud nem do `/usage`.
+1. **Não fazer nada.** Rode `/usage` no Claude Code de vez em quando. O Claude Code guarda o resultado em `~/.claude.json` e a tela o usa. Os números só atualizam quando você roda o comando, então depois de 15 min aparecem em âmbar como "números de N min atrás".
+2. **Ligar o `statusline_tap.py`** (próxima seção). Os números passam a chegar a cada resposta do Claude Code no terminal, sem precisar do Habblaud nem do `/usage`.
 
 Sem nenhuma das fontes, o uso do plano aparece como "—"; o resto da tela (tokens de hoje, CPU, RAM, sessões e o cloud) funciona normalmente.
 
@@ -289,7 +299,7 @@ Os avisos saem no terminal (ou, no LaunchAgent, em `~/Library/Logs/ombro-screen.
 | `já existe um Ombro rodando (...)` | Só um Ombro ao vivo por vez: pare o outro (`python3 -m ombro service stop`) ou use `--demo`/`--png`. |
 | `usando a porta serial, que no macOS costuma embaralhar a imagem` | Falta o `pyusb` ou o `libusb` (seção 5). |
 | `sem dados do uso do plano` | Nenhuma fonte de uso de 5 h e da semana ainda (seção 4). |
-| `o uso do plano (/usage) tem mais de 30 min` | Rode `/usage` no Claude Code ou ligue o `statusline_tap.py` (seção 4). |
+| `o uso do plano (…) tem mais de 15 min` | Ninguém observou os limites nesse tempo. Envie uma mensagem ou rode `/usage` no Claude Code no terminal; o uso pelo app Claude não atualiza (seção 4). |
 | `macmon falhou` ou `macmon parou` | O Ombro segue com o psutil; reinstale com `brew install macmon` se quiser GPU e temperatura. |
 | `falha ao desenhar o quadro ... o Ombro vai fechar` | É um bug: abra uma issue com o trecho do log (rode com `--debug` para ter o traceback). |
 

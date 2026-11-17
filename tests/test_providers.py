@@ -172,7 +172,9 @@ class ClaudeEmPasta(unittest.TestCase):
             "seven_day": {"utilization": 61.5, "resets_at": (agora + timedelta(days=3)).timestamp()}}))
         q = self.provider.collect().quotas
         self.assertEqual((q.source, q.stale), ("statusline", True))
-        self.assertIsNone(q.window("5h"))  # janela vencida não existe
+        vencida = q.window("5h")  # a janela reiniciou: existe, sem número, marcada como aguardando atualização
+        self.assertEqual((vencida.used_percent, vencida.expired), (None, True))
+        self.assertEqual(q.scope, "account")
         self.assertEqual((q.window("7d").used_percent, q.window("7d").label), (61.5, "semana"))
 
     def test_tokens(self):

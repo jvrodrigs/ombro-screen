@@ -32,10 +32,11 @@ export function mockProviders(): ProviderInfo[] {
       sessions: 3, working: 1, waiting: 1, errors: 0, quota_max_percent: 67, stale_parts: [], recovered: false,
       last_collected_at: iso(agora()), last_event_at: null,
       quotas: {
-        source: "statusline", fetched_at: mais(-1), stale: false,
+        source: "statusline", fetched_at: mais(-2), observed_at: mais(-2), stale: false, state: "fresh", scope: "account",
+        auto_update: false,
         windows: [
-          { id: "5h", label: "sessão 5h", used_percent: 42, resets_at: mais(134) },
-          { id: "7d", label: "semana", used_percent: 67, resets_at: mais(3240) },
+          { id: "5h", label: "sessão 5h", used_percent: 42, resets_at: mais(134), expired: false },
+          { id: "7d", label: "semana", used_percent: 67, resets_at: mais(3240), expired: false },
         ],
       },
       usage: { scope: "today", total_tokens: 18_612_000, input_tokens: 18_400_000, output_tokens: 212_000, messages: 486 },

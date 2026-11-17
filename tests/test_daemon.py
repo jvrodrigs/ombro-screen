@@ -520,7 +520,9 @@ class CamposDoApp(unittest.TestCase):
         self.assertEqual(q["source"], "statusline")
         self.assertTrue(q["stale"])
         self.assertEqual(q["windows"][0], {"id": "5h", "label": "Sessão", "used_percent": 42.0,
-                                           "resets_at": "2026-11-15T12:00:00"})
+                                           "resets_at": "2026-11-15T12:00:00", "expired": False})
+        # o que o dado é: velho ("o último valor conhecido"), de quando, e que não se atualiza sozinho
+        self.assertEqual((q["state"], q["observed_at"], q["auto_update"]), ("stale", "2026-11-15T10:00:00", False))
         self.assertIsNone(q["windows"][1]["used_percent"])  # sem número, sem 0 inventado
         u = uso_do_snapshot(snap)
         self.assertEqual((u["total_tokens"], u["output_tokens"], u["messages"]), (1000, 100, 4))

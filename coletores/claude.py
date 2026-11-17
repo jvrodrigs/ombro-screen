@@ -1,9 +1,21 @@
 """Uso do Claude Code, só a partir de arquivos locais (sem API, sem credenciais).
 
-Fontes do uso do plano (sessão de 5h e semana), vale a mais recente:
-  1. ~/.ombro-screen/uso.json            gravado pelo statusline_tap.py (ao vivo, recomendado)
-  2. ~/.habblaud/usage/<conta>.json     se você também usa o Habblaud
-  3. ~/.claude.json → cachedUsageUtilization   o próprio Claude Code grava ao rodar /usage
+Fontes do uso do plano (sessão de 5h e semana):
+  1. ~/.ombro-screen/uso.json            gravado pelo statusline_tap.py (a interface documentada do Claude Code)
+  2. ~/.claude.json → cachedUsageUtilization   o próprio Claude Code grava ao rodar /usage
+  3. ~/.habblaud/usage/<conta>.json     se você também usa o Habblaud
+
+O que estas fontes são, e o que não são:
+  - Os percentuais são da assinatura inteira (os limites que a Anthropic devolve ao Claude Code), então incluem o
+    que foi gasto no app Claude e no claude.ai. Mas só há número novo quando o Claude Code no terminal recebe
+    uma resposta (statusline) ou roda /usage. O app Claude Desktop, incluindo a aba Code, não escreve em nenhuma.
+  - Não existe interface suportada para um app de fora consultar o uso da assinatura sem o CLI, e a Anthropic
+    não permite que terceiros usem as credenciais da assinatura. Por isso o Ombro não consulta nada pela rede:
+    mostra o último valor observado, com a idade dele sempre à vista.
+
+Qual vale (a regra inteira está em `_escolher`): a observação mais recente, entre as que são da conta em uso;
+no empate, a mais confiável (statusline, /usage, habblaud). Uma leitura nunca completa a outra: as janelas vêm
+todas da mesma observação.
 
 Tokens de hoje: soma dos transcripts em <config>/projects/**/*.jsonl.
 Sessões abertas: <config>/sessions/<pid>.json (só as com processo vivo).
@@ -22,7 +34,10 @@ from logging_config import SoQuandoMuda, curto, logger, sem_casa
 
 log = logger("claude")
 
-DESATUALIZADO_MS = 30 * 60_000
+DESATUALIZADO_MS = 15 * 60_000  # depois disso o número é "o último conhecido", não "atualizado"
+ESCOPO_CONTA, ESCOPO_DESCONHECIDO = "account", "unknown"
+# fonte -> (prioridade no empate, o que os percentuais cobrem)
+FONTES = {"statusline": (0, ESCOPO_CONTA), "/usage": (1, ESCOPO_CONTA), "habblaud": (2, ESCOPO_DESCONHECIDO)}
 PASTA_TELA = pasta_ombro()  # ~/.ombro-screen ou OMBRO_SCREEN_DIR; o statusline_tap.py grava o uso.json aqui
 
 
@@ -69,6 +84,10 @@ class UsoClaude:
     fonte: str | None = None
     coletado_em: datetime | None = None
     desatualizado: bool = False
+    escopo: str = ESCOPO_DESCONHECIDO  # "account": a assinatura inteira no instante da observação; "unknown"
+    # janelas que reiniciaram depois da última observação (campo -> quando): o número de antes não vale e o novo
+    # ainda não chegou. Nunca viram 0%: ficam sem número até a próxima observação
+    expiradas: dict = field(default_factory=dict)
     tokens_entrada: int = 0  # inclui cache (leitura + escrita)
     tokens_saida: int = 0
     tokens_cache: int = 0
@@ -134,6 +153,19 @@ def _janela(raw, agora_ms: int) -> Janela | None:
     return Janela(max(0.0, min(100.0, pct)), datetime.fromtimestamp(reset / 1000) if reset else None)
 
 
+def _reiniciou(raw, agora_ms: int) -> datetime | None:
+    """Quando a janela reiniciou, se ela tinha um número e o reset já passou (o número não vale mais)."""
+    if not isinstance(raw, dict) or _num(raw.get("utilization", raw.get("used_percentage"))) is None:
+        return None
+    reset = _epoch_ms(raw.get("resets_at", raw.get("resetsAt")))
+    if reset is None or reset > agora_ms:
+        return None
+    try:
+        return datetime.fromtimestamp(reset / 1000)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
 _ignorados = SoQuandoMuda(log)  # arquivos estranhos: um aviso de depuração por arquivo, não um a cada leitura
 
 
@@ -163,37 +195,61 @@ class ColetorClaude:
         self._dia = None
         self._avisos = SoQuandoMuda(log)
         self._fonte_ant: str | None | bool = False  # False = ainda não leu
+        self._conta: str | None = None  # a conta em uso (só para comparar; nunca vai para o log nem para a IPC)
+        self._conta_mudou_ms = 0  # observações de antes disso são de outra conta
         log.debug("pasta do Claude Code: %s (conta %s)", curto(self.config), self.conta)
 
     # ---------- uso do plano ----------
-    def _fontes_uso(self):
+    def _fontes_uso(self, agora_ms: int):
+        """As leituras que existem agora: (fonte, quando foi observada em ms, dados). Só as da conta em uso."""
+        cj = _ler_json(self.claude_json)
+        cj = cj if isinstance(cj, dict) else {}
+        conta = (cj.get("oauthAccount") or {}).get("accountUuid") if isinstance(cj.get("oauthAccount"), dict) else None
+        if isinstance(conta, str) and conta:
+            if self._conta is not None and conta != self._conta:  # entrou com outra conta: o que foi visto antes é dela
+                self._conta_mudou_ms = agora_ms
+                log.info("a conta do Claude Code mudou: os limites vistos antes não são desta conta")
+            self._conta = conta
         tap = _ler_json(PASTA_TELA / "uso.json")
         if isinstance(tap, dict):
             yield "statusline", _epoch_ms(tap.get("fetchedAt")), tap
+        cache = cj.get("cachedUsageUtilization")
+        if isinstance(cache, dict):
+            de_outra = isinstance(cache.get("accountUuid"), str) and self._conta is not None and cache["accountUuid"] != self._conta
+            if not de_outra:  # o cache diz de que conta é: se é de outra, não entra
+                yield "/usage", _epoch_ms(cache.get("fetchedAtMs", cache.get("fetchedAt"))), cache.get("utilization")
         hab = _ler_json(Path("~/.habblaud/usage").expanduser() / f"{self.conta}.json")
         if isinstance(hab, dict):
             yield "habblaud", _epoch_ms(hab.get("fetchedAt")), hab
-        cj = _ler_json(self.claude_json)
-        cache = cj.get("cachedUsageUtilization") if isinstance(cj, dict) else None
-        if isinstance(cache, dict):
-            yield "/usage", _epoch_ms(cache.get("fetchedAtMs", cache.get("fetchedAt"))), cache.get("utilization")
+
+    def _escolher(self, agora_ms: int):
+        """A leitura que vale: a observação mais recente; no empate, a fonte mais confiável. Ficam de fora as sem
+        horário, as do futuro (relógio errado) e as de antes de uma troca de conta. As fontes não se misturam."""
+        melhor = None
+        for fonte, quando, dados in self._fontes_uso(agora_ms):
+            if quando is None or not isinstance(dados, dict) or quando < self._conta_mudou_ms:
+                continue
+            quando = min(quando, agora_ms)  # um horário no futuro não deixa a leitura "mais nova que agora"
+            chave = (quando, -FONTES[fonte][0])
+            if melhor is None or chave > melhor[0]:
+                melhor = (chave, fonte, quando, dados)
+        return melhor[1:] if melhor else None
 
     def _uso_plano(self, u: UsoClaude, agora_ms: int) -> None:
-        melhor = None
-        for fonte, quando, dados in self._fontes_uso():
-            if quando is None or not isinstance(dados, dict):
-                continue
-            if melhor is None or quando > melhor[1]:
-                melhor = (fonte, quando, dados)
+        melhor = self._escolher(agora_ms)
         if not melhor:
             return
         fonte, quando, dados = melhor
         u.configurado = True
         u.fonte = fonte
+        u.escopo = FONTES[fonte][1]
         u.coletado_em = datetime.fromtimestamp(quando / 1000)
         u.desatualizado = agora_ms - quando > DESATUALIZADO_MS
-        u.cinco_horas = _janela(dados.get("five_hour"), agora_ms)
-        u.semana = _janela(dados.get("seven_day"), agora_ms)
+        for campo, chave in (("cinco_horas", "five_hour"), ("semana", "seven_day")):
+            setattr(u, campo, _janela(dados.get(chave), agora_ms))
+            reiniciou = _reiniciou(dados.get(chave), agora_ms)
+            if reiniciou is not None:
+                u.expiradas[campo] = reiniciou
 
     # ---------- tokens de hoje ----------
     def _tokens(self, u: UsoClaude) -> None:
@@ -328,7 +384,7 @@ class ColetorClaude:
                 log.info("sem dados do uso do plano (5 h e semana); veja a seção 4 do README")
             self._fonte_ant = fonte
         if u.desatualizado:
-            self._avisos.registrar("desatualizado", logging.WARNING, "o uso do plano (%s) tem mais de %d min",
-                                   u.fonte, DESATUALIZADO_MS // 60_000)
+            self._avisos.registrar("desatualizado", logging.WARNING, "o uso do plano (%s) tem mais de %d min: só há número "
+                                   "novo quando o Claude Code no terminal conversa ou roda /usage", u.fonte, DESATUALIZADO_MS // 60_000)
         else:
             self._avisos.resolver("desatualizado", "o uso do plano voltou a ser atual (%s)", u.fonte)

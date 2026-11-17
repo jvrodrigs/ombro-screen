@@ -14,6 +14,7 @@ ou, mantendo o statusline que você já tem:
 
 Qualquer falha na captura é ignorada: o statusline nunca quebra por causa disto.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -38,18 +39,49 @@ def janela(w):
     return out
 
 
+def marca(dados):
+    """Muda só quando o Claude Code recebeu uma resposta nova da API (é daí que vêm os limites).
+
+    O statusline roda também sem resposta nova (ao trocar o modo de permissão, num refreshInterval, quando uma
+    janela reinicia), repetindo os últimos limites que recebeu. A sessão e o tempo total de API dizem se houve
+    resposta nova. Só um resumo da sessão é guardado, nunca o id.
+    """
+    try:
+        sessao = str(dados.get("session_id") or "")
+        api_ms = (dados.get("cost") or {}).get("total_api_duration_ms")
+        if not sessao or api_ms is None:
+            return None
+        return hashlib.sha256(sessao.encode("utf-8")).hexdigest()[:12] + ":" + str(int(api_ms))
+    except Exception:
+        return None
+
+
 def capturar(texto):
     try:
         if "rate_limits" not in texto:
             return None
-        rl = json.loads(texto).get("rate_limits") or {}
-        rec = {"fetchedAt": int(time.time() * 1000)}
+        dados = json.loads(texto)
+        rl = dados.get("rate_limits") or {}
+        agora = int(time.time() * 1000)
+        rec = {"fetchedAt": agora, "seenAt": agora}
         for chave in ("five_hour", "seven_day"):
             w = janela(rl.get(chave))
             if w:
                 rec[chave] = w
-        if len(rec) == 1:
+        if len(rec) == 2:
             return None
+        m = marca(dados)
+        if m:
+            rec["marker"] = m
+            # os mesmos números, sem resposta nova da API: o statusline só foi redesenhado. O horário da
+            # observação (fetchedAt) continua o de quando o dado chegou; seenAt diz quando foi lido de novo
+            try:
+                antes = json.loads((PASTA / "uso.json").read_text(encoding="utf-8"))
+                mesmos = all(antes.get(k) == rec.get(k) for k in ("five_hour", "seven_day"))
+                if antes.get("marker") == m and mesmos and isinstance(antes.get("fetchedAt"), (int, float)):
+                    rec["fetchedAt"] = int(antes["fetchedAt"])
+            except Exception:
+                pass
         PASTA.mkdir(parents=True, exist_ok=True, mode=0o700)
         tmp = PASTA / f"uso.json.{os.getpid()}.tmp"
         tmp.write_text(json.dumps(rec) + "\n", encoding="utf-8")

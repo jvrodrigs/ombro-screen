@@ -15,7 +15,7 @@ from coletores.claude import Janela, UsoClaude
 from coletores.hardware import Hardware
 from mascote import COL_X, COL_Y, Mascote
 from render import (
-    AMBAR, APAGADO, AZUL, CORAL, FRACO, S, TEXTO, VERDE, Tela, cor_uso, gb, quando_reseta, tokens,
+    AMBAR, APAGADO, AZUL, CORAL, FRACO, S, TEXTO, VERDE, Tela, aviso_uso, cor_uso, gb, quando_reseta, tokens,
 )
 
 LARGURA, ALTURA = 480, 320
@@ -143,8 +143,7 @@ class Fixo:
 
 def fixo(u: UsoClaude, estado: str, agora: datetime) -> Fixo:
     janelas = tuple((j.pct, _reseta(j, agora)) if j else None for j in (u.cinco_horas, u.semana))
-    aviso = ("sem dados de uso: veja o README" if not u.configurado
-             else (f"números de {int((agora - u.coletado_em).total_seconds() // 60)} min atrás" if u.desatualizado and u.coletado_em else ""))
+    aviso = aviso_uso(u, agora)  # sem fonte, números velhos, ou janela que reiniciou sem número novo
     espera = None
     if u.esperando:
         proj = u.espera_projeto or "sessão"

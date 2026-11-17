@@ -260,6 +260,8 @@ def aviso_uso(u: UsoClaude, agora: datetime) -> str:
     if u.desatualizado and u.coletado_em:
         mins = int((agora - u.coletado_em).total_seconds() // 60)
         return f"números de {mins} min atrás" if mins < 120 else f"números de {mins // 60} h atrás"
+    if getattr(u, "expiradas", None):  # a janela reiniciou e ainda não chegou número novo (nunca vira 0% sozinho)
+        return "limite reiniciou: sem número novo"
     return ""
 
 

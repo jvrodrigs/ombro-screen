@@ -1,10 +1,67 @@
 import { AlertTriangle } from "lucide-react";
 import { Badge, Button, Card, UsageBar } from "../../components/ui";
 import { ago, clock, pluralize, providerBadge, providerName, tokens, until } from "../../lib/format";
-import type { ProviderInfo } from "../../types/ombro";
+import type { ProviderInfo, Quotas } from "../../types/ombro";
 import { ProviderAvatar } from "../avatars/ProviderAvatar";
 
 const STALE_PARTS: Record<string, string> = { sessions: "sessões", usage: "tokens", quotas: "limites" };
+
+/**
+ * Os limites da assinatura, sempre com a idade do dado à vista. Os percentuais são da assinatura inteira, mas só
+ * há número novo quando o Claude Code no terminal conversa ou roda /usage: o uso pelo app Claude não atualiza.
+ * Por isso um número velho nunca aparece como se fosse de agora, e uma janela que reiniciou fica sem número.
+ */
+function QuotaBlock({ q, now }: { q: Quotas; now: Date }) {
+  const observado = q.observed_at ?? q.fetched_at;
+  const estado = q.state ?? (q.stale ? "stale" : "fresh");
+  const idade = ago(observado, now);
+  return (
+    <div className="provider-quotas">
+      {q.windows.map((w, i) => {
+        const nome = w.id === "5h" ? "Sessão de 5 horas" : w.id === "7d" ? "Semana" : w.label;
+        if (w.expired) {
+          return (
+            <div className="usage" key={w.id}>
+              <div className="usage-row">
+                <span className="usage-label">{nome}</span>
+                <span className="usage-value muted">Aguardando atualização</span>
+              </div>
+              <div className="usage-track" role="progressbar" aria-label={nome} aria-valuemin={0} aria-valuemax={100} aria-valuetext="aguardando atualização" />
+              <div className="usage-hint muted">
+                A janela reiniciou{w.resets_at ? ` às ${clock(w.resets_at, now)}` : ""}; o Ombro ainda não viu o número novo.
+              </div>
+            </div>
+          );
+        }
+        return (
+          <UsageBar
+            key={w.id}
+            label={nome}
+            value={w.used_percent}
+            accent={i === 0 ? "orange" : "blue"}
+            hint={w.resets_at ? `reinicia ${until(w.resets_at, now)} (${clock(w.resets_at, now)})` : "sem horário de reset"}
+          />
+        );
+      })}
+      {estado === "fresh" ? (
+        <p className="quota-age muted">Atualizado {idade}</p>
+      ) : (
+        <>
+          <p className="quota-age stale">
+            <AlertTriangle size={13} aria-hidden />{" "}
+            {estado === "awaiting_update" ? `Aguardando atualização · última observação ${idade}` : `Último valor conhecido · ${idade}`}
+          </p>
+          {!q.auto_update && (
+            <p className="muted small">
+              Os limites chegam quando o Claude Code no terminal conversa ou roda /usage. O uso pelo app Claude conta no
+              limite, mas não atualiza estes números (fonte: {q.source}).
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 /** O cartão de um agente: só mostra o que o provider realmente informa (sem barras vazias nem números inventados). */
 export function ProviderCard({ p, onConfigure, now = new Date() }: { p: ProviderInfo; onConfigure?: () => void; now?: Date }) {
@@ -50,25 +107,15 @@ export function ProviderCard({ p, onConfigure, now = new Date() }: { p: Provider
 
           {caps.has("quota_windows") ? (
             p.quotas && p.quotas.windows.length > 0 ? (
-              <div className="provider-quotas">
-                {p.quotas.windows.map((w, i) => (
-                  <UsageBar
-                    key={w.id}
-                    label={w.id === "5h" ? "Sessão 5 h" : w.id === "7d" ? "Semana" : w.label}
-                    value={w.used_percent}
-                    accent={i === 0 ? "orange" : "blue"}
-                    hint={w.resets_at ? `reinicia ${until(w.resets_at, now)} (${clock(w.resets_at, now)})` : "sem horário de reset"}
-                  />
-                ))}
-                {p.quotas.stale && (
-                  <p className="stale">
-                    <AlertTriangle size={13} aria-hidden /> Números de {ago(p.quotas.fetched_at, now).replace("há ", "")} atrás
-                    (fonte: {p.quotas.source})
-                  </p>
-                )}
-              </div>
+              <QuotaBlock q={p.quotas} now={now} />
             ) : (
-              <p className="muted small">Sem dados de limite ainda. Rode /usage no agente ou ligue o statusline.</p>
+              <div className="provider-quotas">
+                <p className="quota-age">Dados indisponíveis</p>
+                <p className="muted small">
+                  O Ombro ainda não viu os limites desta assinatura. Eles chegam quando o Claude Code no terminal conversa (com o
+                  statusline ligado) ou roda /usage.
+                </p>
+              </div>
             )
           ) : (
             <p className="muted small">Este agente não informa limites de uso.</p>

@@ -36,7 +36,7 @@ Ombro Doctor
 
 ```json
 {
-  "schema": "ombro.doctor", "schema_version": 1, "ombro_version": "0.9.0-beta.1", "ipc_protocol": 1,
+  "schema": "ombro.doctor", "schema_version": 1, "ombro_version": "0.9.0-beta.2", "ipc_protocol": 1,
   "generated_at": "2026-11-14T19:00:00",
   "summary": {"status": "WARN", "pass": 12, "warn": 4, "fail": 0, "skip": 1},
   "checks": [

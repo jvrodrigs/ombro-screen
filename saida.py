@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import logging
+import socketserver
 import sys
 import threading
 import time
@@ -44,6 +45,19 @@ def escolher_transporte(pedido: str, revisao: str, plataforma: str | None = None
         raise SystemExit(f"--transporte usb indisponível: {falta}")
     return "serial", (f"usando a porta serial, que no macOS costuma embaralhar a imagem desta tela; "
                       f"para o envio direto pelo USB, {falta}")
+
+
+class _ServidorLocal(ThreadingHTTPServer):
+    """O ThreadingHTTPServer sem a consulta de DNS reverso do server_bind.
+
+    O http.server guarda `socket.getfqdn(host)` em `server_name`, que o simulador nunca usa. Num Mac com o DNS lento
+    (uma VPN, os runners macOS do GitHub Actions) essa consulta leva dezenas de segundos, e o processo fica preso
+    nela (nem o SIGTERM é atendido) antes de a tela começar.
+    """
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = "localhost", self.server_address[1]
 
 
 class Simulador:
@@ -88,7 +102,7 @@ n.src='/quadro.png?'+Date.now()},250)</script>
                 except (BrokenPipeError, ConnectionResetError):  # a aba do navegador fechou no meio do envio
                     log_sim.debug("o navegador fechou a conexão no meio do envio")
 
-        self.servidor = ThreadingHTTPServer(("127.0.0.1", porta), Handler)
+        self.servidor = _ServidorLocal(("127.0.0.1", porta), Handler)
         threading.Thread(target=self.servidor.serve_forever, daemon=True).start()
         self.url = f"http://localhost:{porta}"
         self.porta, self.tamanho = porta, (w, h)

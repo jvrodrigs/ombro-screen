@@ -1,8 +1,8 @@
 //! Ombro.app: a janela (React), a Menu Bar e a ponte com o backend Python (o ombrod), que é a fonte da verdade.
 //!
 //! Ciclo de vida:
-//!   - fechar a janela (⌘W ou o botão vermelho) só a esconde: o Ombro segue na Menu Bar, sem ícone no Dock;
-//!   - "Sair do Ombro" (Menu Bar ou ⌘Q) fecha o app. O ombrod que o app iniciou fecha junto (a tela para);
+//!   - fechar a janela (⌘W, ⌘Q ou o botão vermelho) só a esconde: o Ombro segue na Menu Bar, sem ícone no Dock;
+//!   - "Sair do Ombro" (no menu do cloud ou no menu Ombro) fecha o app. O ombrod que o app iniciou fecha junto (a tela para);
 //!     um ombrod do LaunchAgent ("monitorar em segundo plano") continua;
 //!   - abrir o app de novo (Finder, Dock ou Spotlight) mostra a janela; nunca abre um segundo app.
 
@@ -64,6 +64,72 @@ fn show_main(app: &AppHandle) {
     let o = app.state::<Ombro>();
     o.monitor.window_visible.store(true, Ordering::Relaxed);
     o.monitor.poke();
+}
+
+/// O menu do app (no topo da tela, com a janela aberta): o padrão do Tauri, com uma troca. O "Quit" padrão (⌘Q)
+/// encerra o app na hora, sem passar pelo Ombro; aqui o ⌘Q só recolhe a janela para a Menu Bar, como o botão
+/// vermelho. Sair de verdade fica no "Sair do Ombro", sem atalho.
+const RECOLHER: &str = "recolher";
+const SAIR: &str = "sair";
+
+fn menu_do_app(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+    let nome = app.package_info().name.clone();
+    let sobre = AboutMetadata {
+        name: Some(nome.clone()),
+        version: Some(app.package_info().version.to_string()),
+        copyright: app.config().bundle.copyright.clone(),
+        ..Default::default()
+    };
+    let sep = || PredefinedMenuItem::separator(app);
+    Menu::with_items(
+        app,
+        &[
+            &Submenu::with_items(
+                app,
+                &nome,
+                true,
+                &[
+                    &PredefinedMenuItem::about(app, None, Some(sobre))?,
+                    &sep()?,
+                    &PredefinedMenuItem::services(app, None)?,
+                    &sep()?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::hide_others(app, None)?,
+                    &sep()?,
+                    &MenuItem::with_id(app, RECOLHER, "Recolher para a Menu Bar", true, Some("CmdOrCtrl+Q"))?,
+                    &MenuItem::with_id(app, SAIR, "Sair do Ombro", true, None::<&str>)?,
+                ],
+            )?,
+            &Submenu::with_items(app, "File", true, &[&PredefinedMenuItem::close_window(app, None)?])?,
+            &Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None)?,
+                    &PredefinedMenuItem::redo(app, None)?,
+                    &sep()?,
+                    &PredefinedMenuItem::cut(app, None)?,
+                    &PredefinedMenuItem::copy(app, None)?,
+                    &PredefinedMenuItem::paste(app, None)?,
+                    &PredefinedMenuItem::select_all(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(app, "View", true, &[&PredefinedMenuItem::fullscreen(app, None)?])?,
+            &Submenu::with_items(
+                app,
+                "Window",
+                true,
+                &[
+                    &PredefinedMenuItem::minimize(app, None)?,
+                    &PredefinedMenuItem::maximize(app, None)?,
+                    &sep()?,
+                    &PredefinedMenuItem::close_window(app, None)?,
+                ],
+            )?,
+        ],
+    )
 }
 
 fn hide_main(app: &AppHandle) {
@@ -204,6 +270,7 @@ pub fn run() {
                 .args(["--background"])
                 .build(),
         )
+        .menu(menu_do_app)
         .setup(|app| {
             let resources = app.path().resource_dir().ok();
             let config_dir = app.path().app_config_dir()?;
@@ -256,7 +323,8 @@ pub fn run() {
                 show_main(app);
                 let _ = app.emit("ombro://navigate", "settings");
             }
-            tray::QUIT => app.exit(0),
+            tray::QUIT | SAIR => app.exit(0),
+            RECOLHER => hide_main(app),
             _ => {}
         })
         .on_window_event(|window, event| {

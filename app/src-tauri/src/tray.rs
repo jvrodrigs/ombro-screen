@@ -30,7 +30,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Tray> {
     let display = MenuItem::with_id(app, "d", "Tela: —", false, None::<&str>)?;
     let open = MenuItem::with_id(app, OPEN, "Abrir o Ombro", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, SETTINGS, "Ajustes…", true, Some("CmdOrCtrl+,"))?;
-    let quit = MenuItem::with_id(app, QUIT, "Sair do Ombro", true, Some("CmdOrCtrl+Q"))?;
+    let quit = MenuItem::with_id(app, QUIT, "Sair do Ombro", true, None::<&str>)?;
     let sep = || PredefinedMenuItem::separator(app);
     let menu = Menu::with_items(
         app,

@@ -52,8 +52,9 @@ Saída: `src-tauri/target/release/bundle/macos/Ombro.app` e `…/bundle/dmg/Ombr
 release o renomeia para `Ombro-v<versão>-macos-arm64.dmg`).
 
 O build não grava a pasta pessoal de quem montou dentro do app: os `.pyc` guardam caminhos relativos e o `build:app`
-passa `--remap-path-prefix=$HOME=~` ao Rust. O `build_backend.py` falha se achar o `$HOME` em algum arquivo do
-backend.
+passa `--remap-path-prefix=$HOME=~` ao Rust. O `build_backend.py` falha se achar o `$HOME` no que o build gera
+(o código do Ombro, os `.pyc` que ele compila e os avisos). Binários de terceiros (o CPython, as wheels) não contam:
+muitos são montados em runners do GitHub e trazem `/Users/runner` da máquina de build deles.
 
 ## Assinatura: ad-hoc, sem notarização
 
@@ -94,8 +95,8 @@ O `release.yml` tem dois jobs:
 
 1. **build** (`contents: read`): confere que a tag, o `app/package.json`, o `app/src-tauri/Cargo.toml` e o
    `ombro/__init__.py` têm a mesma versão; roda os testes do Python, da interface e do Rust; monta; confere a
-   assinatura ad-hoc, a versão do `Info.plist`, que não há bancos, configurações, logs, a biblioteca GPL nem o
-   `$HOME` do runner no app, e o `hdiutil verify` do DMG; gera `Ombro-v<versão>-macos-arm64.dmg` e o
+   assinatura ad-hoc, a versão do `Info.plist`, que não há bancos, configurações, logs nem a biblioteca GPL no app,
+   que o `$HOME` do runner não está no executável, no código do Ombro nem nos avisos, e o `hdiutil verify` do DMG; gera `Ombro-v<versão>-macos-arm64.dmg` e o
    `SHA256SUMS.txt`.
 2. **draft-release** (só em tag; o único com `contents: write`): cria o rascunho com o DMG, o `SHA256SUMS.txt` e
    notas com a instalação e a primeira abertura. Uma versão com `-` (ex.: `0.9.0-beta.1`) vira pré-release.

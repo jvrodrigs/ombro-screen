@@ -163,7 +163,7 @@ export function Settings() {
         )}
         {autostart.state.status === "error" && <Notice tone="critical">{autostart.state.message}</Notice>}
         <p className="muted small" style={{ marginTop: 8 }}>
-          Fechar a janela deixa o Ombro na Menu Bar. Para sair, use "Sair do Ombro" no menu do cloud (⌘Q).
+          Fechar a janela (ou ⌘Q) deixa o Ombro na Menu Bar. Para sair, use "Sair do Ombro" no menu do cloud.
         </p>
         <div className="row" style={{ marginTop: 12 }}>
           <Button size="sm" variant="ghost" onClick={async () => prefs && setPrefs(await api.prefsSet({ onboarding_completed: false }))}>

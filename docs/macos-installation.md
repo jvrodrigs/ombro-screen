@@ -62,8 +62,8 @@ backup.
 
 ## Janela, Menu Bar e segundo plano
 
-- Fechar a janela deixa o Ombro na Menu Bar (o cloud no topo da tela). "Sair do Ombro" no menu do cloud (⌘Q)
-  fecha o app.
+- Fechar a janela (botão vermelho, ⌘W ou ⌘Q) deixa o Ombro na Menu Bar (o cloud no topo da tela). Para fechar o
+  app, use "Sair do Ombro" no menu do cloud.
 - Sem o serviço em segundo plano, o monitoramento (e a telinha) param quando você sai do app.
 - Com **Ajustes > Continuar monitorando depois de sair do Ombro**, o macOS mantém o serviço rodando, mesmo com o
   app fechado e depois de reiniciar o Mac.

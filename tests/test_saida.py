@@ -357,5 +357,14 @@ class SimuladorHttp(unittest.TestCase):
             self.assertEqual(resp.headers["Content-Type"], "image/png")
             self.assertEqual(Image.open(io.BytesIO(resp.read())).size, (480, 320))
 
+    def test_abre_sem_consultar_o_dns(self):
+        # o getfqdn do http.server travava o ombrod por dezenas de segundos nos runners macOS do GitHub Actions
+        with mock.patch("socket.getfqdn", side_effect=AssertionError("consultou o DNS reverso")) as getfqdn:
+            sim = saida.Simulador(0)
+        self.addCleanup(sim.fechar)
+        getfqdn.assert_not_called()
+        self.assertEqual(sim.servidor.server_name, "localhost")
+        self.assertEqual(sim.servidor.server_port, sim.servidor.server_address[1])
+
 if __name__ == "__main__":
     unittest.main()

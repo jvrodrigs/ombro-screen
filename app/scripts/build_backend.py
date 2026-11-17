@@ -235,11 +235,22 @@ def verificar_binarios(runtime: Path) -> int:
     return len(lista)
 
 
-def verificar_sem_caminho_pessoal(*pastas: Path) -> None:
-    """Nenhum arquivo leva a pasta pessoal de quem montou (o nome de usuário) para dentro do app."""
-    passo("conferindo que nenhum arquivo leva a pasta pessoal de quem montou")
+def verificar_sem_caminho_pessoal(runtime: Path, backend: Path, avisos_md: Path) -> None:
+    """Nada do que ESTE build gera leva a pasta pessoal de quem montou (o nome de usuário) para dentro do app.
+
+    Confere o código do Ombro (backend/), o THIRD_PARTY_NOTICES.md e os .pyc que o build compila no runtime. Os
+    binários e arquivos de terceiros (o CPython, as wheels) vêm prontos, com os caminhos da máquina de build DELES:
+    muitos são montados em runners do GitHub, com /Users/runner, o mesmo $HOME do nosso runner. Esses não contam.
+    Um .pyc de terceiro só conta se o próprio .py não tiver o caminho (o numpy/__config__.py, por exemplo, tem).
+    """
+    passo("conferindo que nada gerado por este build leva a pasta pessoal de quem montou")
     casa = str(Path.home()).encode()
-    achados = [p for pasta in pastas for p in pasta.rglob("*") if p.is_file() and casa in p.read_bytes()]
+    achados = [p for p in [*backend.rglob("*"), avisos_md] if p.is_file() and casa in p.read_bytes()]
+    for pyc in runtime.rglob("*.pyc"):
+        if casa in pyc.read_bytes():
+            fonte = pyc.parent.parent / (pyc.name.split(".")[0] + ".py")  # __pycache__/x.cpython-314.pyc -> x.py
+            if not (fonte.is_file() and casa in fonte.read_bytes()):
+                achados.append(pyc)
     if achados:
         falha(f"{len(achados)} arquivo(s) com {casa.decode()}:\n  " + "\n  ".join(str(p.relative_to(SAIDA)) for p in achados[:20]))
     print("    nenhum")
@@ -602,7 +613,7 @@ def main() -> None:
     elif not runtime.is_dir() or not backend.is_dir():
         falha(f"nada montado em {SAIDA}")
     verificar_binarios(runtime)
-    verificar_sem_caminho_pessoal(runtime, backend, SAIDA / "licenses")
+    verificar_sem_caminho_pessoal(runtime, backend, SAIDA / "licenses" / "THIRD_PARTY_NOTICES.md")
     if args.sign:
         assinar(runtime, args.sign)
     verificar_execucao(runtime, backend)  # depois de assinar: o backend roda com o hardened runtime ligado

@@ -94,8 +94,12 @@ jobs:
           ruins=$(find "$APP" \( -name '*.db' -o -name 'config.json' -o -name '.env' -o -name '*.log' -o -name 'uso.json' \
                   -o -path '*/library/lcd*' -o -path '*turing-smart-screen*' \) -print)
           [ -z "$ruins" ] || { echo "::error::arquivos que não deveriam estar no app:"; echo "$ruins"; exit 1; }
-          if grep -rlF "$HOME" "$APP" > /dev/null; then
-            echo "::error::arquivos com $HOME:"; grep -rlF "$HOME" "$APP" | head -20; exit 1
+          # o $HOME do runner só não pode estar no que este build gera: o executável (Rust), o código do Ombro e os
+          # avisos (os .pyc do runtime o build_backend.py já conferiu). Binários de terceiros (CPython, Pillow, numpy…)
+          # trazem /Users/runner da máquina de build deles, que também são runners do GitHub.
+          GERADOS=("$APP/Contents/MacOS" "$APP/Contents/Resources/backend" "$APP/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md")
+          if grep -rlF "$HOME" "${GERADOS[@]}" > /dev/null; then
+            echo "::error::arquivos com $HOME:"; grep -rlF "$HOME" "${GERADOS[@]}" | head -20; exit 1
           fi
           test -f "$APP/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md"
           test -f "$APP/Contents/Resources/licenses/OMBRO-LICENSE.txt"

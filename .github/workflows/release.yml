@@ -132,7 +132,7 @@ jobs:
     permissions:
       contents: write # só para criar o rascunho da release
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: ombro-macos-arm64
           path: dist-release

@@ -1,16 +1,13 @@
 # Licenças e redistribuição
 
-O que o Ombro redistribui, sob quais licenças, e o que ainda precisa de decisão antes de uma release pública.
+O que o Ombro redistribui e sob quais licenças.
 
 ## O Ombro
 
-O repositório ainda **não tem um arquivo LICENSE**. Sem ele, o código não é open source no sentido legal (ninguém
-recebe permissão para usar, modificar ou redistribuir), e o Ombro.app não deve ser publicado. A escolha é de quem
-mantém o projeto; o que pesa nela:
+O Ombro é distribuído sob a **licença MIT** ([LICENSE](../LICENSE), © 2026 Ombro Screen contributors). O texto vai
+também dentro do app (`Contents/Resources/licenses/OMBRO-LICENSE.txt`), junto dos avisos de terceiros.
 
-- Com uma licença permissiva (MIT, Apache-2.0), o Ombro.app continua sem embarcar a biblioteca GPL da tela (abaixo).
-- Com a GPL-3.0, daria para embarcar a turing-smart-screen-python (e com ela as revisões B, C, D e WeAct no app),
-  cumprindo as obrigações da GPL na distribuição (código-fonte correspondente e o texto da licença).
+Com uma licença permissiva, o Ombro.app não embarca a biblioteca GPL da tela (abaixo).
 
 ## A biblioteca da tela (turing-smart-screen-python, GPL-3.0)
 
@@ -18,6 +15,11 @@ Não vai no Ombro.app. No Mac, a revisão A (a Turing de 3,5") é atendida pelo 
 próprio Ombro e fala com o endpoint USB sem a biblioteca. As outras revisões continuam funcionando pelo Ombro do
 repositório, com a biblioteca clonada à parte, como antes (README, seção 1). Rodar a biblioteca em outro processo não
 foi usado como justificativa para embarcá-la: ela simplesmente não é distribuída.
+
+O `usb_direto.py` foi escrito do zero: ele repete os nomes dos métodos que a `saida.TelaUSB` chama (para trocar uma
+classe pela outra) e os valores do protocolo da tela (comandos e orientações), mas não copia código da
+`lcd_comm_rev_a.py`. O `saida.py` só importa a biblioteca quando ela foi clonada à parte, no uso pelo repositório; no
+app ela não existe e esse caminho não roda.
 
 ## O desenho do mascote
 

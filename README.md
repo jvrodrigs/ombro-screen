@@ -35,9 +35,47 @@ mostrando antes o que muda), mostra a prévia da telinha e cuida do serviço em 
 - **Diagnóstico** (o `ombro doctor`, com relatório para issues) e **Ajustes**
 - **Menu Bar**: o cloud com o resumo; notificações opcionais quando uma sessão espera você
 
-**Requisitos:** Mac com Apple Silicon e macOS 13 ou mais novo. Baixe o `Ombro-<versão>-macos-arm64.dmg` em
-[Releases](https://github.com/jvrodrigs/ombro-screen/releases) e arraste para Aplicativos: o passo a passo, as
-versões alpha sem assinatura e como desinstalar estão em [docs/macos-installation.md](docs/macos-installation.md).
+**Compatibilidade:** Mac com Apple Silicon (M1 ou mais novo) e macOS 13 ou mais novo. A telinha USB é opcional;
+no app, a revisão A (a Turing de 3,5", 480×320). Claude Code, Codex e Cursor são opcionais.
+
+### Instalar
+
+1. Em [Releases](https://github.com/jvrodrigs/ombro-screen/releases), baixe o `Ombro-v<versão>-macos-arm64.dmg` e
+   o `SHA256SUMS.txt`. Confira o download com `shasum -a 256 -c SHA256SUMS.txt` (a resposta deve ser `OK`).
+2. Abra o DMG e arraste o **Ombro** para **Aplicativos**. Abra sempre a partir de Aplicativos.
+3. **Primeira abertura:** a beta tem assinatura ad-hoc e **não é notarizada pela Apple**, então o macOS avisa que
+   não pôde verificar o app. Se você confia na origem, feche o aviso, vá em **Ajustes do Sistema > Privacidade e
+   Segurança**, clique em **Abrir Mesmo Assim** ao lado do Ombro e depois em **Abrir**
+   ([como a Apple explica](https://support.apple.com/pt-br/102445)). Só é preciso uma vez.
+
+Passo a passo, primeiro uso e como desinstalar: [docs/macos-installation.md](docs/macos-installation.md).
+
+### Limitações da beta
+
+- **Sem notarização:** a primeira abertura precisa da autorização acima. Macs gerenciados por empresa ou escola
+  (MDM) podem não permitir.
+- **Só Apple Silicon:** não há build para Intel (nunca foi testada).
+- **Sem atualização automática:** Ajustes > Atualizações abre a página de releases; a versão nova se instala
+  arrastando o app de novo para Aplicativos (configurações e histórico ficam).
+- **Limites do Claude (5 h e semana):** os percentuais vêm do Claude Code no terminal (statusline ou `/usage`). Quem
+  usa só o app do Claude não tem uma fonte que os atualize sozinha: o Ombro mostra a idade do número em vez de
+  inventar um valor ([seção 4](#4-de-onde-vem-o-uso-de-5-h-e-da-semana)).
+- **Telinhas B, C, D e WeAct:** ainda só pelo repositório (precisam da biblioteca GPL da tela, que não vai no app).
+- É uma beta: abra uma [issue](https://github.com/jvrodrigs/ombro-screen/issues) com o relatório do Diagnóstico
+  (Copiar relatório) se algo der errado.
+
+### Privacidade
+
+Tudo roda no seu Mac: sem conta, sem nuvem, sem telemetria e sem chaves de API. O Ombro lê os arquivos locais dos
+agentes só para contar sessões, tokens e eventos, não lê credenciais e não envia nada pela rede. As integrações só mudam os arquivos de um agente depois da sua
+confirmação, com backup. Os dados do Ombro ficam em `~/.ombro-screen`.
+
+### Licença
+
+[MIT](LICENSE). Os componentes de terceiros que vão no app e as licenças deles estão em
+[docs/licenses.md](docs/licenses.md) e no app, em Ajustes > Sobre > Avisos de terceiros.
+
+### Usar pelo repositório
 
 O app usa o mesmo código deste repositório: tudo abaixo (o `tela.py`, o `ombrod`, a CLI e o simulador) continua
 funcionando para desenvolver, para as revisões de tela que o app ainda não traz (B, C, D e WeAct, que precisam da
@@ -357,7 +395,7 @@ Providers:     3 configurados, 2 instalados, 2 operacionais
 Sessões:       3
 Aguardando:    1
 Armazenamento: persistent
-IPC:           v1 (ombrod 0.4.0, PID 4321)
+IPC:           v1 (ombrod 0.9.0-beta.1, PID 4321)
 ```
 
 | Comando | O que mostra ou faz |
@@ -436,7 +474,7 @@ Se algum arquivo do Claude Code estiver estranho, o erro vira um aviso no termin
 
 Contas extras do Claude Code: `--claude-dir ~/.claude-conta2`.
 
-Fonte: JetBrains Mono (licença OFL, em `fontes/`). A biblioteca da tela (turing-smart-screen-python, GPL-3.0) não é redistribuída aqui. O que o Ombro.app redistribui, e o que ainda falta decidir sobre licenças, está em [docs/licenses.md](docs/licenses.md).
+Fonte: JetBrains Mono (licença OFL, em `fontes/`). A biblioteca da tela (turing-smart-screen-python, GPL-3.0) não é redistribuída aqui. O Ombro é MIT ([LICENSE](LICENSE)); o que o Ombro.app redistribui está em [docs/licenses.md](docs/licenses.md).
 
 ## Testes
 

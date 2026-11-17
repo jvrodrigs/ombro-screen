@@ -1,6 +1,6 @@
 # Distribuição do Ombro.app
 
-Como o Ombro.app é montado, assinado, notarizado e publicado. Para quem instala, veja
+Como o Ombro.app é montado, assinado (ad-hoc) e publicado. Para quem instala, veja
 [macos-installation.md](macos-installation.md); para desenvolver o app, [development.md](development.md).
 
 ## O que vai dentro do app
@@ -48,38 +48,39 @@ Isso roda, em ordem:
    e rodar o backend não grava nada dentro dele.
 2. `tauri build` com `src-tauri/tauri.release.conf.json`, que leva `bundle-resources/` para `Resources/`.
 
-Saída: `src-tauri/target/release/bundle/macos/Ombro.app` e `…/bundle/dmg/Ombro_<versão>_aarch64.dmg`.
+Saída: `src-tauri/target/release/bundle/macos/Ombro.app` e `…/bundle/dmg/Ombro_<versão>_aarch64.dmg` (o workflow de
+release o renomeia para `Ombro-v<versão>-macos-arm64.dmg`).
 
-Sem `APPLE_SIGNING_IDENTITY`, tudo sai com **assinatura ad-hoc**: serve para testar nesta máquina, mas não é
-equivalente a um app assinado e notarizado. O Gatekeeper recusa um app ad-hoc baixado da internet
-(`spctl` responde `rejected`).
+O build não grava a pasta pessoal de quem montou dentro do app: os `.pyc` guardam caminhos relativos e o `build:app`
+passa `--remap-path-prefix=$HOME=~` ao Rust. O `build_backend.py` falha se achar o `$HOME` em algum arquivo do
+backend.
 
-## Assinatura e notarização
+## Assinatura: ad-hoc, sem notarização
 
-O Ombro.app precisa de um certificado **Developer ID Application** (conta paga do Apple Developer Program) para
-abrir sem avisos em outros Macs. Com ele:
+As releases do Ombro saem com **assinatura ad-hoc** (`signingIdentity: "-"` no `tauri.release.conf.json`, e
+`build_backend.py --sign -` para os binários do runtime). O projeto não usa uma conta paga do Apple Developer
+Program, um certificado Developer ID nem a notarização da Apple.
+
+- **O que a assinatura ad-hoc garante:** cada binário e o bundle têm uma assinatura de código válida (o Apple Silicon
+  não roda código sem assinatura), com hardened runtime, e qualquer alteração depois do build a invalida.
+- **O que ela não garante:** não diz quem montou o app (não há Team ID) e a Apple não o examinou. **Não é
+  notarização.** O Gatekeeper recusa o app baixado da internet (`spctl` responde `rejected`), e quem instala
+  autoriza a primeira abertura em Ajustes do Sistema > Privacidade e Segurança > **Abrir Mesmo Assim**
+  ([macos-installation.md](macos-installation.md)). A procedência é conferida pelo `SHA256SUMS.txt` publicado junto.
+- O Python embarcado roda com hardened runtime. Na assinatura ad-hoc, só a validação de Team ID das bibliotecas é
+  dispensada (`com.apple.security.cs.disable-library-validation`, porque ad-hoc não tem Team ID); o build roda o
+  backend com o resto do hardened runtime valendo.
+
+Conferir:
 
 ```bash
-APPLE_SIGNING_IDENTITY="Developer ID Application: Nome (TEAMID)" npm run build:app
+codesign --verify --deep --strict --verbose=2 Ombro.app && codesign -dv Ombro.app 2>&1 | grep Signature
 ```
 
-- O script assina os 53 binários do runtime com essa identidade, `--options runtime` e `--timestamp`. O Tauri
-  assina o executável principal e o bundle.
-- O Python embarcado roda com hardened runtime **sem nenhuma exceção** (`backend/runtime.entitlements` está
-  vazio). O build testa isso: nas builds ad-hoc, só a validação de Team ID é dispensada (ad-hoc não tem Team ID);
-  todo o resto do hardened runtime vale durante o teste.
-- Notarização: o Tauri notariza (e grampeia o ticket) quando acha as credenciais no ambiente:
-  - chave de API do App Store Connect (preferida): `APPLE_API_ISSUER`, `APPLE_API_KEY` e `APPLE_API_KEY_PATH`;
-  - ou Apple ID: `APPLE_ID`, `APPLE_PASSWORD` (senha de app) e `APPLE_TEAM_ID`.
+A resposta esperada é `valid on disk`, `satisfies its Designated Requirement` e `Signature=adhoc`.
 
-Conferir um app assinado:
-
-```bash
-codesign --verify --deep --strict --verbose=2 Ombro.app && spctl --assess --type execute -vv Ombro.app && xcrun stapler validate Ombro.app
-```
-
-**Ainda não validado:** nenhuma build foi assinada com Developer ID nem notarizada até agora (o projeto não tem o
-certificado). O caminho está pronto e testado até onde dá sem ele.
+O `build_backend.py` ainda aceita `--sign "Developer ID Application: …"` para quem tiver um certificado, mas esse
+caminho não é usado nas releases nem foi validado.
 
 ## GitHub Actions
 
@@ -87,43 +88,36 @@ certificado). O caminho está pronto e testado até onde dá sem ele.
 | --- | --- | --- |
 | `tests.yml` | todo push e PR | os testes do backend Python (3.9 a 3.14) e o ruff |
 | `app.yml` | push e PR que mexem em `app/` | tipos, testes e build da interface (Ubuntu); fmt, clippy e testes do Rust (macOS) |
-| `release.yml` | tag `v*`, ou manual | monta o app e o DMG; com os secrets, assina e notariza; numa tag, cria um **rascunho** de release |
+| `release.yml` | tag `v*`, ou manual | testa, monta o app e o DMG com assinatura ad-hoc e confere; numa tag, cria um **rascunho** de pré-release |
 
-O `release.yml` confere que a tag, o `app/package.json` e o `app/src-tauri/Cargo.toml` têm a mesma versão,
-renomeia o DMG para `Ombro-<versão>-macos-arm64.dmg` e publica o `SHA256SUMS.txt` junto. Publicar o rascunho é
-sempre manual.
+O `release.yml` tem dois jobs:
 
-### Secrets
+1. **build** (`contents: read`): confere que a tag, o `app/package.json`, o `app/src-tauri/Cargo.toml` e o
+   `ombro/__init__.py` têm a mesma versão; roda os testes do Python, da interface e do Rust; monta; confere a
+   assinatura ad-hoc, a versão do `Info.plist`, que não há bancos, configurações, logs, a biblioteca GPL nem o
+   `$HOME` do runner no app, e o `hdiutil verify` do DMG; gera `Ombro-v<versão>-macos-arm64.dmg` e o
+   `SHA256SUMS.txt`.
+2. **draft-release** (só em tag; o único com `contents: write`): cria o rascunho com o DMG, o `SHA256SUMS.txt` e
+   notas com a instalação e a primeira abertura. Uma versão com `-` (ex.: `0.9.0-beta.1`) vira pré-release.
 
-Ficam no environment **release** (Settings > Environments > release), que deve ter uma regra de deployment
-aceitando só tags `v*` (e, se quiser, um revisor obrigatório). Pull requests nunca rodam o `release.yml`.
-
-| Secret | O que é |
-| --- | --- |
-| `APPLE_CERTIFICATE` | o `.p12` do Developer ID Application, em base64 (`openssl base64 -A -in cert.p12`) |
-| `APPLE_CERTIFICATE_PASSWORD` | a senha do `.p12` |
-| `APPLE_API_ISSUER`, `APPLE_API_KEY` | issuer e Key ID da chave de API do App Store Connect |
-| `APPLE_API_PRIVATE_KEY` | o conteúdo do arquivo `AuthKey_<id>.p8` |
-| `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | alternativa à chave de API (senha de app, não a da conta) |
-
-O certificado é importado num keychain temporário com senha aleatória, que é apagado no fim do job (mesmo se ele
-falhar). Nenhum secret é impresso; sem `APPLE_CERTIFICATE`, o workflow avisa e a build sai ad-hoc.
+Não há secrets: o workflow usa só o `GITHUB_TOKEN`. Pull requests nunca rodam o `release.yml`. Publicar o rascunho
+é sempre manual.
 
 ## Versões
 
-Versionamento semântico, com pré-releases antes da 1.0: `0.5.0-alpha.1`, `0.5.0-beta.1`, `0.9.0`… A versão vive
-em `app/package.json` (o `tauri.conf.json` lê dela) e em `app/src-tauri/Cargo.toml`; as duas precisam bater com a
-tag. Uma tag com `-` vira pré-release no GitHub.
+Versionamento semântico, com pré-releases antes da 1.0: `0.9.0-beta.1`, `0.9.0-beta.2`, `0.9.0`… A versão vive
+em `app/package.json` (o `tauri.conf.json` lê dela), em `app/src-tauri/Cargo.toml` e no `VERSAO` de
+`ombro/__init__.py` (o ombrod e a CLI); as três precisam bater com a tag. Uma tag com `-` vira pré-release no GitHub.
 
 ```bash
-git tag v0.5.0-alpha.1 && git push origin v0.5.0-alpha.1
+git tag v0.9.0-beta.1 && git push origin v0.9.0-beta.1
 ```
 
 ## Atualizações
 
 O app **não** se atualiza sozinho nesta versão. O updater do Tauri exige artefatos assinados com um par de chaves
 próprio (`TAURI_SIGNING_PRIVATE_KEY`), `createUpdaterArtifacts`, a chave pública no app e um endpoint servindo o
-`latest.json`. Ele só deve ser ligado junto com a assinatura Developer ID; até lá, Ajustes > Atualizações mostra a
+`latest.json`. Ele não está ligado nesta beta; até lá, Ajustes > Atualizações mostra a
 versão instalada e abre a página de releases.
 
 O backend vai dentro do app: atualizar o app atualiza o `ombrod`. Se o serviço em segundo plano estiver instalado,
@@ -133,8 +127,8 @@ o LaunchAgent aponta para o mesmo caminho do app, então a versão nova vale no 
 
 Antes de criar a tag:
 
-- [ ] O repositório tem LICENSE ([licenses.md](licenses.md)).
-- [ ] A versão foi atualizada em `app/package.json` e `app/src-tauri/Cargo.toml`.
+- [ ] A versão foi atualizada em `app/package.json` (e no `package-lock.json`), `app/src-tauri/Cargo.toml` (e no
+      `Cargo.lock`) e `ombro/__init__.py`.
 - [ ] CI verde: `tests.yml` e `app.yml`.
 - [ ] `npm run build:app` passa localmente (o build confere binários, a execução sem Homebrew e as licenças).
 - [ ] Testes de integração contra um ombrod --demo: `cargo test -- --ignored` (development.md).
@@ -143,9 +137,9 @@ Antes de criar a tag:
 
 Depois do workflow:
 
-- [ ] O rascunho tem o DMG e o SHA256SUMS; as notas dizem o estado da assinatura.
+- [ ] O rascunho é uma pré-release com o DMG e o SHA256SUMS; as notas explicam a primeira abertura.
 - [ ] Num Mac sem Homebrew nem Python (ou num usuário novo do macOS): baixar, conferir o SHA256, instalar em
-      Aplicativos, abrir sem avisos do Gatekeeper (se assinado), integrar um agente, ligar o serviço em segundo plano,
+      Aplicativos, autorizar a primeira abertura (Abrir Mesmo Assim), integrar um agente, ligar o serviço em segundo plano,
       reiniciar o Mac e conferir que o serviço voltou.
 - [ ] Publicar o rascunho.
 

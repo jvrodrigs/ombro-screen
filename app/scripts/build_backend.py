@@ -183,8 +183,11 @@ def copiar_backend(destino: Path) -> None:
 def compilar(runtime: Path, backend: Path) -> None:
     passo("pré-compilando (.pyc unchecked-hash)")
     subprocess.run(
-        [str(runtime / "bin" / "python3"), "-I", "-m", "compileall", "-q", "-j", "0", "--invalidation-mode",
-         "unchecked-hash", str(runtime / "lib" / f"python{PY}"), str(backend)],
+        # -s: o co_filename (o caminho que aparece nos tracebacks) fica relativo a bundle-resources/, sem a pasta
+        # de quem montou o app. -B e -f: sem eles, os módulos que o próprio compileall importa ganham um .pyc
+        # automático (com o caminho absoluto), que o compileall depois pularia como "já compilado".
+        [str(runtime / "bin" / "python3"), "-I", "-B", "-m", "compileall", "-q", "-f", "-j", "0", "--invalidation-mode",
+         "unchecked-hash", "-s", str(SAIDA), str(runtime / "lib" / f"python{PY}"), str(backend)],
         check=True, env={"PATH": "/usr/bin:/bin"},
     )
 
@@ -230,6 +233,16 @@ def verificar_binarios(runtime: Path) -> int:
         falha("binários com problema:\n  " + "\n  ".join(problemas))
     print(f"    {len(lista)} binários: só bibliotecas do sistema, arm64, macOS {MACOS_MIN[0]}.{MACOS_MIN[1]}+")
     return len(lista)
+
+
+def verificar_sem_caminho_pessoal(*pastas: Path) -> None:
+    """Nenhum arquivo leva a pasta pessoal de quem montou (o nome de usuário) para dentro do app."""
+    passo("conferindo que nenhum arquivo leva a pasta pessoal de quem montou")
+    casa = str(Path.home()).encode()
+    achados = [p for pasta in pastas for p in pasta.rglob("*") if p.is_file() and casa in p.read_bytes()]
+    if achados:
+        falha(f"{len(achados)} arquivo(s) com {casa.decode()}:\n  " + "\n  ".join(str(p.relative_to(SAIDA)) for p in achados[:20]))
+    print("    nenhum")
 
 
 def ambiente_limpo(pasta_ombro: Path) -> dict:
@@ -450,6 +463,9 @@ def avisos(runtime: Path, destino: Path) -> None:
                             capture_output=True, text=True, check=True).stdout.strip()
     secoes = []
 
+    # o próprio Ombro (MIT: o aviso vai junto de cada cópia)
+    shutil.copy2(RAIZ / "LICENSE", destino / "OMBRO-LICENSE.txt")
+
     # o runtime
     (destino / "python").mkdir()
     shutil.copy2(LICENCAS / "LGPL-2.1.txt", destino / "LGPL-2.1.txt")
@@ -543,6 +559,7 @@ def avisos(runtime: Path, destino: Path) -> None:
     secoes.append(("Interface (npm)", itens))
 
     texto = ["# Avisos de terceiros do Ombro.app", "",
+             "O Ombro é distribuído sob a licença MIT (texto em OMBRO-LICENSE.txt).", "",
              "O Ombro.app redistribui os componentes abaixo, cada um sob a sua licença. Os textos completos estão nas",
              "pastas indicadas, ao lado deste arquivo. A libusb e a libquadmath (LGPL-2.1) são bibliotecas dinâmicas,",
              "carregadas em tempo de execução, sem modificação. A biblioteca turing-smart-screen-python (GPL-3.0) não",
@@ -585,6 +602,7 @@ def main() -> None:
     elif not runtime.is_dir() or not backend.is_dir():
         falha(f"nada montado em {SAIDA}")
     verificar_binarios(runtime)
+    verificar_sem_caminho_pessoal(runtime, backend, SAIDA / "licenses")
     if args.sign:
         assinar(runtime, args.sign)
     verificar_execucao(runtime, backend)  # depois de assinar: o backend roda com o hardened runtime ligado

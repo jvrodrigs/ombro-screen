@@ -99,7 +99,7 @@ Só o simulador (sem `--usb`) funciona mesmo sem ela.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt     # Pillow, psutil, pyserial e numpy (a biblioteca da tela usa o numpy)
+pip install -r requirements.txt     # Pillow, psutil, pyserial, numpy (da biblioteca da tela) e mascotinhos (o mascote)
 brew install macmon                 # opcional: uso de CPU por tipo de núcleo no Apple Silicon (sem sudo)
 brew install libusb                 # no Mac: necessário para a tela revisão A mostrar a imagem certa (seção 5)
 ```
@@ -465,7 +465,7 @@ agentes, os hooks e o layout multiagente estão na seção 9; o ombrod, a IPC e 
 | `logging_config.py` | Formato dos logs, `--debug` e o filtro que evita repetir o mesmo aviso |
 | `layout_ombro.py` | O layout do Ombro (480×320): texto, barras, curva de tokens, aviso e o cloud |
 | `layout_minimal_v2.py` | O layout Minimal v2 (`--layout minimal-v2`), com CPU e RAM em barras e a política de cores |
-| `mascote.py` | O mascote: animação por estado, extras (zZ, "?", pontinhos, suor, confete) e a máquina de estados, com a forma do avatar |
+| `mascote.py` | O mascote: qual estado mostrar e qual avatar e cor usar; o movimento, o desenho e as trocas vêm do mascotinhos (o pacote `vivo`, o da demonstração dele; alerta e reset ainda no `classico`) |
 | `avatares.py`, `avatars/` | Os avatares (formato do open-bot-avatar): o catálogo, a geometria para a telinha e a escolha por agente |
 | `render.py` | Cores, fontes, formatação pt-BR e o painel clássico |
 | `saida.py` | Simulador no navegador e envio para a tela USB (com reconexão) |

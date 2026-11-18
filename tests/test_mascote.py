@@ -215,24 +215,12 @@ class Animacao(unittest.TestCase):
     def test_parametros_dependem_so_do_tempo(self):
         for estado in ESTADOS:
             self.assertEqual(parametros(estado, 1.37), parametros(estado, 1.37))
-            self.assertEqual(set(parametros(estado, 0)), set(CAMPOS))
+            self.assertLessEqual(set(CAMPOS), set(parametros(estado, 0)))  # o vivo pode trazer campos a mais (olhoAng)
 
-    def test_ocioso_pisca_a_cada_4_2_segundos(self):
-        self.assertEqual(parametros("ocioso", 0.05)["pisca"], 1.0)
-        self.assertEqual(parametros("ocioso", 1.0)["pisca"], 0.0)
-        self.assertEqual(parametros("ocioso", 4.25)["pisca"], 1.0)
-
-    def test_concluido_pula_uma_vez_e_depois_so_respira(self):
-        self.assertLess(parametros("concluido", .6)["dy"], -20)  # o pulinho de satisfação
-        respiro = [abs(parametros("concluido", 1.1 + i * .37)["dy"]) for i in range(100)]
-        self.assertLessEqual(max(respiro), 1.2 + 1e-9)  # nos 5 min seguintes, nada agitado
-
-    def test_pulos(self):
-        self.assertLess(parametros("esperando", .36)["dy"], -20)  # no ar
-        self.assertEqual(parametros("esperando", 1.0)["dy"], 0.0)  # no chão
+    # o movimento de ocioso, trabalhando, esperando e concluído é o do pacote vivo (test_mascote_mascotinhos.py);
+    # alerta e reset continuam com o do clássico, o de antes
+    def test_reset_pula_alto(self):
         self.assertLess(parametros("reset", .8)["dy"], -50)
-        self.assertEqual(parametros("trabalhando", 0)["dy"], -12.0)  # começa no alto do quique
-        self.assertAlmostEqual(parametros("trabalhando", .175)["dy"], 0.0)  # e encosta no chão
 
     def test_alerta_treme_de_um_lado_para_o_outro(self):
         lados = {parametros("alerta", t / 24)["dx"] > 0 for t in range(4)}
@@ -251,6 +239,45 @@ class Desenho(unittest.TestCase):
         m = Mascote(cor_fixa=(1, 2, 3))
         m.ir_para("trabalhando", 1.0)
         self.assertEqual(m.cor, (1, 2, 3))
+
+
+class Mascotinhos(unittest.TestCase):
+    """O desenho vem da biblioteca mascotinhos: a versão fixada, os seis estados e a JetBrains Mono Bold."""
+
+    def test_a_versao_instalada_e_a_fixada(self):
+        import re
+        from pathlib import Path
+
+        import mascotinhos
+
+        raiz = Path(__file__).resolve().parent.parent
+        req = re.search(r"^mascotinhos==(\S+)", (raiz / "requirements.txt").read_text(encoding="utf-8"), re.M)
+        lock = re.search(r"^mascotinhos==(\S+) --hash=sha256:[0-9a-f]{64}$",
+                         (raiz / "app" / "backend" / "requirements.lock").read_text(encoding="utf-8"), re.M)
+        self.assertIsNotNone(req, "requirements.txt deve fixar mascotinhos==X.Y.Z")
+        self.assertIsNotNone(lock, "o requirements.lock deve fixar mascotinhos com o hash do wheel")
+        self.assertEqual(req.group(1), lock.group(1))
+        self.assertEqual(mascotinhos.__version__, req.group(1), "instale as dependências: pip install -r requirements.txt")
+
+    def test_a_biblioteca_tem_os_seis_estados(self):
+        import mascote
+
+        self.assertEqual(set(mascote.BIBLIOTECA.estados()), set(ESTADOS))
+
+    def test_o_zz_usa_a_jetbrains_mono_bold_igual_a_de_fontes(self):
+        import hashlib
+        from pathlib import Path
+
+        import mascote
+        import mascotinhos
+        from render import S
+
+        f = mascote.ESTILO.fonte(20)
+        self.assertEqual(f.getname(), ("JetBrains Mono", "Bold"))
+        self.assertEqual(f.size, 20 * S)
+        nossa = Path(__file__).resolve().parent.parent / "fontes" / "JetBrainsMono-Bold.ttf"
+        self.assertEqual(hashlib.sha256(mascotinhos.arquivo_jetbrains_mono().read_bytes()).hexdigest(),
+                         hashlib.sha256(nossa.read_bytes()).hexdigest())
 
 
 if __name__ == "__main__":

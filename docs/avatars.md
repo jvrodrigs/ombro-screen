@@ -21,8 +21,13 @@ cor, os olhos (pílulas que piscam e olham em volta), o volume e o movimento sã
   parada, na pose do estado de cada sessão.
 - **Na telinha** o desenho é um adaptador mínimo em Python (`avatares.py`): lê o mesmo JSON, transforma o path em
   polígonos (os comandos `M L H V C S Q T A Z`, a regra nonzero do SVG) e põe os olhos como o contrato descreve
-  (4x11 unidades vezes a escala, aumentados até 1,45x onde cabem, como no motor). O movimento, os estados e os
-  extras (zZ, "?", pontinhos, gota, confete) continuam os do `mascote.py`: só a forma vem do avatar. Quando o corpo
+  (4x11 unidades vezes a escala, aumentados até 1,45x onde cabem, como no motor). O movimento e o desenho (os seis
+  estados, os olhos, as piscadas e os extras) são os da biblioteca [mascotinhos](https://github.com/GilsonB12/mascotinhos):
+  ocioso, trabalhando, esperando e concluído são os do pacote `vivo`, o da demonstração dela (dorme de olhos fechados
+  com zzZ; trabalha de olhos semicerrados com linhas e engrenagem; espera com "?"; conclui feliz, com ✓ e faíscas);
+  alerta e reset ainda são os do `classico` (os de antes), até passarem ao `vivo` numa etapa seguinte. A mistura de
+  um estado no outro e a troca de avatar também são as da biblioteca (o `Animador`); o `mascote.py` só decide o
+  estado e qual avatar e cor usar. Só a forma vem do avatar. Quando o corpo
   inclina (esperando, concluído), os olhos andam de lado como andavam no cloud antigo, cujos olhos ficavam mais
   altos: num avatar de olhos mais baixos, a diferença vira um deslize a mais (`ALTURA_OLHAR`).
 - A telinha desenha o avatar plano (sem o volume do motor), como sempre desenhou o cloud: em 480x320, a cada
@@ -112,4 +117,5 @@ Para mudar o padrão de um agente, troque o `avatar` (e a `color`) dele em `prov
 ## Licença
 
 O formato e o motor são do open-bot-avatar (MIT); a licença dele vai nos avisos de terceiros do Ombro.app. Os
-avatares em `avatars/` são do Ombro, desenhados para ele, e seguem a licença do projeto.
+avatares em `avatars/` são do Ombro, desenhados para ele, e seguem a licença do projeto. O mascotinhos (MIT, com o
+NOTICE das partes que vieram do Ombro e a OFL da fonte que ele traz) também vai nos avisos de terceiros.

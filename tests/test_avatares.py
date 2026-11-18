@@ -208,7 +208,7 @@ class Mascote_(unittest.TestCase):
         t = mascote.TRANSICAO * .45  # perto do meio, ainda com a forma antiga
         alturas, olhos = [], []
         for trocando in (False, True):
-            m = mascote.Mascote(cor_modo="agente", cor_fixa=(200, 100, 80))
+            m = mascote.Mascote(cor_modo="agente", cor_fixa=(200, 100, 80), estado="esperando")  # de olhos abertos
             m.inicio = 0.0
             if trocando:
                 m.usar(c.avatares["cubo"], None, agora=0.0)
@@ -234,15 +234,14 @@ class Mascote_(unittest.TestCase):
     def test_olhar_acompanha_a_inclinacao_como_o_cloud_antigo(self):
         f = mascote.forma_de(avatares.catalogo().avatares["ombro-cloud"])
         e = f.olhos[0]
-        p = mascote.parametros("esperando", 0.0)
-        self.assertLess(p["rot"], 0)
+        p = dict(mascote.parametros("ocioso", 0.0), rot=-6.0)  # uma inclinação qualquer: a geometria é a do palco
         # deslocamento lateral dos olhos pela inclinação = o que o cloud antigo teria (altura ALTURA_OLHAR)
         com = mascote._corpo(p, e["cx"] + mascote._olhar_x(p, e), e["cy"])[0] - mascote._corpo(dict(p, rot=0.0), e["cx"], e["cy"])[0]
         import math
         esperado = mascote.ALTURA_OLHAR * math.sin(math.radians(p["rot"]))
         self.assertAlmostEqual(com, esperado, delta=abs(esperado) * .05)
-        trab = mascote.parametros("trabalhando", 0.4)
-        self.assertEqual(mascote._olhar_x(trab, e), trab["olhaX"])  # sem inclinação, o olhar é o de sempre
+        reto = dict(p, rot=0.0)
+        self.assertEqual(mascote._olhar_x(reto, e), reto["olhaX"])  # sem inclinação, o olhar é o de sempre
 
     def test_modos_de_cor(self):
         c = avatares.catalogo()

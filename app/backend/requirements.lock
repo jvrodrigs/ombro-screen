@@ -3,6 +3,7 @@
 # (app/scripts/build_backend.py) recusa qualquer arquivo diferente.
 importlib-resources==7.1.0 --hash=sha256:1bd7b48b4088eddb2cd16382150bb515af0bd2c70128194392725f82ad2c96a1
 libusb-package==1.0.30.1 --hash=sha256:46c7ca9931c46cd63ff89ce17c947653c3c5dec46a441c6bc103f1fda86d52df
+mascotinhos==0.2.0 --hash=sha256:d648df6de5bcd72d953afa82a2f9dc1f44124de8b89e2375b66002c7fc759871
 numpy==2.5.4 --hash=sha256:ffa6ce09a1c6a08e9667dd9c97aa0b14184e8d18f2a14b78b2a2328c9147f076
 pillow==13.0.0 --hash=sha256:d9b0a2bee3f3e03e9f29057aedb807dbf1e1d96ee1b9d0f422d9db6c8583271d
 psutil==7.2.2 --hash=sha256:1a7b04c10f32cc88ab39cbf606e117fd74721c831c98a27dc04578deb0c16979

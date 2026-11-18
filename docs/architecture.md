@@ -182,7 +182,11 @@ quando o socket não responde, e já tem as garantias de ordem, repetição e at
 
 ## O mascote e os avatares
 
-O `mascote.py` cuida do movimento (a máquina de estados, os pulos, os extras); a forma vem de um avatar
+O `mascote.py` decide o estado do mascote (qual mostrar) e pede o avatar e a cor; o resto é da biblioteca
+[mascotinhos](https://github.com/GilsonB12/mascotinhos), fixada em `requirements.txt` e, com o hash do wheel, em
+`app/backend/requirements.lock`: o movimento e o desenho (os pulos, os olhos, os extras) do pacote `vivo`, o da
+demonstração dela (alerta e reset ainda no `classico`, os de antes), e o `Animador`, de quem o `Mascote` herda a
+mistura de um estado no outro, a troca de avatar e o realce da cor. A forma vem de um avatar
 (`avatars/`, no formato do open-bot-avatar), lido pelo `avatares.py`, que transforma o path em polígonos e decide
 qual avatar e qual cor usar. A cada coleta, o laço (`ombro/app.py`) diz ao mascote de quem ele fala (o Claude nos
 layouts de um agente; o agente mais urgente, o em foco ou o único ativo no multiagente) e o avatar dele entra na

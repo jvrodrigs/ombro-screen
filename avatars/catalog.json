@@ -70,6 +70,27 @@
       "tags": ["neutro", "futurista"],
       "color": "#E7C25E",
       "random": true
+    },
+    {
+      "id": "bolota",
+      "description": "Bolinha macia e um pouco torta: simples, simpática e sempre por perto.",
+      "tags": ["simples", "simpático"],
+      "color": "#E07A57",
+      "random": true
+    },
+    {
+      "id": "broto",
+      "description": "Bolinha com um broto de folhas no alto: aprende e cresce a cada tarefa.",
+      "tags": ["aprendiz", "crescimento"],
+      "color": "#7FB77E",
+      "random": true
+    },
+    {
+      "id": "fantasma",
+      "description": "Fantasminha de barra ondulada: discreto, trabalha em segundo plano.",
+      "tags": ["discreto", "segundo plano"],
+      "color": "#6FA8DC",
+      "random": true
     }
   ]
 }

@@ -543,7 +543,7 @@ def avisos(runtime: Path, destino: Path) -> None:
     # a fonte
     (destino / "fontes").mkdir()
     shutil.copy2(RAIZ / "fontes" / "OFL.txt", destino / "fontes" / "JetBrainsMono-OFL.txt")
-    secoes.append(("Fontes", [("JetBrains Mono (a de fontes/ e a Bold que vem no mascotinhos)", "OFL-1.1",
+    secoes.append(("Fontes", [("JetBrains Mono (a de fontes/, a Bold na interface do app e a Bold que vem no mascotinhos)", "OFL-1.1",
                                "fontes/JetBrainsMono-OFL.txt")]))
 
     # os crates Rust do app (só os que entram no binário)

@@ -27,6 +27,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    css: false,
+    // CSS fora dos testes, menos o base.css: um teste lê o @font-face da fonte dos extras (?raw)
+    css: { include: [/styles\/base\.css/] },
   },
 });

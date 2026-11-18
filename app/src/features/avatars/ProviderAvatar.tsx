@@ -1,5 +1,5 @@
 import { AvatarView } from "./AvatarView";
-import { catalog, chooseAvatar, colorFor, moodFor, type RandomMode } from "./catalog";
+import { catalog, chooseAvatar, colorFor, type RandomMode } from "./catalog";
 import { sessionState, STATE_LABEL } from "./state";
 import { useMascotState } from "./useMascotState";
 import type { ProviderInfo, SessionStatus } from "../../types/ombro";
@@ -25,15 +25,15 @@ export function ProviderAvatar({ p, size = 32 }: { p: ProviderLike; size?: numbe
       color={color}
       size={size}
       live={acompanha}
-      mood={moodFor(acompanha ? estado : undefined)}
-      state={acompanha ? estado : undefined}
+      state={acompanha ? estado : "ocioso"}
+      extras={acompanha}
       label={acompanha ? `${p.name ?? p.id}: ${av.name}, ${STATE_LABEL[estado]}` : `${p.name ?? p.id}: ${av.name}`}
     />
   );
 }
 
 /** O avatar de uma sessão: no modo "um por sessão", o sorteado para ela (o mesmo hash da telinha); senão, o do agente.
- * Parado (uma lista pode ser longa), na pose do estado da sessão. */
+ * Parado (uma lista pode ser longa), na pose do estado da sessão, sem os extras (pequeno demais para eles). */
 export function SessionAvatar({
   provider,
   sessionId,
@@ -59,7 +59,8 @@ export function SessionAvatar({
       definition={av.definition}
       color={provider.avatar?.color ?? colorFor(cat, provider.id, av)}
       size={size}
-      mood={moodFor(sessionState(status))}
+      state={sessionState(status)}
+      extras={false}
       label={av.name}
     />
   );

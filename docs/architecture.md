@@ -190,7 +190,7 @@ mistura de um estado no outro, a troca de avatar e o realce da cor. A forma vem 
 (`avatars/`, no formato do open-bot-avatar), lido pelo `avatares.py`, que transforma o path em polígonos e decide
 qual avatar e qual cor usar. A cada coleta, o laço (`ombro/app.py`) diz ao mascote de quem ele fala (o Claude nos
 layouts de um agente; o agente mais urgente, o em foco ou o único ativo no multiagente) e o avatar dele entra na
-próxima troca de estado. O Ombro.app desenha os mesmos arquivos com o motor do open-bot-avatar. Detalhes:
+próxima troca de estado. O Ombro.app desenha os mesmos arquivos com o mascotinhos para JavaScript, com as mesmas animações. Detalhes:
 [avatars.md](avatars.md).
 
 ## Ombro.app: a interface gráfica

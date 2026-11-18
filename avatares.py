@@ -3,7 +3,7 @@
 Formato: o do open-bot-avatar (https://github.com/DominikScholz/open-bot-avatar, MIT), contrato v1. Cada
 avatar é um JSON em avatars/defs/<id>.json com um path SVG numa caixa 0..100 e o par de olhos; o
 avatars/catalog.json traz o que é do Ombro (descrição, cor, se entra no sorteio, o padrão de cada agente).
-O Ombro.app lê os mesmos arquivos (com o motor do open-bot-avatar); este módulo é o adaptador mínimo para a
+O Ombro.app lê os mesmos arquivos (com o mascotinhos para JavaScript); este módulo é o adaptador mínimo para a
 telinha: transforma o path em polígonos e decide qual avatar e qual cor usar. Só biblioteca padrão.
 
 Escolha, por agente (preferência no config.json, bloco "avatars"):

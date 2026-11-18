@@ -14,7 +14,7 @@ import mascote
 from config import ConfigInvalida, ler_arquivo, resolver
 from ombro import preferencias
 
-IDS = ("ombro-cloud", "sereno", "orbita", "cubo", "scout", "pixel", "chevron", "maestro", "nova")
+IDS = ("ombro-cloud", "sereno", "orbita", "cubo", "scout", "pixel", "chevron", "maestro", "nova", "bolota", "broto", "fantasma")
 
 
 class Catalogo(unittest.TestCase):
@@ -128,10 +128,10 @@ class Escolha(unittest.TestCase):
 
     def test_aleatorio_iguais_aos_do_app(self):
         e = avatares.escolher
-        self.assertEqual(e("aleatorio", "codex", "sessao", 0, "s-1").id, "scout")
-        self.assertEqual(e("aleatorio", "codex", "sessao", 0, "s-2").id, "cubo")
-        self.assertEqual(e("aleatorio", "claude", "inicio", 12345).id, "sereno")
-        self.assertEqual(e("aleatorio", None, "inicio", 7).id, "chevron")
+        self.assertEqual(e("aleatorio", "codex", "sessao", 0, "s-1").id, "broto")
+        self.assertEqual(e("aleatorio", "codex", "sessao", 0, "s-2").id, "fantasma")
+        self.assertEqual(e("aleatorio", "claude", "inicio", 12345).id, "chevron")
+        self.assertEqual(e("aleatorio", None, "inicio", 7).id, "pixel")
 
     def test_aleatorio_estavel_e_variado(self):
         e = avatares.escolher

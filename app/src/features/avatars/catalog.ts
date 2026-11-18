@@ -1,8 +1,9 @@
 // Os avatares do Ombro no app: os mesmos arquivos que a telinha usa (avatars/ na raiz do repositório), no formato
-// do open-bot-avatar (contrato v1), com a mesma regra de escolha do backend (avatares.py). O que o ombrod decidiu
+// do open-bot-avatar (contrato v1, o que o mascotinhos lê), conferidos e desenhados pelo mascotinhos, com a mesma
+// regra de escolha do backend (avatares.py). O que o ombrod decidiu
 // (o "aleatório ao iniciar" já sorteado) chega pela IPC; esta cópia da regra serve para o que é por sessão e para
 // mostrar a galeria sem depender do ombrod.
-import { validateAvatar, type AvatarDefinition, type AvatarMotion } from "open-bot-avatar";
+import { lerDefinicao, validarDefinicao, type Definicao } from "mascotinhos";
 import catalogJson from "../../../../avatars/catalog.json";
 import type { ProviderId } from "../../types/ombro";
 
@@ -21,7 +22,7 @@ export interface AvatarEntry {
   tags: string[];
   color: string;
   random: boolean;
-  definition: AvatarDefinition;
+  definition: Definicao;
 }
 
 export interface Catalog {
@@ -32,7 +33,7 @@ export interface Catalog {
   providerColor: Record<string, string>;
   /** Os do sorteio, em ordem de id: a mesma ordem do backend (avatares.Catalogo.sorteaveis). */
   pool: string[];
-  /** Definições que não passaram no validador do open-bot-avatar (não entram no catálogo). */
+  /** Definições que não passaram no validador do mascotinhos (não entram no catálogo). */
   invalid: { id: string; errors: string[] }[];
 }
 
@@ -47,12 +48,14 @@ export function buildCatalog(json: CatalogJson = catalogJson as CatalogJson, def
   const avatars: AvatarEntry[] = [];
   const invalid: Catalog["invalid"] = [];
   for (const meta of json.avatars) {
-    const r = validateAvatar(defs[meta.id]);
-    if (!r.ok) {
-      invalid.push({ id: meta.id, errors: r.errors });
+    const dados = defs[meta.id];
+    const erros = dados === undefined ? [`defs/${meta.id}.json não existe`] : validarDefinicao(dados, meta.id).erros;
+    if (erros.length) {
+      invalid.push({ id: meta.id, errors: erros });
       continue;
     }
-    avatars.push({ id: meta.id, name: r.value.name, description: meta.description, tags: meta.tags, color: meta.color.toUpperCase(), random: meta.random, definition: r.value });
+    const definition = lerDefinicao(dados, meta.id);
+    avatars.push({ id: meta.id, name: definition.nome, description: meta.description, tags: meta.tags, color: meta.color.toUpperCase(), random: meta.random, definition });
   }
   const byId = new Map(avatars.map((a) => [a.id, a]));
   const providerDefault: Record<string, string> = {};
@@ -115,11 +118,4 @@ export function chooseAvatar(
 /** A cor de um avatar: a do agente (o padrão), ou a do próprio avatar quando não há agente. */
 export function colorFor(cat: Catalog, provider: ProviderId | null, avatar: AvatarEntry): string {
   return (provider && cat.providerColor[provider]) || avatar.color;
-}
-
-/** O estado do mascote do Ombro -> o humor do open-bot-avatar (idle, thinking, happy). */
-export function moodFor(state: string | undefined): AvatarMotion {
-  if (state === "trabalhando" || state === "alerta") return "thinking";
-  if (state === "concluido" || state === "reset") return "happy";
-  return "idle";
 }

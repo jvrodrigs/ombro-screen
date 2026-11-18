@@ -30,6 +30,8 @@ import mascote  # noqa: E402
 ARQUIVO = Path(__file__).resolve().parent / "referencias_mascote.json"
 TEMPOS_QUADRO = (0.0, 0.07, 0.3, 0.6, 1.1, 1.37, 2.0, 2.71, 4.25, 6.05)  # os do arquivo
 NATIVOS = ("ocioso", "trabalhando", "esperando", "concluido")
+# os avatares que o motor antigo desenhou (os do arquivo); Bolota, Broto e Fantasma chegaram depois e não têm "antes"
+ANTIGOS = ("ombro-cloud", "sereno", "orbita", "cubo", "scout", "pixel", "chevron", "maestro", "nova")
 
 
 def ambiente() -> dict:
@@ -48,7 +50,8 @@ def _resumo(imagens) -> str:
 def quadros(estados) -> dict:
     """Um resumo por avatar e estado, como o arquivo: os instantes de TEMPOS_QUADRO e os extras a meio caminho."""
     out = {}
-    for aid, av in avatares.catalogo().avatares.items():
+    for aid in ANTIGOS:
+        av = avatares.catalogo().avatares[aid]
         f, cor = mascote.forma_de(av), avatares.cor_hex(av.cor)
         for e in estados:
             imgs = [mascote.desenhar_cloud(mascote.parametros(e, t), e, t, cor, 1.0, f) for t in TEMPOS_QUADRO]
@@ -86,6 +89,10 @@ class Historico(unittest.TestCase):
         for e in NATIVOS:
             diferentes = sum(antes != self._pose(e, t) for t, antes in zip(self.tempos, self.dados["poses"][e]))
             self.assertGreater(diferentes, len(self.tempos) // 2, f"{e}: ainda parece o movimento antigo")
+
+    def test_a_referencia_e_dos_nove_avatares_de_antes(self):
+        ref = self._pixels()
+        self.assertEqual(sorted({k.split("/")[0] for k in ref}), sorted(ANTIGOS))
 
     def test_os_quadros_de_alerta_e_reset_sao_os_de_antes(self):
         ref = self._pixels()

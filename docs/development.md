@@ -79,9 +79,11 @@ Os tamanhos do macOS saem do `docs/icon.png` com `npx tauri icon ../docs/icon.pn
 
 ## Avatares
 
-`src/features/avatars/`: o catálogo (os mesmos arquivos de `avatars/` que a telinha usa, validados pelo motor do
-open-bot-avatar), a regra de escolha (igual à do `avatares.py`, inclusive o hash do aleatório por sessão), o
-`AvatarView` (estático nas listas, animado só na prévia da galeria) e a seção Aparência > Avatares. Detalhes:
+`src/features/avatars/`: o catálogo (os mesmos arquivos de `avatars/` que a telinha usa, validados pelo
+mascotinhos), a regra de escolha (igual à do `avatares.py`, inclusive o hash do aleatório por sessão), as animações
+(`animacoes.ts`: o pacote `vivo`, com alerta e reset do `classico`, como no `mascote.py`), o `AvatarView` (o player
+do mascotinhos nos cartões dos agentes e na prévia da galeria; um SVG parado nas listas e miniaturas) e a seção
+Aparência > Avatares. Detalhes:
 [avatars.md](avatars.md).
 
 Montar, assinar e publicar: [distribution.md](distribution.md).

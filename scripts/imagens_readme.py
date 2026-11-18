@@ -59,14 +59,17 @@ def galeria() -> Image.Image:
     import mascote
 
     cat = avatares.catalogo()
-    estados = ("ocioso", "trabalhando", "esperando", "concluido", "ocioso", "alerta", "trabalhando", "concluido", "esperando")
+    estados = ("ocioso", "trabalhando", "esperando", "concluido", "ocioso", "alerta", "trabalhando", "concluido", "esperando",
+               "concluido", "trabalhando", "esperando")
+    colunas = 6  # os doze em duas linhas
     agente = {v: k for k, v in cat.por_agente.items()}
     cw, ch = mascote.COL_W, mascote.COL_H
-    img = Image.new("RGB", (16 + 5 * (cw + 8), 2 * (ch + 46) + 8), FUNDO)
+    linhas = -(-len(cat.avatares) // colunas)
+    img = Image.new("RGB", (16 + colunas * (cw + 8), linhas * (ch + 46) + 8), FUNDO)
     d = ImageDraw.Draw(img)
     for i, av in enumerate(cat.avatares.values()):
-        x, y = 16 + (i % 5) * (cw + 8), 8 + (i // 5) * (ch + 46)
-        est = estados[i]
+        x, y = 16 + (i % colunas) * (cw + 8), 8 + (i // colunas) * (ch + 46)
+        est = estados[i % len(estados)]
         cor = avatares.cor_hex(cat.cor_agente[agente[av.id]] if av.id in agente else av.cor)
         cam = mascote.desenhar_cloud(mascote.parametros(est, 1.2), est, 1.2, cor, forma=mascote.forma_de(av))
         cam = cam.resize((cw, ch), Image.LANCZOS)

@@ -1,5 +1,17 @@
 @import "./tokens.css";
 
+/* A JetBrains Mono Bold oficial do repositório (fontes/, OFL-1.1, a mesma da telinha), sem modificação: os extras de
+   texto do mascotinhos (z, Z, "?", "!") pedem a família "JetBrains Mono" em 700. Só esse peso, e só quem pede a
+   família por nome a usa: o resto do app segue com as fontes do sistema (--font-sans, --font-mono). Vai junto no
+   app (sem CDN); a licença está nos avisos de terceiros. */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../../../fontes/JetBrainsMono-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 *,
 *::before,
 *::after {

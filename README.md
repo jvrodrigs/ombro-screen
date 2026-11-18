@@ -168,10 +168,10 @@ O **concluído** começa com um pulinho e um ✓ acima da cabeça, com olhos em 
 
 **Cor:** por padrão, a cor do agente (o Claude laranja, o Codex verde, o Cursor azul). Com `"cor_modo": "sorteada"`, o cloud ganha uma cor sorteada a cada troca de estado (matiz livre, saturação e luminosidade limitadas para ler bem sobre o fundo escuro). Para fixar uma cor: `--cor-mascote "#3D7A4F"`.
 
-**Avatares:** a forma do mascote é um avatar, no formato do [open-bot-avatar](https://github.com/DominikScholz/open-bot-avatar) (MIT). O padrão é o **Ombro Cloud**; cada agente pode ter o seu (Codex: Órbita; Cursor: Cubo), um específico ou um aleatório, e os estados e animações acima valem para todos. Os nove avatares, como escolher e como criar um: [docs/avatars.md](docs/avatars.md).
+**Avatares:** a forma do mascote é um avatar, no formato do [open-bot-avatar](https://github.com/DominikScholz/open-bot-avatar) (MIT). O padrão é o **Ombro Cloud**; cada agente pode ter o seu (Codex: Órbita; Cursor: Cubo), um específico ou um aleatório, e os estados e animações acima valem para todos. A telinha e o Ombro.app desenham e animam os avatares com a mesma biblioteca, o [mascotinhos](https://github.com/GilsonB12/mascotinhos) (MIT). Os doze avatares, como escolher e como criar um: [docs/avatars.md](docs/avatars.md).
 
 <p align="center">
-  <img src="docs/avatares.png" width="760" alt="Os nove avatares do Ombro como a telinha os desenha">
+  <img src="docs/avatares.png" width="760" alt="Os doze avatares do Ombro como a telinha os desenha">
 </p>
 
 ## 4. De onde vem o uso de 5 h e da semana

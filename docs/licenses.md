@@ -36,10 +36,13 @@ dele, e ela traz a JetBrains Mono Bold (OFL-1.1, com o texto da licença). O whe
 hash fixados em `app/backend/requirements.lock`, e o build copia `LICENSE`, `NOTICE` e `OFL.txt` dele para os avisos
 de terceiros (e falha se faltar algum).
 
-O **formato** dos avatares e o **motor** que os desenha no app são do
-[open-bot-avatar](https://github.com/DominikScholz/open-bot-avatar) (MIT, © 2026 Dominik Scholz): o pacote npm
-`open-bot-avatar` vai no Ombro.app com a licença dele nos avisos de terceiros. Da galeria do projeto, nada foi
-usado: os nove avatares são próprios.
+No **Ombro.app**, o desenho e o movimento dos avatares também vêm do mascotinhos, pelo pacote npm `mascotinhos`
+(a mesma biblioteca para JavaScript, versão fixada no `app/package-lock.json`); o build copia o `LICENSE` e o `NOTICE`
+dele para os avisos de terceiros. As formas Bolota, Broto e Fantasma (`avatars/defs/`) vêm das formas de exemplo dele.
+
+O **formato** dos avatares é o do [open-bot-avatar](https://github.com/DominikScholz/open-bot-avatar) (MIT, © 2026
+Dominik Scholz), o contrato v1. O motor dele foi o do app até a troca pelo mascotinhos e não vai mais no Ombro.app.
+Da galeria do projeto, nada foi usado: os avatares são próprios.
 
 ## O que vai dentro do Ombro.app
 
@@ -59,9 +62,9 @@ um componente não tiver texto. No app: Ajustes > Sobre > Avisos de terceiros.
 | importlib_resources, libusb-package | Apache-2.0 | |
 | 249 crates Rust do app | MIT, Apache-2.0, BSD, Zlib, Unicode-3.0, MPL-2.0 (5 crates do Servo) | nenhum GPL/LGPL/AGPL; os 18 que não publicam o arquivo de licença recebem o texto padrão da licença declarada, com os autores do Cargo.toml |
 | React, React DOM, scheduler, @tauri-apps/api | MIT; Apache-2.0 ou MIT | |
-| open-bot-avatar (o motor dos avatares no app) | MIT | o formato dos avatares (`avatars/`) também é o dele |
+| mascotinhos (npm, o desenho e o movimento dos avatares no app) | MIT | `LICENSE` e `NOTICE` do pacote; o formato dos avatares (`avatars/`) é o do open-bot-avatar (MIT), que não vai mais no app |
 | Lucide (ícones da interface) | ISC | |
-| JetBrains Mono (fonte da telinha) | OFL-1.1 | a de `fontes/` (Regular, Medium e Bold) e a Bold dentro do mascotinhos (o mesmo arquivo da Bold de `fontes/`, versão 2.304; um teste confere) |
+| JetBrains Mono (fonte da telinha e dos extras de texto do mascote no app) | OFL-1.1 | a de `fontes/` (Regular, Medium e Bold), a Bold na interface do app (o mesmo arquivo de `fontes/`, sem modificação, por `@font-face` local em `app/src/styles/base.css`) e a Bold dentro do mascotinhos (o mesmo arquivo da Bold de `fontes/`, versão 2.304; um teste confere) |
 
 Conferir de novo depois de mudar dependências: rodar o build (ele refaz a lista) e, para os crates,
 `cargo tree -e normal --target aarch64-apple-darwin` dentro de `app/src-tauri`.

@@ -168,11 +168,15 @@ describe("avatares", () => {
     await screen.findByRole("img", { name: "Codex: Órbita" });
     await userEvent.click(screen.getAllByRole("button", { name: "Escolher…" })[1]);
     const dialogo = await screen.findByRole("dialog");
-    expect(within(within(dialogo).getByRole("radiogroup", { name: "Avatares" })).getAllByRole("radio")).toHaveLength(11); // padrão, aleatório e os nove
-    await userEvent.click(within(dialogo).getByRole("radio", { name: /^Nova/ }));
+    expect(within(within(dialogo).getByRole("radiogroup", { name: "Avatares" })).getAllByRole("radio")).toHaveLength(14); // padrão, aleatório e os doze
+    await userEvent.click(within(dialogo).getByRole("radio", { name: /^Fantasma/ })); // um dos três novos
+    // a prévia grande é a única no palco (com o espaço dos extras); as miniaturas e os cartões seguem no corpo
+    expect(dialogo.querySelectorAll(".avatar-palco")).toHaveLength(1);
+    expect(dialogo.querySelector(".avatar-picker-stage .avatar-palco")).not.toBeNull();
+    expect(document.querySelectorAll(".avatar-palco")).toHaveLength(1);
     await userEvent.click(within(dialogo).getByRole("button", { name: "Usar" }));
-    expect(api.configUpdate).toHaveBeenCalledWith({ "avatares.codex": "nova" }, true);
-    expect(await screen.findByRole("img", { name: "Codex: Nova" })).toBeInTheDocument();
+    expect(api.configUpdate).toHaveBeenCalledWith({ "avatares.codex": "fantasma" }, true);
+    expect(await screen.findByRole("img", { name: "Codex: Fantasma" })).toBeInTheDocument();
   });
 
   it("aleatório por sessão e cor do agente", async () => {

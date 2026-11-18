@@ -5,8 +5,9 @@ import { useOmbro } from "../../hooks/useOmbro";
 import { errorMessage } from "../../services/api";
 import type { ConfigInfo, ProviderId } from "../../types/ombro";
 import { AvatarView } from "./AvatarView";
-import { catalog, chooseAvatar, colorFor, moodFor, type AvatarChoice, type AvatarSlot, type RandomMode } from "./catalog";
-import type { AvatarMotion } from "open-bot-avatar";
+import { PROPORCAO_PALCO } from "./animacoes";
+import { catalog, chooseAvatar, colorFor, type AvatarChoice, type AvatarSlot, type RandomMode } from "./catalog";
+import type { MascotState } from "./state";
 
 const SLOTS: { slot: AvatarSlot; label: string; hint: string }[] = [
   { slot: "claude", label: "Claude Code", hint: "Nos layouts do Ombro e Minimal v2, e no multiagente" },
@@ -15,10 +16,12 @@ const SLOTS: { slot: AvatarSlot; label: string; hint: string }[] = [
   { slot: "padrao", label: "Ombro", hint: "Quando nenhum agente está em foco no multiagente" },
 ];
 
-const MOODS: { value: AvatarMotion; label: string }[] = [
-  { value: "idle", label: "Ocioso" },
-  { value: "thinking", label: "Trabalhando" },
-  { value: "happy", label: "Concluído" },
+// os quatro estados principais, com as animações do pacote vivo (as mesmas da telinha)
+const ESTADOS: { value: MascotState; label: string }[] = [
+  { value: "ocioso", label: "Ocioso" },
+  { value: "trabalhando", label: "Trabalhando" },
+  { value: "esperando", label: "Esperando" },
+  { value: "concluido", label: "Concluído" },
 ];
 
 function providerOf(slot: AvatarSlot): ProviderId | null {
@@ -80,7 +83,7 @@ export function AvatarSettings({ config, onChanged }: { config: ConfigInfo | nul
       {erro && <Notice tone="critical">{erro}</Notice>}
       {cat.invalid.length > 0 && (
         <Notice tone="warning" title="Avatares ignorados">
-          {cat.invalid.map((i) => i.id).join(", ")} não passaram na validação do open-bot-avatar.
+          {cat.invalid.map((i) => i.id).join(", ")} não passaram na validação do mascotinhos.
         </Notice>
       )}
       <ul className="avatar-slots">
@@ -88,7 +91,7 @@ export function AvatarSettings({ config, onChanged }: { config: ConfigInfo | nul
           const { av, color } = atual(slot);
           return (
             <li key={slot}>
-              <AvatarView definition={av.definition} color={color} size={44} label={`${label}: ${av.name}`} />
+              <AvatarView definition={av.definition} color={color} size={44} extras={false} label={`${label}: ${av.name}`} />
               <div className="avatar-slot-text">
                 <strong>{label}</strong>
                 <span className="secondary small">
@@ -134,7 +137,7 @@ export function AvatarSettings({ config, onChanged }: { config: ConfigInfo | nul
   );
 }
 
-/** A galeria: escolher padrão, aleatório ou um avatar; a prévia grande anima e mostra os humores. */
+/** A galeria: escolher padrão, aleatório ou um avatar; a prévia grande anima nos estados principais. */
 function AvatarPicker({
   slot,
   label,
@@ -153,7 +156,7 @@ function AvatarPicker({
   const cat = catalog();
   const provider = providerOf(slot);
   const [sel, setSel] = useState<AvatarChoice>(current);
-  const [humor, setHumor] = useState<AvatarMotion>("idle");
+  const [estado, setEstado] = useState<MascotState>("trabalhando");
   const padrao = chooseAvatar(cat, "padrao", provider);
   const mostrado = sel === "aleatorio" ? null : sel === "padrao" ? padrao : (cat.byId.get(sel) ?? padrao);
   const cor = (id: string) => colorFor(cat, provider, cat.byId.get(id)!);
@@ -177,22 +180,25 @@ function AvatarPicker({
     >
       <div className="avatar-picker">
         <div className="avatar-picker-preview">
-          {mostrado ? (
-            <AvatarView definition={mostrado.definition} color={cor(mostrado.id)} size={168} mood={humor} live follow />
-          ) : (
-            <div className="avatar-random" aria-label="Aleatório">
-              <Shuffle size={40} />
-            </div>
-          )}
+          {/* a moldura tem a proporção do palco: trocar de avatar, de estado ou ir para o Aleatório não mexe no layout */}
+          <div className="avatar-picker-stage" style={{ aspectRatio: PROPORCAO_PALCO }}>
+            {mostrado ? (
+              <AvatarView definition={mostrado.definition} color={cor(mostrado.id)} state={estado} live enquadre="palco" />
+            ) : (
+              <div className="avatar-random" aria-label="Aleatório">
+                <Shuffle size={40} />
+              </div>
+            )}
+          </div>
           <strong>{mostrado ? mostrado.name : "Aleatório"}</strong>
           <p className="muted small">
             {mostrado ? mostrado.description : "Um dos avatares da coleção, sorteado ao iniciar o Ombro ou um por sessão (Aparência > Avatares)."}
           </p>
-          {mostrado && <Segmented<AvatarMotion> label="Humor da prévia" value={humor} onChange={setHumor} options={MOODS} />}
+          {mostrado && <Segmented<MascotState> label="Estado da prévia" value={estado} onChange={setEstado} options={ESTADOS} />}
         </div>
         <div className="avatar-grid" role="radiogroup" aria-label="Avatares">
           <button type="button" role="radio" aria-checked={sel === "padrao"} className={`avatar-choice ${sel === "padrao" ? "active" : ""}`} onClick={() => setSel("padrao")}>
-            <AvatarView definition={padrao.definition} color={cor(padrao.id)} size={56} label={padrao.name} />
+            <AvatarView definition={padrao.definition} color={cor(padrao.id)} size={56} extras={false} label={padrao.name} />
             <span>{slot === "padrao" ? "Padrão do Ombro" : "Padrão do agente"}</span>
           </button>
           <button type="button" role="radio" aria-checked={sel === "aleatorio"} className={`avatar-choice ${sel === "aleatorio" ? "active" : ""}`} onClick={() => setSel("aleatorio")}>
@@ -211,7 +217,7 @@ function AvatarPicker({
               title={a.description}
               onClick={() => setSel(a.id)}
             >
-              <AvatarView definition={a.definition} color={cor(a.id)} size={56} mood={moodFor("ocioso")} label={a.name} />
+              <AvatarView definition={a.definition} color={cor(a.id)} size={56} extras={false} label={a.name} />
               <span>{a.name}</span>
             </button>
           ))}

@@ -7,8 +7,9 @@
   .venv/bin/python -I app/scripts/build_backend.py --sign -  assinatura ad-hoc (builds locais), também com hardened runtime
 
 Resultado (o tauri.release.conf.json leva as duas pastas para Contents/Resources/):
-  bundle-resources/runtime/   CPython 3.14 (python-build-standalone), com Pillow, psutil, pyserial, numpy, pyusb e a
-                              libusb do libusb-package; sem pip, tkinter, testes nem cabeçalhos
+  bundle-resources/runtime/   CPython 3.14 (python-build-standalone), com Pillow, psutil, pyserial, numpy, pyusb, o
+                              mascotinhos (o desenho do mascote) e a libusb do libusb-package; sem pip, tkinter, testes
+                              nem cabeçalhos
   bundle-resources/backend/   o código do Ombro (o mesmo do repositório), pré-compilado
   bundle-resources/licenses/  THIRD_PARTY_NOTICES.md e o texto da licença de tudo o que vai no app
 
@@ -282,12 +283,13 @@ def verificar_execucao(runtime: Path, backend: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="ob", dir="/tmp" if Path("/tmp").is_dir() else None) as tmp:
         env = ambiente_limpo(Path(tmp))
         r = subprocess.run(
-            [py, "-I", "-c", "import PIL.Image, psutil, numpy, serial, usb.core, libusb_package, sqlite3, ssl, sys; "
-                             "print(sys.version.split()[0], PIL.__version__, numpy.__version__, psutil.__version__)"],
+            [py, "-I", "-c", "import PIL.Image, psutil, numpy, serial, usb.core, libusb_package, mascotinhos, sqlite3, ssl, sys; "
+                             "print(sys.version.split()[0], PIL.__version__, numpy.__version__, psutil.__version__, "
+                             "mascotinhos.__version__)"],
             env=env, capture_output=True, text=True)
         if r.returncode:
             falha(f"imports falharam:\n{r.stderr}")
-        print(f"    imports ok (python, Pillow, numpy, psutil): {r.stdout.strip()}")
+        print(f"    imports ok (python, Pillow, numpy, psutil, mascotinhos): {r.stdout.strip()}")
         r = subprocess.run([py, "-E", "-s", "-B", "-c",
                             "import usb_direto; from PIL import Image; assert len(usb_direto.rgb565_le(Image.new('RGB', (4, 2)))) == 16; "
                             "print(usb_direto.problema() or 'libusb ok'); "
@@ -328,10 +330,15 @@ def verificar_execucao(runtime: Path, backend: Path) -> None:
         r = subprocess.run([py, str(backend / "ombro_hook.py"), "claude"], input="{}", env=env, capture_output=True, text=True)
         if r.returncode:
             falha(f"o hook falhou: {r.stderr}")
-        r = subprocess.run([py, "-c", "import sys; sys.path.insert(0, '.'); import ombro.cli, ombro.daemon, layout_multiagente"],
+        # o mascote desenha com o mascotinhos e a fonte que vem nele (lida de dentro do runtime)
+        r = subprocess.run([py, "-c", "import sys; sys.path.insert(0, '.'); import ombro.cli, ombro.daemon, layout_multiagente, "
+                                      "mascote; assert mascote.Mascote().camada(1.0).getbbox(); "
+                                      "assert mascote.BIBLIOTECA['ocioso'].olhos == 'fechados'; "  # o pacote vivo
+                                      "assert mascote.ESTILO.fonte(10).getname() == ('JetBrains Mono', 'Bold')"],
                            env=env, cwd=backend, capture_output=True, text=True)
         if r.returncode:
             falha(f"import sem -B falhou: {r.stderr}")
+        print("    o mascote desenha com o mascotinhos (pacote vivo) e a JetBrains Mono Bold dele")
     depois = foto(runtime) | foto(backend)
     if depois != antes:
         novos = sorted({n for n, _ in depois} ^ {n for n, _ in antes} or {n for n, _ in depois - antes})
@@ -428,6 +435,11 @@ def _texto_declarado(pkg: dict, apache: Path, mpl: Path) -> str:
 
 
 ARQ_LICENCA = ("licen", "copying", "notice", "copyright", "unlicense", "authors")
+# Avisos que um pacote precisa trazer (caminhos dentro do .dist-info): o build falha se faltar algum.
+AVISOS_EXIGIDOS = {
+    # MIT (o código), as partes derivadas do Ombro Screen com o aviso dele, e a OFL da JetBrains Mono Bold que vem junto
+    "mascotinhos": ("licenses/LICENSE", "licenses/NOTICE", "licenses/mascotinhos/fontes/OFL.txt"),
+}
 
 
 def _metadados(dist: Path) -> tuple:
@@ -513,19 +525,26 @@ def avisos(runtime: Path, destino: Path) -> None:
             licenca, n = "BSD-3-Clause", n + 1
         if n == 0:
             falha(f"{nome} {versao} não traz o texto da licença; acrescente-o antes de distribuir")
+        faltam = [a for a in AVISOS_EXIGIDOS.get(nome.lower(), ()) if not (pasta / a).is_file()]
+        if faltam:
+            falha(f"{nome} {versao} sem os avisos {', '.join(faltam)}")
         extra = {"numpy": "inclui OpenBLAS, libgfortran e libgcc_s (GPL-3.0 com a exceção de runtime do GCC) e "
                           "libquadmath (LGPL-2.1, texto em LGPL-2.1.txt)",
                  "pillow": "inclui as bibliotecas de imagem que o Pillow embute (FreeType, libjpeg, libpng, libtiff, "
                            "libwebp, HarfBuzz…), com os avisos no mesmo arquivo",
                  "libusb-package": "inclui a libusb 1.0.30 (LGPL-2.1-or-later, texto em LGPL-2.1.txt; código-fonte em "
-                                   "https://github.com/libusb/libusb, carregada dinamicamente)"}.get(nome.lower(), "")
+                                   "https://github.com/libusb/libusb, carregada dinamicamente)",
+                 "mascotinhos": "o movimento e o desenho do mascote da telinha; o código é MIT (licenses/LICENSE), o "
+                                "licenses/NOTICE lista as partes derivadas do Ombro Screen, e a JetBrains Mono Bold que "
+                                "vem junto é OFL-1.1 (licenses/mascotinhos/fontes/OFL.txt)"}.get(nome.lower(), "")
         itens.append((f"{nome} {versao}", licenca or "ver arquivos", f"python/{nome}/" + (f" ({extra})" if extra else "")))
     secoes.append(("Pacotes Python", itens))
 
     # a fonte
     (destino / "fontes").mkdir()
     shutil.copy2(RAIZ / "fontes" / "OFL.txt", destino / "fontes" / "JetBrainsMono-OFL.txt")
-    secoes.append(("Fontes", [("JetBrains Mono", "OFL-1.1", "fontes/JetBrainsMono-OFL.txt")]))
+    secoes.append(("Fontes", [("JetBrains Mono (a de fontes/ e a Bold que vem no mascotinhos)", "OFL-1.1",
+                               "fontes/JetBrainsMono-OFL.txt")]))
 
     # os crates Rust do app (só os que entram no binário)
     env = _ambiente_ferramentas()

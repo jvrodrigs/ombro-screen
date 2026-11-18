@@ -29,6 +29,13 @@ mascote agora é um avatar, e o padrão é o **Ombro Cloud**, desenhado do zero 
 da coleção ([avatars.md](avatars.md)). O ícone do app, o da Menu Bar e a marca da barra lateral são gerados dele
 (`app/scripts/gen_tray_icon.py`).
 
+Na **telinha**, o movimento e o desenho do mascote vêm da biblioteca
+[mascotinhos](https://github.com/GilsonB12/mascotinhos) (MIT, © 2026 Jonas Timbaúba, João Vitor Lima e Gilson
+Bezerra), que nasceu do `mascote.py` do Ombro. O `NOTICE` dela lista as partes derivadas do Ombro Screen, com o aviso
+dele, e ela traz a JetBrains Mono Bold (OFL-1.1, com o texto da licença). O wheel vai no Ombro.app com a versão e o
+hash fixados em `app/backend/requirements.lock`, e o build copia `LICENSE`, `NOTICE` e `OFL.txt` dele para os avisos
+de terceiros (e falha se faltar algum).
+
 O **formato** dos avatares e o **motor** que os desenha no app são do
 [open-bot-avatar](https://github.com/DominikScholz/open-bot-avatar) (MIT, © 2026 Dominik Scholz): o pacote npm
 `open-bot-avatar` vai no Ombro.app com a licença dele nos avisos de terceiros. Da galeria do projeto, nada foi
@@ -47,13 +54,14 @@ um componente não tiver texto. No app: Ajustes > Sobre > Avisos de terceiros.
 | Pillow | MIT-CMU | o arquivo de licença dele cobre as bibliotecas de imagem que o wheel embute (FreeType, libjpeg-turbo, libpng, libtiff, libwebp, HarfBuzz, OpenJPEG, LittleCMS, Brotli, libavif, zlib-ng, libxcb…) |
 | numpy | BSD-3-Clause e outras permissivas | o wheel traz OpenBLAS (BSD-3), libgfortran e libgcc_s (GPL-3.0 com a exceção de runtime do GCC, que permite a redistribuição) e libquadmath (LGPL-2.1-or-later) |
 | libusb 1.0.30 (via libusb-package) | LGPL-2.1-or-later | biblioteca dinâmica, sem modificação; o texto completo da LGPL-2.1 vai junto (`app/backend/licenses/LGPL-2.1.txt`, da gnu.org) e o código-fonte está em <https://github.com/libusb/libusb> |
+| mascotinhos (o desenho do mascote da telinha) | MIT; a JetBrains Mono Bold que vem nele, OFL-1.1 | `LICENSE`, `NOTICE` (as partes derivadas do Ombro Screen) e `OFL.txt` vão em `python/mascotinhos/licenses/` |
 | psutil, pyusb, pyserial | BSD-3-Clause | o wheel do pyserial não traz o texto: o build gera o BSD-3 padrão com o copyright do próprio pyserial |
 | importlib_resources, libusb-package | Apache-2.0 | |
 | 249 crates Rust do app | MIT, Apache-2.0, BSD, Zlib, Unicode-3.0, MPL-2.0 (5 crates do Servo) | nenhum GPL/LGPL/AGPL; os 18 que não publicam o arquivo de licença recebem o texto padrão da licença declarada, com os autores do Cargo.toml |
 | React, React DOM, scheduler, @tauri-apps/api | MIT; Apache-2.0 ou MIT | |
 | open-bot-avatar (o motor dos avatares no app) | MIT | o formato dos avatares (`avatars/`) também é o dele |
 | Lucide (ícones da interface) | ISC | |
-| JetBrains Mono (fonte da telinha) | OFL-1.1 | |
+| JetBrains Mono (fonte da telinha) | OFL-1.1 | a de `fontes/` (Regular, Medium e Bold) e a Bold dentro do mascotinhos (o mesmo arquivo da Bold de `fontes/`, versão 2.304; um teste confere) |
 
 Conferir de novo depois de mudar dependências: rodar o build (ele refaz a lista) e, para os crates,
 `cargo tree -e normal --target aarch64-apple-darwin` dentro de `app/src-tauri`.

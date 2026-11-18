@@ -1,490 +1,106 @@
 """O mascote do Ombro Screen: uma animação por estado dos agentes, com o avatar de cada um.
 
 A forma e os olhos vêm do avatar (avatars/, formato do open-bot-avatar; ver avatares.py): o padrão é o
-Ombro Cloud, e cada agente pode ter o seu. O movimento é o do mockup aprovado (cloud-v3): troca de estado
-suave, pulos com antecipação e aterrissagem, olhos com atraso em relação ao corpo, e extras (zZ, “?”, três
-pontinhos, gota de suor, confete), que acompanham o contorno de cada avatar.
+Ombro Cloud, e cada agente pode ter o seu. As animações são as da biblioteca mascotinhos
+(https://github.com/GilsonB12/mascotinhos), as mesmas da demonstração dela: o pacote "vivo" (olhos que mudam com o
+estado, zzZ, linhas e engrenagem, "?", ✓ com faíscas), desenhado chapado. Alerta e reset continuam, por enquanto,
+com as animações do pacote "classico" (as de antes); para passá-los ao "vivo", basta tirá-los de DO_CLASSICO.
+O texto sai na JetBrains Mono Bold que vem com o mascotinhos (a mesma de fontes/).
+
+O Animador do mascotinhos faz o resto do que é animação: a mistura entre estados, a troca de avatar, a cor e o
+realce. O que é do Ombro continua aqui: qual estado mostrar (Mascote.decidir), qual avatar e qual cor, e onde o
+mascote fica na tela.
 
 Estados: ocioso, trabalhando, esperando, alerta, reset e concluido (o Claude terminou o que fazia;
 dura até 5 min, ou até começar outra coisa, e depois o cloud volta a dormir).
 """
 from __future__ import annotations
 
-import colorsys
-import math
-import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from PIL import Image, ImageDraw
+import mascotinhos as oa
+from mascotinhos import palco
+from PIL import Image
 
 import avatares
-from render import S, VERDE, fonte
+from render import S, VERDE
 
-TAU = math.tau
+# ---------- as animações: as da biblioteca, sem nada refeito aqui ----------
+PACOTE = "vivo"  # o da demonstração do mascotinhos
+DO_CLASSICO = ("alerta", "reset")  # estes ainda usam o pacote "classico"; os outros, o PACOTE
+_classico = oa.Biblioteca.carregar(pacote="classico")
+BIBLIOTECA = oa.Biblioteca.carregar(pacote=PACOTE).com(*(_classico[e] for e in DO_CLASSICO))
 
 # ---------- onde o mascote fica na tela de 480x320 ----------
 COL_X, COL_Y, COL_W, COL_H = 316, 26, 156, 170  # coluna reservada; nada passa daqui
-# A área onde o avatar cabe, em unidades da camada (as mesmas do desenho de sempre: os extras e o movimento
-# foram ajustados nelas). O avatar é escalado para caber aqui, com a base em BY1 e centrado em CX.
-BX0, BY0, BX1, BY1 = 130.0, 100.0, 569.0, 449.0
-CX = (BX0 + BX1) / 2
-W, H = BX1 - BX0, BY1 - BY0
-_VBX, _VBY, _VBW, _VBH = BX0 - 70, BY0 - 165, W + 140, H + 185  # janela da forma, com folga para os extras
-ESC = min(COL_W / _VBW, 168 / _VBH)  # a janela cabe em 156x168, centrada
-_OFF_X = (COL_W - _VBW * ESC) / 2
-_OFF_Y = (168 - _VBH * ESC) / 2
+# A camada do mascote: a coluna, desenhada em S vezes; a janela da forma (com folga para os extras) cabe em 156x168,
+# centrada. As unidades da camada (a área do avatar e os números do movimento) são as do palco do mascotinhos.
+ENQUADRAMENTO = oa.Enquadramento(COL_W, COL_H, 168, S)
+ESTILO = oa.Estilo(enquadramento=ENQUADRAMENTO, paleta=oa.Paleta(verde=VERDE), fonte=oa.fonte_jetbrains_mono(S))
+
+BX0, BY0, BX1, BY1 = palco.BX0, palco.BY0, palco.BX1, palco.BY1  # a área onde o avatar cabe (unidades da camada)
+CX, W, H = palco.CX, palco.W, palco.H
+ESC = ENQUADRAMENTO.esc
+ALTURA_OLHAR = palco.ALTURA_OLHAR  # na inclinação, os olhos andam como se estivessem a esta altura da base
 
 ESTADOS = ("ocioso", "trabalhando", "esperando", "alerta", "reset", "concluido")
 DURACAO_CONCLUIDO = 300.0  # segundos mostrando "concluído" depois que o Claude termina; depois, dorme
 CALMOS = ("ocioso", "concluido")  # estados sem nenhuma sessão ativa
-CAMPOS = ("dx", "dy", "sx", "sy", "rot", "kL", "kW", "olhaX", "olhaY", "pisca")
-DURACAO_MISTURA = 0.5  # segundos para passar de um estado ao outro
+CAMPOS = oa.CAMPOS  # dx, dy, sx, sy, rot, kL, kW, olhaX, olhaY, pisca
+DURACAO_MISTURA = oa.DURACAO_MISTURA  # s para passar de um estado ao outro
+TRANSICAO = oa.TRANSICAO  # s: a troca de avatar. O corpo encolhe e fecha os olhos, troca no meio e volta
+REALCE = oa.REALCE  # s: no modo "agente" (a cor não muda de um estado para outro), a cor clareia e volta na troca
+
+Forma = oa.Forma  # um avatar já posto na área do mascote: os polígonos, os olhos e o contorno (x0, y0 = topo, x1)
+cor_sorteada = oa.cor_sorteada  # matiz livre; saturação e luminosidade limitadas para ler bem sobre o fundo escuro
+misturar = oa.misturar
+_pt = ENQUADRAMENTO.pt  # coordenada da camada (unidades do palco) -> pixel da camada (já em S vezes)
+_corpo = palco.corpo  # escala em torno da base, gira em torno da base e desloca
+_olhar_x = palco.olhar_x  # o olhar horizontal mais o deslize que acompanha a inclinação
 
 
-def _ss(u: float) -> float:
-    u = max(0.0, min(1.0, u))
-    return u * u * (3 - 2 * u)
-
-
-def _lerp(a: float, b: float, u: float) -> float:
-    return a + (b - a) * u
-
-
-def _sn(x: float) -> float:
-    return math.sin(x)
-
-
-# ---------- movimento por estado (t = segundos desde que o estado começou) ----------
 def parametros(estado: str, t: float) -> dict[str, float]:
-    o = dict(dx=0.0, dy=0.0, sx=1.0, sy=1.0, rot=0.0, kL=1.0, kW=1.0, olhaX=0.0, olhaY=0.0, pisca=0.0)
-    if estado == "ocioso":
-        a = _sn(TAU * t / 4)
-        o["sy"], o["sx"], o["dy"], o["kL"] = 1 + .03 * a, 1 - .02 * a, -1.5 * a, .8
-        o["pisca"] = 1.0 if (t % 4.2) < .14 else 0.0
-        u = (t % 6.3) - 5.0  # de vez em quando olha de relance
-        if 0 < u < 1.1:
-            e = _sn(math.pi * u / 1.1)
-            o["olhaX"], o["olhaY"], o["kL"] = 12 * e, -7 * e, .9
-    elif estado == "trabalhando":
-        b = abs(_sn(TAU * t / .7 - math.pi / 2))
-        u = 1 - b
-        o["dy"], o["sy"], o["sx"] = -12 * b, 1 - .06 * u * u, 1 + .04 * u * u
-        o["olhaX"], o["olhaY"], o["kL"] = 16 * _sn(TAU * t / 1.6), 5 * b, .95
-    elif estado == "esperando":
-        c = t % 1.9
-        o["rot"], o["kL"], o["kW"], o["olhaY"] = -6 + 2 * _sn(TAU * t / 2.2), 1.15, 1.08, -4
-        if c < .14:  # agacha
-            q = _ss(c / .14)
-            o["sy"], o["sx"], o["olhaY"] = 1 - .1 * q, 1 + .07 * q, -1
-        elif c < .58:  # no ar
-            q = (c - .14) / .44
-            e = _sn(math.pi * q)
-            o["dy"] = -26 * e
-            o["sy"] = _lerp(.9, 1, _ss(q * 2.2)) + .07 * e
-            o["sx"] = _lerp(1.07, 1, _ss(q * 2.2)) - .04 * e
-            o["olhaY"] = -4 - 3 * e
-        elif c < .8:  # amassa ao pousar
-            q = (c - .58) / .22
-            o["sy"], o["sx"] = 1 - .09 * _sn(math.pi * q), 1 + .06 * _sn(math.pi * q)
-        else:  # balanço que se amortece
-            d = math.exp(-(c - .8) * 9) * _sn((c - .8) * 30)
-            o["sy"], o["sx"] = 1 + .03 * d, 1 - .02 * d
-    elif estado == "alerta":
-        amp = 4 + 1.5 * _sn(TAU * t / 1.1)
-        k = int(t * 12) % 2
-        o["dx"], o["sy"], o["sx"], o["kL"], o["kW"] = amp * (1 if k else -1), .97, 1.03, 1.28, 1.1
-    elif estado == "reset":
-        c = t % 2.6
-        if c < .18:
-            q = _ss(c / .18)
-            o["sy"], o["sx"] = 1 - .12 * q, 1 + .08 * q
-        elif c < 1.45:
-            q = (c - .18) / 1.27
-            e, w = _sn(math.pi * q), _sn(TAU * q)
-            o["dy"], o["sy"], o["sx"] = -60 * e, 1 + .14 * w, 1 - .08 * w
-        else:
-            q = (c - 1.45) / 1.15
-            d = math.exp(-q * 5) * _sn(TAU * q * 2.5)
-            o["sy"], o["sx"] = 1 + .12 * d, 1 - .07 * d
-        o["kL"], o["kW"], o["olhaY"] = .6, 1.05, -6
-    elif estado == "concluido":
-        if t < 1.1:  # um pulinho de satisfação quando o Claude termina
-            if t < .16:
-                q = _ss(t / .16)
-                o["sy"], o["sx"] = 1 - .08 * q, 1 + .06 * q
-            else:
-                q = (t - .16) / .94
-                e = _sn(math.pi * q)
-                o["dy"] = -24 * e
-                o["sy"] = _lerp(.92, 1, _ss(q * 2)) + .06 * e
-                o["sx"] = _lerp(1.06, 1, _ss(q * 2)) - .03 * e
-        else:  # depois, respira devagar e balança de leve: fica assim até 5 min, então nada agitado
-            u = t - 1.1
-            a = _sn(TAU * u / 3.4)
-            o["sy"], o["sx"], o["dy"] = 1 + .025 * a, 1 - .015 * a, -1.2 * a
-            o["rot"] = 2.5 * _sn(TAU * u / 6.8)
-        o["olhaY"] = -3  # os olhos em arco (^ ^) são desenhados em _olhos_felizes
-    return o
-
-
-def misturar(a: dict, b: dict, u: float) -> dict:
-    return {k: _lerp(a[k], b[k], u) for k in CAMPOS}
-
-
-# ---------- desenho: tudo numa camada RGBA do tamanho da coluna, em 2x ----------
-def _pt(x: float, y: float) -> tuple[float, float]:
-    """Coordenada da forma (pixels da KEY) -> pixel da camada (já em 2x)."""
-    return (_OFF_X + (x - _VBX) * ESC) * S, (_OFF_Y + (y - _VBY) * ESC) * S
-
-
-def _corpo(p: dict, x: float, y: float) -> tuple[float, float]:
-    """escala em torno da base, gira em torno da base e desloca (a ordem do mockup)."""
-    x = CX + (x - CX) * p["sx"]
-    y = BY1 + (y - BY1) * p["sy"]
-    a = math.radians(p["rot"])
-    dx, dy = x - CX, y - BY1
-    x = CX + dx * math.cos(a) - dy * math.sin(a)
-    y = BY1 + dx * math.sin(a) + dy * math.cos(a)
-    return x + p["dx"], y + p["dy"]
-
-
-def _capsula(cx: float, cy: float, larg: float, comp: float, ang: float) -> list[tuple[float, float]]:
-    """Pílula (retângulo de cantos totalmente redondos) girada `ang` graus em torno do centro."""
-    r = min(larg, comp) / 2
-    pts: list[tuple[float, float]] = []
-    if comp >= larg:  # em pé
-        d = comp / 2 - r
-        for i in range(13):  # semicírculo de cima
-            a = math.pi + math.pi * i / 12
-            pts.append((r * math.cos(a), -d + r * math.sin(a)))
-        for i in range(13):  # semicírculo de baixo
-            a = math.pi * i / 12
-            pts.append((r * math.cos(a), d + r * math.sin(a)))
-    else:  # deitada
-        d = larg / 2 - r
-        for i in range(13):
-            a = -math.pi / 2 + math.pi * i / 12
-            pts.append((d + r * math.cos(a), r * math.sin(a)))
-        for i in range(13):
-            a = math.pi / 2 + math.pi * i / 12
-            pts.append((-d + r * math.cos(a), r * math.sin(a)))
-    a = math.radians(ang)
-    return [(cx + x * math.cos(a) - y * math.sin(a), cy + x * math.sin(a) + y * math.cos(a)) for x, y in pts]
-
-
-def _bezier(p0, p1, p2, p3, n=14):
-    return [
-        (
-            (1 - u) ** 3 * p0[0] + 3 * u * (1 - u) ** 2 * p1[0] + 3 * u * u * (1 - u) * p2[0] + u**3 * p3[0],
-            (1 - u) ** 3 * p0[1] + 3 * u * (1 - u) ** 2 * p1[1] + 3 * u * u * (1 - u) * p2[1] + u**3 * p3[1],
-        )
-        for u in (i / n for i in range(n + 1))
-    ]
-
-
-def _quad(p0, c, p2, n=8):
-    """Curva quadrática (como o `q` do SVG), convertida para cúbica."""
-    p1 = (p0[0] + 2 / 3 * (c[0] - p0[0]), p0[1] + 2 / 3 * (c[1] - p0[1]))
-    p2c = (p2[0] + 2 / 3 * (c[0] - p2[0]), p2[1] + 2 / 3 * (c[1] - p2[1]))
-    return _bezier(p0, p1, p2c, p2, n)
-
-
-def _com_alpha(cor: tuple[int, int, int], a: float) -> tuple[int, int, int, int]:
-    return cor[0], cor[1], cor[2], int(255 * max(0.0, min(1.0, a)))
-
-
-def _extras(d: ImageDraw.ImageDraw, estado: str, t: float, cor, a: float, forma: "Forma") -> None:
-    """zZ, “?”, três pontinhos, gota de suor e confete, presos ao contorno do avatar (o topo e os lados dele)."""
-    topo, esq, dir_ = forma.y0, forma.x0, forma.x1
-    branco = (237, 232, 225)
-    if estado == "ocioso":
-        u = (t % 2.6) / 2.6
-        d.text(_pt(dir_ - 30, topo - 6 - u * 34), "z", font=fonte("Bold", 34 * ESC), fill=_com_alpha(branco, (1 - u) * a), anchor="ls")
-        d.text(_pt(dir_ + 4, topo - 40 - u * 28), "Z", font=fonte("Bold", 50 * ESC), fill=_com_alpha(cor, (1 - u) * a), anchor="ls")
-    elif estado == "trabalhando":
-        for i in range(3):
-            w = max(0.0, _sn(TAU * t / 1.2 - i * 1.1))
-            px, py = _pt(CX - 44 + i * 44, topo - 34 - 10 * w)
-            r = (9 + 6 * w) * ESC * S
-            d.ellipse((px - r, py - r, px + r, py + r), fill=_com_alpha(cor, (.35 + .65 * w) * a))
-    elif estado == "esperando":
-        p = .5 + .5 * _sn(TAU * t / 1.9)
-        sc, op = .9 + .25 * p, (.6 + .4 * p) * a
-        pulo = parametros("esperando", t)["dy"]  # acompanha o pulo, para não encostar no topo do avatar
-        ox, oy = CX, topo - 60 + pulo
-
-        def loc(x, y):
-            return _pt(ox + x * sc, oy + y * sc)
-
-        curva = _bezier((-17, -14), (-17, -40), (20, -40), (20, -16)) + _bezier((20, -16), (20, -2), (0, -2), (0, 18))[1:]
-        pts = [loc(x, y) for x, y in curva]
-        larg = 13 * sc * ESC * S
-        cor_q = _com_alpha(branco, op)
-        d.line(pts, fill=cor_q, width=int(larg), joint="curve")
-        for px, py in (pts[0], pts[-1]):  # pontas redondas
-            d.ellipse((px - larg / 2, py - larg / 2, px + larg / 2, py + larg / 2), fill=cor_q)
-        qx, qy = loc(0, 40)
-        r = 8 * sc * ESC * S
-        d.ellipse((qx - r, qy - r, qx + r, qy + r), fill=cor_q)
-    elif estado == "alerta":
-        u = (t % 1.1) / 1.1
-        x, y = dir_ - 14, topo + 50 + u * 80
-        forma = _quad((x, y), (x - 14, y + 22), (x, y + 34))[:-1] + _quad((x, y + 34), (x + 14, y + 22), (x, y))
-        d.polygon([_pt(px, py) for px, py in forma], fill=_com_alpha((207, 233, 247), (1 - u) * a))
-    elif estado == "reset":
-        c = t % 2.6
-        if .5 < c < 2.4:
-            q = (c - .5) / 1.9
-            cores = [cor, branco, (232, 176, 75), (111, 168, 220)]
-            for i in range(12):
-                ang = i * .9 + .2
-                r = 40 + q * (150 + i * 8)
-                x, y = CX + math.cos(ang) * r, topo + 40 + math.sin(ang) * r * .7 + q * q * 90
-                giro = math.radians(i * 40 + q * 200)
-                meio = 6  # confete de 12x12 (unidades da KEY)
-                quad = [(-meio, -meio), (meio, -meio), (meio, meio), (-meio, meio)]
-                pts = [_pt(x + qx * math.cos(giro) - qy * math.sin(giro), y + qx * math.sin(giro) + qy * math.cos(giro)) for qx, qy in quad]
-                d.polygon(pts, fill=_com_alpha(cores[i % 4], max(0.0, min(1.0, 1 - q * 1.05)) * a))
-    elif estado == "concluido":
-        # ✓ acima da cabeça: cresce no pulinho e depois flutua devagar
-        cresce = 1.0 if t >= .6 else _ss(t / .6) * (1 + .25 * _sn(math.pi * t / .6))  # passa um pouco e volta
-        flut = _sn(TAU * t / 2.6)
-        op = (.8 + .2 * _sn(TAU * t / 2.6 + 1)) * a
-        pulo = parametros("concluido", t)["dy"]  # acompanha o pulinho do corpo, para não encostar nele
-        cx, cy, esc = CX, topo - 60 - 5 * flut + pulo, 26 * cresce
-        if esc > .5:
-            pts = [_pt(cx + x * esc, cy + y * esc) for x, y in ((-1, 0), (-.35, .62), (1, -.75))]
-            larg = max(1.0, 12 * cresce * ESC * S)
-            cor_v = _com_alpha(VERDE, op)
-            d.line(pts, fill=cor_v, width=int(larg), joint="curve")
-            for px, py in (pts[0], pts[-1]):  # pontas redondas
-                d.ellipse((px - larg / 2, py - larg / 2, px + larg / 2, py + larg / 2), fill=cor_v)
-        # dois brilhinhos que piscam alternados, nos lados de cima
-        for i, (bx, by) in enumerate(((esq + 40, topo + 10), (dir_ - 30, topo - 12))):
-            w = _sn(TAU * t / 3.0 - i * math.pi)
-            if w <= 0:
-                continue
-            fora, dentro = 15 * w, 4 * w
-            estrela = [(bx + (fora if k % 2 == 0 else dentro) * math.cos(k * math.pi / 4 - math.pi / 2),
-                        by + (fora if k % 2 == 0 else dentro) * math.sin(k * math.pi / 4 - math.pi / 2)) for k in range(8)]
-            d.polygon([_pt(x, y) for x, y in estrela], fill=_com_alpha(branco, w * a))
-
-
-@dataclass(frozen=True)
-class Forma:
-    """Um avatar já posto na área do mascote (unidades da camada): os polígonos, os olhos e o contorno."""
-    avatar: str
-    poligonos: tuple  # tuplas de pontos; mais de um = regra nonzero (furos, como o anel da Órbita)
-    olhos: tuple  # dicts com cx, cy, larg, comp, ang (como os de sempre)
-    x0: float
-    y0: float
-    x1: float
-
-
-_FORMAS: dict = {}
+    """A pose do estado no instante t (t = segundos desde que o estado começou; um estado que não existe fica parado)."""
+    return BIBLIOTECA.parametros(estado, t)
 
 
 def forma_de(av: "avatares.Avatar") -> Forma:
     """O avatar escalado para caber em BX0..BX1 x BY0..BY1, com a base em BY1 e centrado em CX (em cache)."""
-    f = _FORMAS.get(av.id)
-    if f is not None:
-        return f
-    ax0, ay0, ax1, ay1 = av.limites
-    k = min(W / (ax1 - ax0), H / (ay1 - ay0))
-    acx = (ax0 + ax1) / 2
-
-    def m(x: float, y: float) -> tuple[float, float]:
-        return CX + (x - acx) * k, BY1 - (ay1 - y) * k
-
-    polys = tuple(tuple(m(x, y) for x, y in p) for p in av.poligonos)
-    o, boost = av.olhos, av.aumento_olhos()
-    larg = avatares.EYE_W * o.scale * boost * k
-    comp = avatares.EYE_H * o.scale * boost * k
-    olhos = tuple(dict(zip(("cx", "cy"), m(x, o.y)), larg=larg, comp=comp, ang=0.0)
-                  for x in (o.x - o.spacing / 2, o.x + o.spacing / 2))
-    xs = [x for p in polys for x, _ in p]
-    ys = [y for p in polys for _, y in p]
-    f = _FORMAS[av.id] = Forma(av.id, polys, olhos, min(xs), min(ys), max(xs))
-    return f
+    return oa.forma_de(av)
 
 
-def _corpo_nonzero(d: ImageDraw.ImageDraw, camada: Image.Image, polys: list, cor: tuple) -> None:
-    """Vários subpaths: soma o sentido de cada um (nonzero), como o SVG e o motor do open-bot-avatar."""
-    import numpy as np
-
-    soma = np.zeros((camada.height, camada.width), dtype=np.int16)
-    for poly in polys:
-        area = sum(poly[i - 1][0] * poly[i][1] - poly[i][0] * poly[i - 1][1] for i in range(len(poly)))
-        m = Image.new("L", camada.size, 0)
-        ImageDraw.Draw(m).polygon(poly, fill=1)
-        soma += np.asarray(m, dtype=np.int16) * (1 if area > 0 else -1)
-    mascara = Image.fromarray(((soma != 0) * 255).astype(np.uint8), "L")
-    camada.paste(Image.new("RGBA", camada.size, cor + (255,)), (0, 0), mascara)
+def _padrao() -> "avatares.Avatar":
+    return avatares.catalogo().padrao_de(None)
 
 
 def desenhar_cloud(p: dict, estado: str, t: float, cor: tuple[int, int, int], alpha_extras: float = 1.0,
                    forma: Forma | None = None) -> Image.Image:
-    """Camada RGBA (COL_W x COL_H, em 2x) com o mascote (o avatar `forma`) no estado e instante dados."""
-    forma = forma or forma_de(avatares.catalogo().padrao_de(None))
-    camada = Image.new("RGBA", (COL_W * S, COL_H * S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(camada)
-    polys = [[_pt(*_corpo(p, x, y)) for x, y in poly] for poly in forma.poligonos]
-    if len(polys) == 1:
-        d.polygon(polys[0], fill=cor + (255,))
-    else:
-        _corpo_nonzero(d, camada, polys, cor)
-    if estado == "concluido":
-        _olhos_felizes(d, p, forma)
-    else:
-        _olhos(d, p, forma)
-    _extras(d, estado, t, cor, alpha_extras, forma)
-    return camada
+    """Camada RGBA (COL_W x COL_H, em S vezes) com o mascote (o avatar `forma`) no estado e instante dados."""
+    return oa.desenhar(forma or forma_de(_padrao()), p, BIBLIOTECA.get(estado), t, cor, alpha_extras, ESTILO)
 
 
-# Altura dos olhos do cloud antigo acima da base (unidades da camada). Na inclinação (esperando, concluído) o corpo
-# gira em torno da base e os olhos andam de lado na proporção dessa altura; num avatar de olhos mais baixos eles
-# andariam menos. A diferença vira um deslize a mais, para o olhar acompanhar a cabeça como antes.
-ALTURA_OLHAR = 204.0
-
-
-def _olhar_x(p: dict, e: dict) -> float:
-    """O olhar horizontal do quadro mais o que falta para os olhos andarem na inclinação como no cloud antigo."""
-    falta = max(0.0, ALTURA_OLHAR - (BY1 - e["cy"]))
-    return p["olhaX"] + falta * math.sin(math.radians(p["rot"]))
-
-
-def _olhos_felizes(d: ImageDraw.ImageDraw, p: dict, forma: Forma) -> None:
-    """Olhos em arco (^ ^), de satisfação, no lugar das pílulas."""
-    preto = (26, 27, 29, 255)
-    for e in forma.olhos:
-        r = max(e["larg"] * .62, e["comp"] * .26)
-        a = math.radians(e["ang"])
-        cx, cy = e["cx"] + _olhar_x(p, e), e["cy"] + p["olhaY"] + r * .35
-        arco = []
-        for i in range(13):  # meia-volta por cima, de um lado ao outro
-            ang = math.pi + math.pi * i / 12
-            x, y = r * math.cos(ang), r * .9 * math.sin(ang)
-            arco.append(_pt(*_corpo(p, cx + x * math.cos(a) - y * math.sin(a), cy + x * math.sin(a) + y * math.cos(a))))
-        larg = e["larg"] * .34 * ESC * S
-        d.line(arco, fill=preto, width=max(1, int(larg)), joint="curve")
-        for px, py in (arco[0], arco[-1]):  # pontas redondas
-            d.ellipse((px - larg / 2, py - larg / 2, px + larg / 2, py + larg / 2), fill=preto)
-
-
-def _olhos(d: ImageDraw.ImageDraw, p: dict, forma: Forma) -> None:
-    for e in forma.olhos:
-        comp = max(10.0, e["comp"] * p["kL"] * (1 - .9 * p["pisca"]))
-        larg = e["larg"] * p["kW"]
-        pts = _capsula(e["cx"] + _olhar_x(p, e), e["cy"] + p["olhaY"], larg, comp, e["ang"])
-        d.polygon([_pt(*_corpo(p, x, y)) for x, y in pts], fill=(26, 27, 29, 255))
-
-
-# ---------- máquina de estados ----------
-def cor_sorteada() -> tuple[int, int, int]:
-    """Matiz livre; saturação e luminosidade limitadas para ler bem sobre o fundo escuro."""
-    r, g, b = colorsys.hls_to_rgb(random.random(), .5 + random.random() * .1, .58 + random.random() * .14)
-    return int(r * 255), int(g * 255), int(b * 255)
-
-
-TRANSICAO = 0.6  # s: a troca de avatar. O corpo encolhe e fecha os olhos, troca no meio e volta
-REALCE = 0.5  # s: no modo "agente" (a cor não muda de um estado para outro), a cor clareia e volta na troca
-
-
+# ---------- o mascote: o Animador do mascotinhos, com a decisão de estado do Ombro ----------
 @dataclass
-class Mascote:
-    cor_fixa: tuple[int, int, int] | None = None
-    estado: str = "ocioso"
-    inicio: float = 0.0
-    anterior: tuple[str, float] | None = None  # (estado, quando começou) enquanto mistura
-    cor: tuple[int, int, int] = field(default_factory=cor_sorteada)
+class Mascote(oa.Animador):
+    """O Animador (mistura entre estados, troca de avatar, cor e realce) com as animações e o estilo de cima, mais o
+    que é do Ombro: decidir o estado a partir dos agentes e pedir o avatar com a cor do agente dele."""
+    forma: Forma = field(default_factory=lambda: forma_de(_padrao()))
+    cor_base: tuple[int, int, int] = field(default_factory=lambda: avatares.cor_hex(_padrao().cor))
+    biblioteca: oa.Biblioteca = field(default_factory=lambda: BIBLIOTECA, repr=False)
+    estilo: oa.Estilo = field(default_factory=lambda: ESTILO, repr=False)
     _reseta_ant: dict[str, datetime] = field(default_factory=dict)  # último horário de reset visto, por janela
     _reset_ate: float = 0.0
     _calmo_desde: float | None = None
     duracao_concluido: float = DURACAO_CONCLUIDO
     _havia_trabalho: bool = False  # alguma sessão estava trabalhando na leitura anterior?
     _terminou_em: float | None = None  # quando a última sessão parou de trabalhar sem esperar você
-    cor_modo: str = "agente"  # "agente": a cor do agente do avatar; "sorteada": uma nova a cada estado
-    forma: Forma = field(default_factory=lambda: forma_de(avatares.catalogo().padrao_de(None)))
-    cor_base: tuple[int, int, int] = field(default_factory=lambda: avatares.cor_hex(avatares.catalogo().padrao_de(None).cor))
-    _troca: tuple | None = None  # (forma, cor do agente, desde quando) da troca de avatar em andamento
-    _trocou: bool = False  # a troca em andamento já passou do meio (a forma nova já está valendo)
-    _realce_desde: float | None = None
-
-    def __post_init__(self) -> None:
-        if self.cor_fixa:  # --cor-mascote vale desde o primeiro quadro, não só depois da primeira troca de estado
-            self.cor = self.cor_fixa
-        elif self.cor_modo == "agente":
-            self.cor = self.cor_base
-
-    def _cor_do_estado(self) -> tuple[int, int, int]:
-        if self.cor_fixa:
-            return self.cor_fixa
-        return self.cor_base if self.cor_modo == "agente" else cor_sorteada()
 
     def usar(self, av: "avatares.Avatar", cor_agente: tuple[int, int, int] | None, agora: float, ja: bool = False) -> None:
-        """Pede o avatar `av` (com a cor do agente dele). Troca numa transição de TRANSICAO s (encolhe e pisca,
-        a forma muda no meio, com os olhos fechados); `ja` (uma mudança de preferência, um PNG) troca agora.
+        """Pede o avatar `av` com a cor do agente dele (sem ela, a do avatar). A troca é a do Animador: uma transição
+        de TRANSICAO s (encolhe e pisca, a forma muda no meio); `ja` (uma mudança de preferência, um PNG) troca agora.
         Pedir o mesmo de novo não faz nada."""
-        forma = forma_de(av)
-        cor = cor_agente or avatares.cor_hex(av.cor)
-        if ja:
-            self._troca = None
-            self._aplicar(forma, cor)
-            return
-        if self._troca:
-            if self._troca[0] is forma and self._troca[1] == cor:
-                return  # já está a caminho
-            if not self._trocou:  # ainda de olhos fechados: só muda o destino
-                self._troca = (forma, cor, self._troca[2])
-                return
-        elif forma is self.forma and cor == self.cor_base:
-            return
-        self._troca, self._trocou = (forma, cor, agora), False
-
-    def _aplicar(self, forma: Forma, cor: tuple[int, int, int]) -> None:
-        self.forma, self.cor_base = forma, cor
-        if not self.cor_fixa and self.cor_modo == "agente":
-            self.cor = cor
-
-    def _avancar_troca(self, agora: float) -> float:
-        """Anda a troca de avatar; devolve o quanto o corpo está encolhido agora (0..1)."""
-        if not self._troca:
-            return 0.0
-        forma, cor, desde = self._troca
-        u = (agora - desde) / TRANSICAO
-        if u >= .5 and not self._trocou:
-            self._aplicar(forma, cor)
-            self._trocou = True
-        if u >= 1:
-            self._troca = None
-            return 0.0
-        return math.sin(math.pi * max(0.0, u))
-
-    def definir_cor_modo(self, modo: str) -> None:
-        self.cor_modo = modo
-        self.cor = self._cor_do_estado()
-
-    def ir_para(self, novo: str, agora: float) -> None:
-        self._avancar_troca(agora)
-        if novo == self.estado:
-            return
-        self.anterior = (self.estado, self.inicio)
-        self.estado, self.inicio = novo, agora
-        self.cor = self._cor_do_estado()
-        if not self.cor_fixa and self.cor_modo == "agente":
-            self._realce_desde = agora  # a cor é a mesma: um realce curto marca a troca, como a cor nova marcava
-
-    def cor_atual(self, agora: float) -> tuple[int, int, int]:
-        """A cor do quadro: a do estado, clareada logo depois de uma troca de estado no modo "agente"."""
-        if self._realce_desde is None:
-            return self.cor
-        v = (agora - self._realce_desde) / REALCE
-        if not 0 <= v < 1:
-            self._realce_desde = None if v >= 1 else self._realce_desde
-            return self.cor
-        f = .38 * (1 - _ss(v))
-        return tuple(int(round(c + (255 - c) * f)) for c in self.cor)
+        super().usar(forma_de(av), cor_agente or avatares.cor_hex(av.cor), agora, ja)
 
     def decidir(self, u, agora: float) -> str:
         """Estado do cloud a partir do que o Claude Code está fazendo."""
@@ -524,19 +140,3 @@ class Mascote:
         else:
             self._calmo_desde = None
         return alvo
-
-    def parametros_atuais(self, agora: float) -> tuple[dict, float]:
-        t = agora - self.inicio
-        u = _ss(t / DURACAO_MISTURA)
-        atual = parametros(self.estado, t)
-        if self.anterior and u < 1:
-            ant = parametros(self.anterior[0], agora - self.anterior[1])
-            return misturar(ant, atual, u), u
-        return atual, 1.0
-
-    def camada(self, agora: float) -> Image.Image:
-        k = self._avancar_troca(agora)
-        p, u = self.parametros_atuais(agora)
-        if k:  # trocando de avatar: encolhe e fecha os olhos; a forma muda no meio
-            p = dict(p, sy=p["sy"] * (1 - .14 * k), sx=p["sx"] * (1 + .08 * k), pisca=max(p["pisca"], min(1.0, k * 1.4)))
-        return desenhar_cloud(p, self.estado, agora - self.inicio, self.cor_atual(agora), alpha_extras=u, forma=self.forma)

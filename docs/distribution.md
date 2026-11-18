@@ -10,7 +10,8 @@ Ombro.app/Contents/
 ├── MacOS/ombro                 o app (Tauri 2: Rust + a interface React)
 └── Resources/
     ├── runtime/                CPython 3.14 relocável (python-build-standalone), com Pillow, psutil, pyserial,
-    │                           numpy, pyusb e a libusb do libusb-package; sem pip, tkinter, testes nem cabeçalhos
+    │                           numpy, pyusb, mascotinhos e a libusb do libusb-package; sem pip, tkinter, testes
+    │                           nem cabeçalhos
     └── backend/                o código do Ombro (o mesmo do repositório), pré-compilado
 ```
 

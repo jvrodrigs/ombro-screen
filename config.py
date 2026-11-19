@@ -37,6 +37,10 @@ VISTAS = ("overview", "focus", "attention")  # visões do layout multiagente
 MIN_ROTACAO = 5.0  # segundos: trocar de visão mais rápido que isso deixa a tela instável
 SO_NA_LINHA_DE_COMANDO = ("demo", "demo_ciclo", "png", "arquivo")  # ações de uma vez, não preferências
 AVATAR_CHAVES = PROVIDERS + ("padrao",)  # um avatar por agente, e o do Ombro (sem agente em foco)
+# Os pacotes de animações do mascotinhos que dá para escolher (o primeiro é o padrão), e os que ela tem mas ainda estão
+# em avaliação no Ombro (num config.json, valem o padrão, com um aviso). Ver mascote.py e docs/avatars.md.
+PACOTES_ANIMACAO = ("vivo", "classico")
+PACOTES_EM_AVALIACAO = ("3d", "terminal")
 _COR = re.compile(r"#?[0-9a-fA-F]{6}")
 
 
@@ -75,6 +79,9 @@ class OmbroConfig:
     # avatares (avatars/ e avatares.py); no arquivo: {"avatars": {"claude": "sereno", "default": ..., "random": "sessao"}}
     avatares: tuple = ()  # pares (agente ou "padrao", "padrao" | "aleatorio" | id); o que falta é "padrao"
     avatar_sorteio: str = "inicio"  # o "aleatorio": um por inicialização do Ombro, ou um por sessão
+    # o pacote de animações do mascote, no app e na telinha: o que você escolheu. O que está em uso pode ser outro por
+    # um tempo (a troca espera a atividade em andamento terminar; ver ombro/animacoes.py)
+    pacote_animacao: str = PACOTES_ANIMACAO[0]
     # simulador
     porta_sim: int = 5680
     nao_abrir: bool = False
@@ -208,6 +215,8 @@ def validar(nome: str, v, base: Path | None = None):
         return _escolha(nome, v, _av.CORES_MODO)
     if nome == "avatar_sorteio":
         return _escolha(nome, v, _av.SORTEIOS)
+    if nome == "pacote_animacao":
+        return _escolha(nome, v, PACOTES_ANIMACAO)
     if nome == "avatares":
         pares = v.items() if isinstance(v, dict) else v
         if not isinstance(pares, (list, tuple)) and not isinstance(v, dict):
@@ -311,6 +320,12 @@ def ler_arquivo(arq: Path, obrigatorio: bool = False) -> tuple[dict, list[str]]:
             for chave, escolha in valores.get("avatares", ()) if nome == "avatars" else ():
                 if escolha not in _av.ESPECIAIS and escolha not in _av.catalogo().avatares:
                     avisos.append(f"{arq.name}: o avatar \"{escolha}\" ({chave}) não existe; vale o padrão")
+        elif nome == "pacote_animacao" and isinstance(v, str) and v not in PACOTES_ANIMACAO:
+            # um pacote que este Ombro não oferece (em avaliação, de outra versão, ou digitado errado) não impede o
+            # Ombro de abrir: vale o padrão
+            motivo = "ainda está em avaliação" if v in PACOTES_EM_AVALIACAO else "não existe"
+            avisos.append(f"{arq.name}: o pacote de animações \"{v[:40]}\" {motivo}; vale o "
+                          f"\"{PACOTES_ANIMACAO[0]}\"")
         elif nome in SO_NA_LINHA_DE_COMANDO:
             avisos.append(f"{arq.name}: \"{nome}\" só vale na linha de comando; ignorado")
         elif nome not in PERSISTENTES:

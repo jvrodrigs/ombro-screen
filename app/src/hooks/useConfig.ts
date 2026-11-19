@@ -40,7 +40,15 @@ function merge(c: ConfigInfo, r: ConfigUpdateResult): ConfigInfo {
     else if (k.startsWith("providers.")) providers[k.slice(10) as keyof typeof providers] = v === true;
     else values[k] = v;
   }
-  return { ...c, values, providers_enabled: providers, pending: r.pending ?? c.pending, revision: r.revision ?? c.revision, instance: r.instance ?? c.instance };
+  return {
+    ...c,
+    values,
+    providers_enabled: providers,
+    pending: r.pending ?? c.pending,
+    revision: r.revision ?? c.revision,
+    instance: r.instance ?? c.instance,
+    animation: r.animation !== undefined ? r.animation : c.animation,
+  };
 }
 
 export function useConfig(): ConfigStore {

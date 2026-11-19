@@ -1,12 +1,27 @@
-// As animações do mascote no app: as mesmas da telinha (mascote.py), vindas do mascotinhos. O pacote "vivo" (o da
-// demonstração da biblioteca) para ocioso, trabalhando, esperando e concluído; alerta e reset ainda no "classico", como
-// na telinha. Nada de movimento é feito aqui: só qual pacote vale para cada estado.
-import { bibliotecaDoPacote, caixaDoEnquadre, Enquadramento, type Biblioteca } from "mascotinhos";
+// As animações do mascote no app: as mesmas da telinha (mascote.py), vindas do mascotinhos, no pacote em uso (a
+// preferência "pacote_animacao": o "vivo", o padrão, ou o "classico"). Alerta e reset continuam no "classico" em
+// qualquer pacote, como na telinha. Nada de movimento é feito aqui: só qual pacote vale para cada estado, e QUANDO um
+// mascote animado pode passar de um pacote para o outro.
+import {
+  bibliotecaDoPacote,
+  caixaDoEnquadre,
+  DURACAO_MISTURA,
+  Enquadramento,
+  misturar,
+  suave,
+  type Animador,
+  type Biblioteca,
+  type Mascotinho,
+  type Pose,
+} from "mascotinhos";
 import type { MascotState } from "./state";
 
-/** O pacote da demonstração do mascotinhos (o mesmo PACOTE do mascote.py). */
-export const PACOTE = "vivo";
-/** Os estados que ainda usam o pacote "classico" (o mesmo DO_CLASSICO do mascote.py). */
+/** Os pacotes que dá para escolher (o mesmo config.PACOTES_ANIMACAO do ombrod), na ordem da interface. */
+export const PACOTES = ["vivo", "classico"] as const;
+export type Pacote = (typeof PACOTES)[number];
+/** O padrão: o da demonstração do mascotinhos (o mesmo PACOTE do mascote.py). Também o de um ombrod sem esta opção. */
+export const PACOTE: Pacote = "vivo";
+/** Os estados que usam o pacote "classico" em qualquer pacote (o mesmo DO_CLASSICO do mascote.py). */
 export const DO_CLASSICO: readonly MascotState[] = ["alerta", "reset"];
 /** O instante da pose parada (avatares fora de animação): o mesmo da folha do mascotinhos. */
 export const T_PARADO = 1.2;
@@ -16,6 +31,11 @@ export const T_PARADO = 1.2;
  * passa por aqui: o mascote.py tem a frequência dele.
  */
 export const FPS = 30;
+/** A comemoração do concluído (pulo, ✓ se desenhando, faíscas) acaba antes disto, em segundos (o FIM_DA_CONCLUSAO do
+ * mascote.py). */
+export const FIM_DA_CONCLUSAO = 2.0;
+/** Os estados em que um mascote pode trocar de pacote sem cortar nada (o TROCA_SEGURA do mascote.py). */
+export const TROCA_SEGURA: readonly MascotState[] = ["ocioso", "alerta", "concluido"];
 
 /**
  * Como o desenho é enquadrado (o `enquadre` da biblioteca):
@@ -30,13 +50,81 @@ export const PROPORCAO_PALCO: number = (() => {
   return w / h;
 })();
 
-let cache: Biblioteca | null = null;
+/** Um nome de pacote vindo de fora (a IPC): um dos PACOTES, ou o padrão. */
+export function pacoteValido(x: unknown): Pacote {
+  return (PACOTES as readonly unknown[]).includes(x) ? (x as Pacote) : PACOTE;
+}
 
-/** O pacote vivo, com alerta e reset do clássico por cima (montada uma vez). */
-export function biblioteca(): Biblioteca {
-  if (!cache) {
-    const classico = bibliotecaDoPacote("classico");
-    cache = bibliotecaDoPacote(PACOTE).com(...DO_CLASSICO.map((e) => classico.obter(e)));
+const cache = new Map<Pacote, Biblioteca>();
+
+/**
+ * As animações de um pacote, com alerta e reset do clássico por cima (montada uma vez por pacote). Um pacote que não
+ * carrega cai no padrão: o mascote continua desenhando.
+ */
+export function biblioteca(pacote: Pacote = PACOTE): Biblioteca {
+  let b = cache.get(pacote);
+  if (!b) {
+    try {
+      const classico = bibliotecaDoPacote("classico");
+      b = bibliotecaDoPacote(pacote).com(...DO_CLASSICO.map((e) => classico.obter(e)));
+    } catch (e) {
+      if (pacote === PACOTE) throw e;
+      console.warn(`mascotinhos: o pacote ${pacote} não carregou; usando o ${PACOTE}`, e);
+      b = biblioteca(PACOTE);
+    }
+    cache.set(pacote, b);
   }
-  return cache;
+  return b;
+}
+
+type ComTroca = Animador & { parametrosAtuais: (agora: number) => [Pose, number] };
+const trocando = new WeakMap<Animador, true>();
+
+/**
+ * Trocar o pacote deste mascote agora não corta nada do que ele mostra? Só num estado de TROCA_SEGURA, já assentado
+ * (fora da mistura de uma troca de estado ou de pacote) e, no concluído, depois da comemoração. A mesma regra do
+ * Mascote.momento_seguro da telinha, no relógio do player.
+ */
+export function momentoSeguro(p: Mascotinho): boolean {
+  const a = p.animador;
+  if (!TROCA_SEGURA.includes(a.estado as MascotState) || trocando.has(a)) return false;
+  const t = p.relogio() - a.inicio;
+  return t >= (a.estado === "concluido" ? FIM_DA_CONCLUSAO : DURACAO_MISTURA);
+}
+
+/**
+ * Passa o mascote para outra biblioteca com a mesma mistura de DURACAO_MISTURA s que a biblioteca faz entre dois
+ * estados (o mesmo Mascote.usar_pacote da telinha): a pose do pacote de antes vira a do novo no mesmo instante do
+ * estado (nada recomeça). Só a pose do quadro passa por aqui (a do Animador, misturada com `misturar`); o desenho, o
+ * laço e o limite de fps continuam os do player. Os olhos e os extras do novo entram inteiros já no começo (o `u` é o
+ * do estado): o player desenha uma camada só, então não há como cruzar os extras dos dois como a telinha faz, e fazê-
+ * los surgir do zero faria o ✓, o zzZ ou o "?" piscarem.
+ */
+export function trocarPacote(p: Mascotinho, nova: Biblioteca): void {
+  const a = p.animador as ComTroca;
+  const antiga = a.biblioteca;
+  if (antiga === nova) return;
+  const proprio = Object.getPrototypeOf(a).parametrosAtuais as ComTroca["parametrosAtuais"];
+  const desde = p.relogio();
+  trocando.set(a, true);
+  a.parametrosAtuais = (agora: number) => {
+    const [pose, u] = proprio.call(a, agora);
+    const v = (agora - desde) / DURACAO_MISTURA;
+    if (v >= 1) {
+      delete (a as Partial<ComTroca>).parametrosAtuais; // volta ao da biblioteca
+      trocando.delete(a);
+      return [pose, u];
+    }
+    const atual = a.biblioteca;
+    a.biblioteca = antiga;
+    let antes: Pose;
+    try {
+      [antes] = proprio.call(a, agora);
+    } finally {
+      a.biblioteca = atual;
+    }
+    const w = suave(Math.max(0, v));
+    return [misturar(antes, pose, w), u];
+  };
+  p.ajustar({ biblioteca: nova }); // redesenha já, misturando
 }

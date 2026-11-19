@@ -100,7 +100,16 @@ Campos acrescentados para o Ombro.app (ainda v1; quem não os conhece os ignora)
 - `providers.list[].avatar`: `{avatar, color, choice}`: o avatar que o ombrod usa para o agente agora (com o
   "aleatório ao iniciar" já sorteado), a cor dele e a preferência (`padrao`, `aleatorio` ou um id). No resultado
   também: `ombro_avatar` (o do Ombro, sem agente em foco) e `random_mode` (`inicio` ou `sessao`).
-- `display.status.mascot`: `{avatar, provider, state, color}`: quem o mascote da telinha representa agora.
+- `display.status.mascot`: `{avatar, provider, state, color, package}`: quem o mascote da telinha representa agora
+  e o pacote de animações que ele está usando.
+- `animation` (no `providers.list`, no `config.get` e na resposta do `config.update`): o pacote de animações do
+  mascote, `{desired, applied, pending, waiting_for, busy_providers, failed, choices, unavailable}`. `desired` é a
+  preferência `pacote_animacao`; `applied` é o que o app e a telinha mostram agora (o Ombro.app desenha os mascotes
+  com ele); `pending` diz se a troca ainda espera, e `waiting_for` por quê: `starting` (o ombrod ainda não leu os
+  agentes), `activity` (algum agente trabalhando, esperando você ou com erro; quais, em `busy_providers`),
+  `settling` (a atividade acabou há menos de 2 s) ou `mascot` (o mascote da telinha termina a animação de agora).
+  `failed` é um pacote que não carregou (fica o em uso). `unavailable`: `[{id, reason}]`, os pacotes que a
+  biblioteca tem e o Ombro ainda não oferece (`3d`, `terminal`). Um ombrod de antes desta opção não manda `animation`.
 - `status.system`: `null` até a primeira leitura boa; senão `{cpu_percent, ram_used_bytes, ram_total_bytes,
   memory_pressure}` (`normal`, `warning`, `critical` ou `null` fora do macOS), da mesma leitura que vai para a tela.
 
@@ -129,6 +138,7 @@ fonte da verdade (`ombro/preferencias.py`); o Ombro.app monta a tela de ajustes 
 | `appearance` | `layout` (todos, incluindo o `classico`), `cor_mascote`, `cor_modo` (`agente`, `sorteada`) | na hora |
 | `avatars` | `avatares.claude`, `avatares.codex`, `avatares.cursor`, `avatares.padrao` (`padrao`, `aleatorio` ou o id de um avatar do catálogo), `avatar_sorteio` (`inicio`, `sessao`) | na hora |
 | `appearance` | `intervalo` (0,05–10 s, ou `null` para o padrão do layout) | na hora |
+| `appearance` | `pacote_animacao` (`vivo`, o padrão, ou `classico`) | gravado na hora; entra em uso na hora sem atividade, ou quando a atividade terminar (ver `animation`) |
 | `multi_agent` | `vista`, `foco`, `rotacao`, `intervalo_rotacao` | na hora |
 | `providers` | `providers.claude`, `providers.codex`, `providers.cursor` (`true`/`false`) | ao reiniciar |
 | `hardware` | `sem_macmon` | ao reiniciar |

@@ -14,9 +14,10 @@ Os avatares seguem o formato do [open-bot-avatar](https://github.com/DominikScho
 cor, os olhos (pílulas que piscam e olham em volta), o volume e o movimento são do renderer.
 
 - **No Ombro.app** o desenho e o movimento são os do [mascotinhos](https://github.com/GilsonB12/mascotinhos) para
-  JavaScript (pacote npm `mascotinhos`, versão fixada), com as mesmas animações da telinha: o pacote `vivo` para
-  ocioso, trabalhando, esperando e concluído, e o `classico` para alerta e reset (`app/src/features/avatars/animacoes.ts`,
-  o par do `PACOTE`/`DO_CLASSICO` do `mascote.py`). Ele também valida cada definição. Os cartões dos agentes e a
+  JavaScript (pacote npm `mascotinhos`, versão fixada), com as mesmas animações da telinha: o pacote de animações
+  em uso (o `vivo`, o padrão, ou o `classico`; ver [Pacote de animações](#pacote-de-animações)) para ocioso,
+  trabalhando, esperando e concluído, e o `classico` para alerta e reset (`app/src/features/avatars/animacoes.ts`,
+  o par do `PACOTES`/`DO_CLASSICO` do `mascote.py`). Ele também valida cada definição. Os cartões dos agentes e a
   prévia da galeria usam o player da biblioteca, animado pelo estado real de cada agente: a pose, os olhos, as
   piscadas, os extras e a mistura de um estado no outro são dela, e trocar de avatar ou de cor passa pela transição
   dela (o app não faz movimento em CSS). No app ele desenha a no máximo 30 quadros por segundo (a opção `fps` da
@@ -31,9 +32,9 @@ cor, os olhos (pílulas que piscam e olham em volta), o volume e o movimento sã
   polígonos (os comandos `M L H V C S Q T A Z`, a regra nonzero do SVG) e põe os olhos como o contrato descreve
   (4x11 unidades vezes a escala, aumentados até 1,45x onde cabem, como no motor). O movimento e o desenho (os seis
   estados, os olhos, as piscadas e os extras) são os da biblioteca [mascotinhos](https://github.com/GilsonB12/mascotinhos):
-  ocioso, trabalhando, esperando e concluído são os do pacote `vivo`, o da demonstração dela (dorme de olhos fechados
-  com zzZ; trabalha de olhos semicerrados com linhas e engrenagem; espera com "?"; conclui feliz, com ✓ e faíscas);
-  alerta e reset ainda são os do `classico` (os de antes), até passarem ao `vivo` numa etapa seguinte. A mistura de
+  ocioso, trabalhando, esperando e concluído são os do pacote de animações em uso: o `vivo`, o padrão e o da
+  demonstração dela (dorme de olhos fechados com zzZ; trabalha de olhos semicerrados com linhas e engrenagem; espera
+  com "?"; conclui feliz, com ✓ e faíscas), ou o `classico` (os de antes); alerta e reset são sempre os do `classico`. A mistura de
   um estado no outro e a troca de avatar também são as da biblioteca (o `Animador`); o `mascote.py` só decide o
   estado e qual avatar e cor usar. Só a forma vem do avatar. Quando o corpo
   inclina (esperando, concluído), os olhos andam de lado como andavam no cloud antigo, cujos olhos ficavam mais
@@ -44,6 +45,47 @@ cor, os olhos (pílulas que piscam e olham em volta), o volume e o movimento sã
 Do open-bot-avatar, só o formato (o contrato v1). Os nove primeiros avatares foram desenhados para o Ombro (e
 depois viraram as formas de exemplo do mascotinhos); **Bolota**, **Broto** e **Fantasma** vêm das formas de exemplo
 do mascotinhos (MIT), copiadas sem mudança.
+
+## Pacote de animações
+
+Uma escolha só, em **Aparência → Animações** (ou `pacote_animacao` no `config.json` e na IPC), para todos os agentes,
+no app e na telinha; os avatares e as cores continuam por agente.
+
+| Pacote | O que é |
+| --- | --- |
+| `vivo` (padrão) | O da demonstração do mascotinhos: olhos que mudam com o estado, zzZ, engrenagem, "?" e ✓ com faíscas. |
+| `classico` | Os movimentos de antes, mais contidos: pulinhos, zZ e um ✓ simples. |
+
+Os dois desenham chapado, como a telinha sempre desenhou. A biblioteca tem mais dois pacotes, que o Ombro ainda não
+oferece (o app mostra "em avaliação"):
+
+- **3D** (`3d`, com volume): o volume ainda não foi conferido na tela USB, e o volume do player JavaScript é uma
+  aproximação do de Python (os dois não ficam iguais). Em Python, um quadro custa ~2 ms (mediana; o `vivo`, ~0,3 ms).
+- **Terminal** (`terminal`, em células de letra): as letras ficam difíceis de ler no tamanho do mascote na tela
+  480×320 e nos layouts menores, e a cor de fósforo ignora a cor de cada agente. Um quadro custa ~2,8 ms em Python.
+
+**A troca nunca corta o que o mascote está mostrando.** Quem decide é o ombrod (`ombro/animacoes.py`):
+
+- sem atividade, a escolha entra na hora (no app e na telinha, sem reiniciar nada);
+- com algum agente trabalhando, esperando você (resposta ou aprovação) ou com erro, ela fica **pendente** e o pacote de
+  antes segue animando; entra quando **todos** os agentes ligados param, seja qual for o layout ou o cartão em foco;
+- depois de um concluído, espera 2 s (a comemoração: pulo, ✓ se desenhando, faíscas) e um ponto seguro do mascote
+  da telinha (ocioso ou alerta assentados; nunca no meio de trabalhando, esperando ou reset);
+- várias escolhas seguidas: só a última conta (nada enfileira); voltar à que está em uso cancela a troca;
+- a troca em si é a mesma mistura de 0,5 s que a biblioteca faz entre dois estados: a pose do pacote de antes vira a
+  do novo no mesmo instante do estado (nada recomeça, o concluído não comemora de novo). Só a pose é misturada, com o
+  `misturar` da biblioteca; os movimentos, olhos e extras são os dela. Na telinha, os olhos e os extras dos dois
+  pacotes se cruzam sobre o mesmo corpo (os de antes esmaecem enquanto os novos aparecem, desenhados pelo
+  `desenhar` da biblioteca), então o ✓, o zzZ ou o "?" nunca somem; no app, o player desenha uma camada só, e os
+  olhos e extras do novo entram inteiros no começo da mistura (sem surgir do zero, para não piscarem);
+- o pacote em uso é gravado à parte, em `~/.ombro-screen/animacao.json` (`{"versao": 1, "aplicado": "vivo"}`): ao
+  reiniciar, o mascote volta no que estava em uso e uma escolha pendente espera um momento seguro, mesmo que a
+  atividade tenha continuado. Sem o arquivo (a primeira vez), vale o `vivo`, o de antes desta opção;
+- um pacote que não carrega não derruba nada: fica o em uso, e o app avisa.
+
+No app, cada mascote animado passa para o pacote em uso no próximo ponto seguro dele (o mesmo critério); a prévia do
+cartão Animações troca na hora, para mostrar a escolha. Os avatares parados (lista de sessões, miniaturas) trocam na
+hora, porque não há movimento a interromper.
 
 ## A coleção
 

@@ -334,11 +334,12 @@ def verificar_execucao(runtime: Path, backend: Path) -> None:
         r = subprocess.run([py, "-c", "import sys; sys.path.insert(0, '.'); import ombro.cli, ombro.daemon, layout_multiagente, "
                                       "mascote; assert mascote.Mascote().camada(1.0).getbbox(); "
                                       "assert mascote.BIBLIOTECA['ocioso'].olhos == 'fechados'; "  # o pacote vivo
+                                      "assert all('concluido' in mascote.biblioteca(p).estados() for p in mascote.PACOTES); "  # os que dá para escolher
                                       "assert mascote.ESTILO.fonte(10).getname() == ('JetBrains Mono', 'Bold')"],
                            env=env, cwd=backend, capture_output=True, text=True)
         if r.returncode:
             falha(f"import sem -B falhou: {r.stderr}")
-        print("    o mascote desenha com o mascotinhos (pacote vivo) e a JetBrains Mono Bold dele")
+        print("    o mascote desenha com o mascotinhos (pacotes vivo e clássico) e a JetBrains Mono Bold dele")
     depois = foto(runtime) | foto(backend)
     if depois != antes:
         novos = sorted({n for n, _ in depois} ^ {n for n, _ in antes} or {n for n, _ in depois - antes})

@@ -16,8 +16,8 @@ const SLOTS: { slot: AvatarSlot; label: string; hint: string }[] = [
   { slot: "padrao", label: "Ombro", hint: "Quando nenhum agente está em foco no multiagente" },
 ];
 
-// os quatro estados principais, com as animações do pacote vivo (as mesmas da telinha)
-const ESTADOS: { value: MascotState; label: string }[] = [
+// os quatro estados principais, com as animações do pacote em uso (as mesmas da telinha)
+export const ESTADOS: { value: MascotState; label: string }[] = [
   { value: "ocioso", label: "Ocioso" },
   { value: "trabalhando", label: "Trabalhando" },
   { value: "esperando", label: "Esperando" },

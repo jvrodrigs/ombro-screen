@@ -2,6 +2,7 @@
 // Serve aos testes e a `npm run dev` no navegador. Dentro do app, nunca é usado: lá tudo vem do ombrod.
 import type { OmbroApi } from "./api";
 import type {
+  AnimationStatus,
   AppPrefs,
   ConfigInfo,
   ConfigSchema,
@@ -73,6 +74,24 @@ export function mockSessions(): Session[] {
   ];
 }
 
+/**
+ * O pacote de animações na demonstração: como no ombrod, a troca espera a atividade terminar. Aqui o Claude e o Codex
+ * estão esperando você, então uma escolha nova fica pendente por alguns segundos (MOCK_ATIVIDADE_MS) e depois entra.
+ */
+export const MOCK_ATIVIDADE_MS = 6000;
+export function mockAnimation(desired = "vivo", applied = desired): AnimationStatus {
+  const pending = desired !== applied;
+  return {
+    desired, applied, pending, waiting_for: pending ? "activity" : null, busy_providers: pending ? ["claude", "codex"] : [],
+    failed: null, choices: ["vivo", "classico"],
+    unavailable: [
+      { id: "3d", reason: "falta validar o volume na tela USB e o custo do 3D no app" },
+      { id: "terminal", reason: "falta validar a leitura das letras na tela USB e nos layouts menores" },
+    ],
+  };
+}
+let animacaoDoMock = mockAnimation();
+
 export function mockSnapshot(): Snapshot {
   return {
     seq: 1, at_ms: Date.now(),
@@ -87,6 +106,7 @@ export function mockSnapshot(): Snapshot {
     providers: {
       providers: mockProviders(), collected_at: iso(agora()),
       ombro_avatar: { avatar: "ombro-cloud", color: "#DF8559", choice: "padrao" }, random_mode: "inicio",
+      animation: structuredClone(animacaoDoMock),
     },
     sessions: { sessions: mockSessions(), collected_at: iso(agora()) },
     health: {
@@ -121,6 +141,7 @@ export const mockSchema: ConfigSchema = {
       choices: ["padrao", "aleatorio", "ombro-cloud", "sereno", "orbita", "cubo", "scout", "pixel", "chevron", "maestro", "nova"],
     })),
     { key: "avatar_sorteio", group: "avatars", type: "enum", description: "o aleatório: um por inicialização, ou um por sessão", live: true, nullable: false, choices: ["inicio", "sessao"] },
+    { key: "pacote_animacao", group: "appearance", type: "enum", description: "o pacote de animações do mascote, no app e na telinha", live: true, nullable: false, choices: ["vivo", "classico"] },
     { key: "intervalo", group: "appearance", type: "number", description: "segundos entre quadros (null: o padrão do layout)", live: true, nullable: true, min: 0.05, max: 10 },
     { key: "vista", group: "multi_agent", type: "enum", description: "visão do layout multiagente", live: true, nullable: false, choices: ["overview", "focus", "attention"] },
     { key: "foco", group: "multi_agent", type: "enum", description: "o agente da visão focus", live: true, nullable: true, choices: ["claude", "codex", "cursor"] },
@@ -143,6 +164,7 @@ export function mockConfig(): ConfigInfo {
       debug: false, foco: null, girar: false, intervalo: null, intervalo_rotacao: 15,
       layout: "auto", paisagem: false, porta: "AUTO", porta_sim: 5680, providers: ["claude", "codex", "cursor"],
       revisao: "A", rotacao: false, sem_macmon: false, transporte: "auto", usb: false, vista: "overview",
+      pacote_animacao: "vivo",
     },
     providers_enabled: { claude: true, codex: true, cursor: true },
     editable: mockSchema.options.map((o) => o.key),
@@ -152,6 +174,7 @@ export function mockConfig(): ConfigInfo {
     pending: {},
     revision: 0,
     instance: "mock-1",
+    animation: mockAnimation(),
   };
 }
 
@@ -197,6 +220,7 @@ export function mockDoctor(): DoctorResult {
 
 /** Um mock com estado (as mudanças de preferência ficam até recarregar), para usar a interface no navegador. */
 export function createMockApi(): OmbroApi {
+  animacaoDoMock = mockAnimation(); // cada API de mentira começa no padrão (os testes não herdam a escolha de outro)
   const config = mockConfig();
   let prefs: AppPrefs = { onboarding_completed: true, notifications: false, owned_daemon_pid: null, autostart: false };
   const integrations = mockIntegrations();
@@ -214,7 +238,15 @@ export function createMockApi(): OmbroApi {
     else if (k.startsWith("providers.")) config.providers_enabled[k.slice(10) as ProviderId] = v === true;
     else config.values[k] = v;
   };
+  let trocaDoMock: ReturnType<typeof setTimeout> | undefined;
   const mudar = (changes: Record<string, ConfigValue>, persist: boolean): ConfigUpdateResult => {
+    if (typeof changes.pacote_animacao === "string") {
+      const desejado = changes.pacote_animacao;
+      animacaoDoMock = mockAnimation(desejado, animacaoDoMock.applied);
+      clearTimeout(trocaDoMock); // só a última escolha conta
+      if (animacaoDoMock.pending) trocaDoMock = setTimeout(() => (animacaoDoMock = config.animation = mockAnimation(desejado)), MOCK_ATIVIDADE_MS);
+      config.animation = animacaoDoMock;
+    }
     const live = new Set(config.live);
     const pending = { ...(config.pending ?? {}) };
     for (const [k, v] of Object.entries(changes)) {
@@ -231,7 +263,7 @@ export function createMockApi(): OmbroApi {
       applied: keys.filter((k) => live.has(k)), restart_required: keys.filter((k) => k in pending), deferred: [],
       persisted: persist, file: persist ? config.file : null,
       values: Object.fromEntries(keys.map((k) => [k, emUso(k)])), pending: { ...pending }, revision: config.revision,
-      instance: config.instance,
+      instance: config.instance, animation: structuredClone(animacaoDoMock),
     };
   };
   return {

@@ -5,6 +5,7 @@ import * as mq from "mascotinhos";
 import type { Mascotinho } from "mascotinhos";
 import { renderToStaticMarkup } from "react-dom/server";
 import { biblioteca, FPS, PROPORCAO_PALCO } from "./animacoes";
+import { act } from "@testing-library/react";
 import { AvatarView } from "./AvatarView";
 import { catalog } from "./catalog";
 import baseCss from "../../styles/base.css?raw";
@@ -305,5 +306,111 @@ describe("AvatarView parado", () => {
   it("o rótulo vai para leitores de tela; o desenho fica escondido deles", () => {
     const { getByRole } = render(<AvatarView definition={av("maestro").definition} color="#E58FB0" label="Claude Code: Maestro" />);
     expect(getByRole("img", { name: "Claude Code: Maestro" })).toBeInTheDocument();
+  });
+});
+
+// o pacote de animações: um mascote animado só troca no ponto seguro dele; uma prévia troca na hora
+describe("AvatarView animado: trocar de pacote", () => {
+  // o player guarda uma cópia da biblioteca: o pacote dela se vê pelas poses (vivo e clássico diferem no ocioso)
+  const pacoteDe = (p: Mascotinho) => {
+    const pose = (b: { parametros(e: string, t: number): unknown }) => JSON.stringify(b.parametros("ocioso", 1.3));
+    const achado = (["vivo", "classico"] as const).find((x) => pose(biblioteca(x)) === pose(p.animador.biblioteca));
+    expect(pose(biblioteca("vivo"))).not.toBe(pose(biblioteca("classico")));
+    return achado;
+  };
+  let agora = 0;
+  const passar = (s: number) =>
+    act(() => {
+      agora += s * 1000;
+      vi.advanceTimersByTime(s * 1000);
+    });
+
+  beforeEach(() => {
+    agora = 1000;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(performance, "now").mockImplementation(() => agora);
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const el = (state: import("./state").MascotState, pacote: "vivo" | "classico", previa = false) => (
+    <AvatarView definition={av("bolota").definition} color="#E07A57" state={state} live pacote={pacote} previa={previa} />
+  );
+
+  it("trabalhando: o pacote novo espera; quando o mascote assenta no ocioso, entra sem montar de novo", () => {
+    const { rerender, container } = render(el("trabalhando", "vivo"));
+    const p = montados[0];
+    const svg = container.querySelector("svg");
+    passar(3);
+    rerender(el("trabalhando", "classico"));
+    passar(10);
+    expect(pacoteDe(p)).toBe("vivo"); // segue animando no pacote de antes
+    rerender(el("esperando", "classico"));
+    passar(10);
+    expect(pacoteDe(p)).toBe("vivo");
+    rerender(el("ocioso", "classico"));
+    passar(0.2);
+    expect(pacoteDe(p)).toBe("vivo"); // ainda misturando os estados
+    passar(0.8);
+    expect(pacoteDe(p)).toBe("classico");
+    expect(montar).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("svg")).toBe(svg);
+  });
+
+  it("concluído: espera a comemoração acabar", () => {
+    const { rerender } = render(el("concluido", "vivo"));
+    const p = montados[0];
+    rerender(el("concluido", "classico"));
+    passar(1);
+    expect(pacoteDe(p)).toBe("vivo");
+    passar(1.5);
+    expect(pacoteDe(p)).toBe("classico");
+  });
+
+  it("várias escolhas seguidas: só a última conta", () => {
+    const { rerender } = render(el("trabalhando", "vivo"));
+    const p = montados[0];
+    const ajustar = vi.spyOn(p, "ajustar");
+    rerender(el("trabalhando", "classico"));
+    passar(1);
+    rerender(el("trabalhando", "vivo"));
+    passar(1);
+    rerender(el("ocioso", "vivo"));
+    passar(5);
+    expect(ajustar).not.toHaveBeenCalled(); // voltou ao que já mostrava: nada a trocar
+    rerender(el("ocioso", "classico"));
+    passar(1);
+    expect(ajustar).toHaveBeenCalledTimes(1);
+    expect(pacoteDe(p)).toBe("classico");
+  });
+
+  it("a prévia troca na hora, mesmo trabalhando", () => {
+    const { rerender } = render(el("trabalhando", "vivo", true));
+    const p = montados[0];
+    rerender(el("trabalhando", "classico", true));
+    expect(pacoteDe(p)).toBe("classico");
+    expect(montar).toHaveBeenCalledTimes(1);
+  });
+
+  it("desmontar no meio da espera não deixa nada agendado", () => {
+    const { rerender, unmount } = render(el("trabalhando", "vivo"));
+    rerender(el("trabalhando", "classico"));
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("parado, segue o pacote na hora (não há movimento a interromper)", () => {
+    const { container, rerender } = render(<AvatarView definition={av("sereno").definition} color="#D97757" state="ocioso" pacote="vivo" />);
+    const vivo = container.querySelector(".avatar-body")!.innerHTML;
+    rerender(<AvatarView definition={av("sereno").definition} color="#D97757" state="ocioso" pacote="classico" />);
+    const esperado = document.createElement("span");
+    esperado.innerHTML = mq.quadroSvg(av("sereno").definition, "ocioso", 1.2, { cor: "#D97757", biblioteca: biblioteca("classico"), enquadre: "corpo", extras: true, prefixo: "p-sereno-" });
+    expect(container.querySelector(".avatar-body")!.innerHTML).toBe(esperado.innerHTML);
+    expect(esperado.innerHTML).not.toBe(vivo);
   });
 });

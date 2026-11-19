@@ -2,9 +2,10 @@
 
 A forma e os olhos vêm do avatar (avatars/, formato do open-bot-avatar; ver avatares.py): o padrão é o
 Ombro Cloud, e cada agente pode ter o seu. As animações são as da biblioteca mascotinhos
-(https://github.com/GilsonB12/mascotinhos), as mesmas da demonstração dela: o pacote "vivo" (olhos que mudam com o
-estado, zzZ, linhas e engrenagem, "?", ✓ com faíscas), desenhado chapado. Alerta e reset continuam, por enquanto,
-com as animações do pacote "classico" (as de antes); para passá-los ao "vivo", basta tirá-los de DO_CLASSICO.
+(https://github.com/GilsonB12/mascotinhos), num dos pacotes dela (a preferência `pacote_animacao`): o "vivo", o
+padrão (olhos que mudam com o estado, zzZ, linhas e engrenagem, "?", ✓ com faíscas), ou o "classico"; os dois
+desenhados chapados. Alerta e reset continuam, por enquanto, com as animações do "classico" em qualquer pacote;
+para passá-los ao pacote escolhido, basta tirá-los de DO_CLASSICO.
 O texto sai na JetBrains Mono Bold que vem com o mascotinhos (a mesma de fontes/).
 
 O Animador do mascotinhos faz o resto do que é animação: a mistura entre estados, a troca de avatar, a cor e o
@@ -18,19 +19,38 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 import mascotinhos as oa
 from mascotinhos import palco
+from mascotinhos.movimento import suave
 from PIL import Image
 
 import avatares
+from config import PACOTES_ANIMACAO, PACOTES_EM_AVALIACAO
 from render import S, VERDE
 
 # ---------- as animações: as da biblioteca, sem nada refeito aqui ----------
-PACOTE = "vivo"  # o da demonstração do mascotinhos
-DO_CLASSICO = ("alerta", "reset")  # estes ainda usam o pacote "classico"; os outros, o PACOTE
+# Os pacotes que dá para escolher (config.PACOTES_ANIMACAO), na ordem da interface; o primeiro, "vivo", é o padrão (o
+# da demonstração do mascotinhos, o de sempre desde a 0.2.0). Os dois são desenhados chapados, iguais na telinha e no
+# app. Os em avaliação ("3d", "terminal") trazem cada um o seu jeito de desenhar (volume; letras) e ainda faltam ser
+# validados na tela USB e no app (ver docs/avatars.md).
+PACOTES, EM_AVALIACAO = PACOTES_ANIMACAO, PACOTES_EM_AVALIACAO
+PACOTE = PACOTES[0]
+DO_CLASSICO = ("alerta", "reset")  # estes usam o pacote "classico" em qualquer pacote; os outros, o escolhido
 _classico = oa.Biblioteca.carregar(pacote="classico")
-BIBLIOTECA = oa.Biblioteca.carregar(pacote=PACOTE).com(*(_classico[e] for e in DO_CLASSICO))
+
+
+@lru_cache(maxsize=None)
+def biblioteca(pacote: str = PACOTE) -> oa.Biblioteca:
+    """As animações de um pacote, com alerta e reset do "classico" por cima (montada uma vez por pacote). Levanta
+    ValueError com um pacote fora de PACOTES, e o erro da biblioteca se ela não conseguir carregá-lo."""
+    if pacote not in PACOTES:
+        raise ValueError(f"pacote de animações fora da escolha: {pacote!r} (há: {', '.join(PACOTES)})")
+    return oa.Biblioteca.carregar(pacote=pacote).com(*(_classico[e] for e in DO_CLASSICO))
+
+
+BIBLIOTECA = biblioteca(PACOTE)
 
 # ---------- onde o mascote fica na tela de 480x320 ----------
 COL_X, COL_Y, COL_W, COL_H = 316, 26, 156, 170  # coluna reservada; nada passa daqui
@@ -46,6 +66,12 @@ ALTURA_OLHAR = palco.ALTURA_OLHAR  # na inclinação, os olhos andam como se est
 
 ESTADOS = ("ocioso", "trabalhando", "esperando", "alerta", "reset", "concluido")
 DURACAO_CONCLUIDO = 300.0  # segundos mostrando "concluído" depois que o Claude termina; depois, dorme
+# A comemoração do "concluído" (o pulo, o ✓ se desenhando e as faíscas) acaba antes disto, em qualquer pacote (um
+# teste confere nos arquivos da biblioteca); depois, o mascote só balança. É o ponto seguro para trocar de pacote.
+FIM_DA_CONCLUSAO = 2.0
+# Os estados em que dá para trocar de pacote sem cortar nada: parado (ocioso), perto do limite (alerta: o mesmo nos
+# dois pacotes) e o concluído depois da comemoração. Trabalhando, esperando e reset nunca.
+TROCA_SEGURA = ("ocioso", "alerta", "concluido")
 CALMOS = ("ocioso", "concluido")  # estados sem nenhuma sessão ativa
 CAMPOS = oa.CAMPOS  # dx, dy, sx, sy, rot, kL, kW, olhaX, olhaY, pisca
 DURACAO_MISTURA = oa.DURACAO_MISTURA  # s para passar de um estado ao outro
@@ -95,12 +121,76 @@ class Mascote(oa.Animador):
     duracao_concluido: float = DURACAO_CONCLUIDO
     _havia_trabalho: bool = False  # alguma sessão estava trabalhando na leitura anterior?
     _terminou_em: float | None = None  # quando a última sessão parou de trabalhar sem esperar você
+    pacote: str = PACOTE  # o pacote de animações em uso (o da `biblioteca`)
+    _troca_pacote: tuple | None = None  # (biblioteca de antes, desde quando) enquanto mistura um pacote no outro
+    _pose_da_troca: tuple | None = field(default=None, repr=False)  # (pose, u) do último quadro da troca de pacote
 
     def usar(self, av: "avatares.Avatar", cor_agente: tuple[int, int, int] | None, agora: float, ja: bool = False) -> None:
         """Pede o avatar `av` com a cor do agente dele (sem ela, a do avatar). A troca é a do Animador: uma transição
         de TRANSICAO s (encolhe e pisca, a forma muda no meio); `ja` (uma mudança de preferência, um PNG) troca agora.
         Pedir o mesmo de novo não faz nada."""
         super().usar(forma_de(av), cor_agente or avatares.cor_hex(av.cor), agora, ja)
+
+    # ---------- o pacote de animações ----------
+    def usar_pacote(self, pacote: str, agora: float, ja: bool = False) -> None:
+        """Passa a usar o pacote `pacote`. A troca é a mesma mistura de DURACAO_MISTURA s que a biblioteca faz entre
+        dois estados: a pose do pacote de antes vira a do novo, no mesmo instante do estado (nada recomeça), e os olhos e
+        os extras de um se cruzam com os do outro (ver camada). `ja` troca sem misturar (ao iniciar). Quem decide QUANDO trocar é quem usa (ver
+        momento_seguro). Levanta o erro de biblioteca() se o pacote não carregar: nada muda."""
+        nova = biblioteca(pacote)
+        if nova is self.biblioteca:
+            self.pacote = pacote
+            return
+        self._troca_pacote = None if ja else (self.biblioteca, agora)
+        self.biblioteca, self.pacote = nova, pacote
+
+    def momento_seguro(self, agora: float) -> bool:
+        """Trocar de pacote agora não corta nada do que o mascote mostra? Só num estado de TROCA_SEGURA, já assentado
+        (fora da mistura de uma troca de estado ou de pacote) e, no concluído, depois da comemoração."""
+        if self.estado not in TROCA_SEGURA or self._troca_pacote is not None:
+            return False
+        t = agora - self.inicio
+        return t >= (FIM_DA_CONCLUSAO if self.estado == "concluido" else DURACAO_MISTURA)
+
+    def parametros_atuais(self, agora: float) -> tuple[dict, float]:
+        """Os do Animador; durante uma troca de pacote, misturados com os do pacote de antes (oa.misturar, como entre
+        dois estados). O `u` (o quanto dos extras do estado já vale) é o do estado: a troca de pacote não apaga extras."""
+        p, u = super().parametros_atuais(agora)
+        troca = self._troca_pacote
+        if troca is None:
+            return p, u
+        antiga, desde = troca
+        v = (agora - desde) / DURACAO_MISTURA
+        if v >= 1:
+            self._troca_pacote = self._pose_da_troca = None
+            return p, u
+        nova, self.biblioteca = self.biblioteca, antiga
+        try:
+            antes, _ = super().parametros_atuais(agora)
+        finally:
+            self.biblioteca = nova
+        w = suave(max(0.0, v))  # a mesma curva da mistura entre estados
+        pose = misturar(antes, p, w)
+        self._pose_da_troca = (pose, u)
+        return pose, u
+
+    def camada(self, agora: float) -> Image.Image:
+        """O quadro do Animador. Numa troca de pacote, um cruzamento: o mesmo corpo (a pose misturada), com os olhos e
+        os extras do pacote de antes sumindo enquanto os do novo aparecem (desenhados pelo oa.desenhar, como o Animador
+        desenha). Assim nenhum extra pisca: o ✓, o zzZ ou o "?" de um vira o do outro."""
+        img = super().camada(agora)
+        troca, pose = self._troca_pacote, self._pose_da_troca
+        if troca is None or pose is None or self._troca is not None:  # fora da troca, ou trocando de avatar junto
+            return img
+        antiga, desde = troca
+        w = suave(min(1.0, max(0.0, (agora - desde) / DURACAO_MISTURA)))
+        p, u = pose
+        antes = oa.desenhar(self.forma, p, antiga.get(self.estado), agora - self.inicio, self.cor_atual(agora),
+                            alpha_extras=u, estilo=self.estilo)
+        if w <= 0:
+            return antes
+        # em alfa pré-multiplicado: o corpo (igual nas duas) fica igual; o que só uma tem esmaece sem escurecer
+        return Image.blend(antes.convert("RGBa"), img.convert("RGBa"), w).convert("RGBA")
 
     def decidir(self, u, agora: float) -> str:
         """Estado do cloud a partir do que o Claude Code está fazendo."""

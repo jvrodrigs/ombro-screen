@@ -6,6 +6,7 @@ import { PROVIDER_NAMES } from "../../lib/format";
 import type { ConfigValue } from "../../types/ombro";
 import { Preview } from "../display/Preview";
 import { AvatarSettings } from "../avatars/AvatarSettings";
+import { AnimationSettings } from "./AnimationSettings";
 
 type ModoCor = "agente" | "sorteada" | "fixa";
 
@@ -61,13 +62,15 @@ export function Appearance() {
 
   return (
     <>
-      <PageHeader title="Aparência" subtitle="Os avatares, as cores e o layout multiagente da tela. Tudo muda na hora." />
+      <PageHeader title="Aparência" subtitle="Os avatares, as animações, as cores e o layout multiagente da tela." />
       {erro && <Notice tone="critical">{erro}</Notice>}
       {config.error && <Notice tone="critical">{config.error}</Notice>}
 
       <div className="appearance-layout">
         <div className="stack">
           <AvatarSettings config={config.config} onChanged={() => config.reload()} />
+
+          <AnimationSettings config={config} />
 
           <Card>
             <div className="card-title">
@@ -122,7 +125,7 @@ export function Appearance() {
                 </div>
               </div>
             )}
-            <p className="muted small">As animações do mascote (pulos, zZ, “?”, confete) são as mesmas em todos os avatares.</p>
+            <p className="muted small">As animações do mascote (pulos, zZ, “?”, ✓) são as mesmas em todos os avatares.</p>
           </Card>
 
           <Card>

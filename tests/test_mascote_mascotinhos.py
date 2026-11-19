@@ -77,11 +77,21 @@ class Pacote(unittest.TestCase):
 class SemMovimentoProprio(unittest.TestCase):
     def test_o_mascote_e_o_animador_da_biblioteca(self):
         self.assertTrue(issubclass(mascote.Mascote, oa.Animador))
-        for nome in ("camada", "parametros_atuais", "ir_para", "cor_atual", "_avancar_troca", "_aplicar",
-                     "definir_cor_modo", "_cor_do_estado"):
+        for nome in ("ir_para", "cor_atual", "_avancar_troca", "_aplicar", "definir_cor_modo",
+                     "_cor_do_estado"):
             self.assertIs(getattr(mascote.Mascote, nome), getattr(oa.Animador, nome), nome)
         proprios = {n for n, v in vars(mascote.Mascote).items() if callable(v) and not n.startswith("__")}
-        self.assertEqual(proprios, {"usar", "decidir"})  # o avatar com a cor do agente, e a decisão de estado
+        # o avatar com a cor do agente, a decisão de estado e a troca de pacote (que só mistura a pose do pacote de
+        # antes com a do novo, com o misturar da biblioteca, e cruza os dois desenhos do oa.desenhar: ver test_animacoes)
+        self.assertEqual(proprios, {"usar", "decidir", "usar_pacote", "momento_seguro", "parametros_atuais", "camada"})
+
+    def test_fora_de_uma_troca_de_pacote_a_pose_e_a_do_animador(self):
+        m = mascote.Mascote(cor_fixa=(1, 2, 3))
+        for e in mascote.ESTADOS:
+            m.ir_para(e, 0.0)
+            for t in (0.0, 0.3, 1.1, 4.0):
+                self.assertEqual(m.parametros_atuais(t), oa.Animador.parametros_atuais(m, t), f"{e} {t}")
+                self.assertEqual(m.camada(t).tobytes(), oa.Animador.camada(m, t).tobytes(), f"{e} {t}")
 
     def test_as_constantes_das_trocas_sao_as_da_biblioteca(self):
         self.assertEqual((mascote.TRANSICAO, mascote.REALCE, mascote.DURACAO_MISTURA, mascote.CAMPOS),

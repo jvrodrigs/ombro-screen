@@ -184,14 +184,19 @@ quando o socket não responde, e já tem as garantias de ordem, repetição e at
 
 O `mascote.py` decide o estado do mascote (qual mostrar) e pede o avatar e a cor; o resto é da biblioteca
 [mascotinhos](https://github.com/GilsonB12/mascotinhos), fixada em `requirements.txt` e, com o hash do wheel, em
-`app/backend/requirements.lock`: o movimento e o desenho (os pulos, os olhos, os extras) do pacote `vivo`, o da
-demonstração dela (alerta e reset ainda no `classico`, os de antes), e o `Animador`, de quem o `Mascote` herda a
+`app/backend/requirements.lock`: o movimento e o desenho (os pulos, os olhos, os extras) do pacote de animações
+escolhido (`vivo`, o padrão e o da demonstração dela, ou `classico`; alerta e reset sempre no `classico`), e o `Animador`, de quem o `Mascote` herda a
 mistura de um estado no outro, a troca de avatar e o realce da cor. A forma vem de um avatar
 (`avatars/`, no formato do open-bot-avatar), lido pelo `avatares.py`, que transforma o path em polígonos e decide
 qual avatar e qual cor usar. A cada coleta, o laço (`ombro/app.py`) diz ao mascote de quem ele fala (o Claude nos
 layouts de um agente; o agente mais urgente, o em foco ou o único ativo no multiagente) e o avatar dele entra na
-próxima troca de estado. O Ombro.app desenha os mesmos arquivos com o mascotinhos para JavaScript, com as mesmas animações. Detalhes:
-[avatars.md](avatars.md).
+próxima troca de estado. O Ombro.app desenha os mesmos arquivos com o mascotinhos para JavaScript, com as mesmas animações.
+
+O pacote de animações tem um desejado (a preferência `pacote_animacao`) e um aplicado (o que o app e a telinha
+mostram, gravado em `~/.ombro-screen/animacao.json`). A cada quadro, o laço pergunta a `ombro/animacoes.py` se a
+troca pode acontecer: só com o Ombro já tendo lido os agentes, nenhuma sessão de nenhum agente em andamento
+(trabalhando, esperando ou com erro), tudo quieto há 2 s e o mascote da telinha num ponto seguro. O aplicado vai
+pela IPC (`animation`) e o app desenha com ele. Detalhes: [avatars.md](avatars.md#pacote-de-animações).
 
 ## Ombro.app: a interface gráfica
 

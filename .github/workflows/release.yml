@@ -126,7 +126,8 @@ jobs:
   draft-release:
     name: Rascunho da release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    # só o push de uma tag: um disparo manual escolhendo uma tag no seletor de ref não cria rascunho
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -136,6 +137,14 @@ jobs:
         with:
           name: ombro-macos-arm64
           path: dist-release
+      - name: Conferir o que veio do build (o DMG e o SHA256SUMS, íntegros)
+        env:
+          DMG: ${{ needs.build.outputs.dmg }}
+        run: |
+          ls -l dist-release
+          test -n "$DMG" && test -f "dist-release/$DMG" || { echo "::error::o DMG ($DMG) não veio do build"; exit 1; }
+          [ "$(wc -l < dist-release/SHA256SUMS.txt)" -eq 1 ] || { echo "::error::SHA256SUMS.txt inesperado"; exit 1; }
+          (cd dist-release && sha256sum -c SHA256SUMS.txt)
       - name: Criar o rascunho (pré-release quando a versão tem "-")
         env:
           GH_TOKEN: ${{ github.token }}

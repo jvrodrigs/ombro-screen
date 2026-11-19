@@ -8,7 +8,7 @@ opcionais, e a telinha USB também: sem ela, o app mostra a prévia do que a tel
 ## Instalar
 
 1. Em [Releases](https://github.com/jvrodrigs/ombro-screen/releases), baixe `Ombro-v<versão>-macos-arm64.dmg`
-   (por exemplo, `Ombro-v0.9.0-beta.1-macos-arm64.dmg`) e o `SHA256SUMS.txt`.
+   (por exemplo, `Ombro-v0.9.0-beta.3-macos-arm64.dmg`) e o `SHA256SUMS.txt`.
 2. Abra o DMG e arraste o **Ombro** para **Aplicativos**.
 3. Abra o Ombro pela pasta Aplicativos (ou pelo Spotlight). O assistente de primeiro uso explica o resto.
 

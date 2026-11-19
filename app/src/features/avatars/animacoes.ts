@@ -1,7 +1,6 @@
 // As animações do mascote no app: as mesmas da telinha (mascote.py), vindas do mascotinhos, no pacote em uso (a
-// preferência "pacote_animacao": o "vivo", o padrão, ou o "classico"). Alerta e reset continuam no "classico" em
-// qualquer pacote, como na telinha. Nada de movimento é feito aqui: só qual pacote vale para cada estado, e QUANDO um
-// mascote animado pode passar de um pacote para o outro.
+// preferência "pacote_animacao": o "vivo", o padrão, ou o "classico"), com os seis estados do próprio pacote. Nada de
+// movimento é feito aqui: só qual pacote vale, e QUANDO um mascote animado pode passar de um pacote para o outro.
 import {
   bibliotecaDoPacote,
   caixaDoEnquadre,
@@ -21,8 +20,6 @@ export const PACOTES = ["vivo", "classico"] as const;
 export type Pacote = (typeof PACOTES)[number];
 /** O padrão: o da demonstração do mascotinhos (o mesmo PACOTE do mascote.py). Também o de um ombrod sem esta opção. */
 export const PACOTE: Pacote = "vivo";
-/** Os estados que usam o pacote "classico" em qualquer pacote (o mesmo DO_CLASSICO do mascote.py). */
-export const DO_CLASSICO: readonly MascotState[] = ["alerta", "reset"];
 /** O instante da pose parada (avatares fora de animação): o mesmo da folha do mascotinhos. */
 export const T_PARADO = 1.2;
 /**
@@ -58,15 +55,14 @@ export function pacoteValido(x: unknown): Pacote {
 const cache = new Map<Pacote, Biblioteca>();
 
 /**
- * As animações de um pacote, com alerta e reset do clássico por cima (montada uma vez por pacote). Um pacote que não
- * carrega cai no padrão: o mascote continua desenhando.
+ * Os seis estados de um pacote, como a biblioteca os traz (carregada uma vez por pacote). Um pacote que não carrega cai
+ * no padrão: o mascote continua desenhando.
  */
 export function biblioteca(pacote: Pacote = PACOTE): Biblioteca {
   let b = cache.get(pacote);
   if (!b) {
     try {
-      const classico = bibliotecaDoPacote("classico");
-      b = bibliotecaDoPacote(pacote).com(...DO_CLASSICO.map((e) => classico.obter(e)));
+      b = bibliotecaDoPacote(pacote);
     } catch (e) {
       if (pacote === PACOTE) throw e;
       console.warn(`mascotinhos: o pacote ${pacote} não carregou; usando o ${PACOTE}`, e);

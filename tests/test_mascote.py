@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from coletores.claude import Janela, UsoClaude
 import colorsys
 
+import mascote
 from mascote import CAMPOS, DURACAO_MISTURA, ESTADOS, Mascote, cor_sorteada, desenhar_cloud, parametros
 
 AGORA = datetime(2026, 11, 13, 15, 0)
@@ -217,14 +218,16 @@ class Animacao(unittest.TestCase):
             self.assertEqual(parametros(estado, 1.37), parametros(estado, 1.37))
             self.assertLessEqual(set(CAMPOS), set(parametros(estado, 0)))  # o vivo pode trazer campos a mais (olhoAng)
 
-    # o movimento de ocioso, trabalhando, esperando e concluído é o do pacote vivo (test_mascote_mascotinhos.py);
-    # alerta e reset continuam com o do clássico, o de antes
+    # os seis estados do padrão são os do pacote vivo (test_mascote_mascotinhos.py); o clássico é o movimento de antes
+    # (test_mascote_referencia.py). O que o Ombro espera de alerta e reset vale nos dois.
     def test_reset_pula_alto(self):
-        self.assertLess(parametros("reset", .8)["dy"], -50)
+        self.assertLess(parametros("reset", 2.1)["dy"], -45)  # vivo: o pulo feliz, depois que a bateria enche
+        self.assertLess(mascote.biblioteca("classico").parametros("reset", .8)["dy"], -50)  # clássico: o pulão
 
     def test_alerta_treme_de_um_lado_para_o_outro(self):
-        lados = {parametros("alerta", t / 24)["dx"] > 0 for t in range(4)}
-        self.assertEqual(lados, {True, False})
+        for pacote in mascote.PACOTES:
+            lados = {mascote.biblioteca(pacote).parametros("alerta", t / 24)["dx"] > 0 for t in range(8)}
+            self.assertEqual(lados, {True, False}, pacote)
 
 
 class Desenho(unittest.TestCase):

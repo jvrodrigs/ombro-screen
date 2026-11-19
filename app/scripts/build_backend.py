@@ -334,6 +334,7 @@ def verificar_execucao(runtime: Path, backend: Path) -> None:
         r = subprocess.run([py, "-c", "import sys; sys.path.insert(0, '.'); import ombro.cli, ombro.daemon, layout_multiagente, "
                                       "mascote; assert mascote.Mascote().camada(1.0).getbbox(); "
                                       "assert mascote.BIBLIOTECA['ocioso'].olhos == 'fechados'; "  # o pacote vivo
+                                      "assert mascote.BIBLIOTECA['alerta'].olhos == 'redondos'; "  # os seis estados dele
                                       "assert all('concluido' in mascote.biblioteca(p).estados() for p in mascote.PACOTES); "  # os que dá para escolher
                                       "assert mascote.ESTILO.fonte(10).getname() == ('JetBrains Mono', 'Bold')"],
                            env=env, cwd=backend, capture_output=True, text=True)

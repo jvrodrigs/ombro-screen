@@ -252,14 +252,28 @@ class TrocaSegura(unittest.TestCase):
 # ---------- o mascote da telinha ----------
 class MascoteDaTelinha(unittest.TestCase):
     def test_a_biblioteca_de_cada_pacote(self):
-        classico = oa.Biblioteca.carregar(pacote="classico")
         for p in mascote.PACOTES:
             b, dela = mascote.biblioteca(p), oa.Biblioteca.carregar(pacote=p)
             self.assertEqual(set(b.estados()), set(mascote.ESTADOS))
-            for e in mascote.ESTADOS:
-                fonte = classico if e in mascote.DO_CLASSICO else dela  # alerta e reset: o clássico, em qualquer pacote
+            for e in mascote.ESTADOS:  # os seis do próprio pacote, alerta e reset inclusive
+                self.assertEqual(b[e].arquivo, dela[e].arquivo, f"{p} {e}")
                 for t in (0.0, 0.7, 2.3, 6.1):
-                    self.assertEqual(b.parametros(e, t), fonte.parametros(e, t), f"{p} {e} {t}")
+                    self.assertEqual(b.parametros(e, t), dela.parametros(e, t), f"{p} {e} {t}")
+
+    def test_o_reset_do_vivo_cabe_na_duracao_do_ombro(self):
+        """O Ombro mostra o reset por DURACAO_RESET s e depois mistura no próximo estado. A história do reset do vivo (a
+        bateria enchendo, as faíscas, o pulo e o pouso) acaba antes: a mistura de saída parte dele no chão, com a
+        bateria já cheia (ela some com os extras, na mistura), sem cortar faísca nem pulo no meio."""
+        r = mascote.biblioteca("vivo")["reset"]
+        faiscas = [x for tipo, x in r.extras if tipo == "faiscas"]
+        self.assertTrue(faiscas)
+        for x in faiscas:
+            self.assertLessEqual(x["de"] + x["dur"], mascote.DURACAO_RESET)
+        for tipo, x in r.extras:
+            if tipo == "bateria":
+                self.assertLessEqual(x["ate"], mascote.DURACAO_RESET)  # termina de encher
+        for t in (2.9, mascote.DURACAO_RESET):
+            self.assertAlmostEqual(r.parametros(t)["dy"], 0.0, delta=0.5, msg=f"ainda no ar em t={t}")
         self.assertIs(mascote.biblioteca("vivo"), mascote.BIBLIOTECA)
         for fora in mascote.EM_AVALIACAO + ("nada",):
             with self.assertRaises(ValueError):
@@ -321,7 +335,8 @@ class MascoteDaTelinha(unittest.TestCase):
             return int((a[..., 3] > 40).sum())
 
         for estado, de, para in (("concluido", "vivo", "classico"), ("ocioso", "classico", "vivo"),
-                                 ("concluido", "classico", "vivo")):
+                                 ("concluido", "classico", "vivo"), ("alerta", "vivo", "classico"),
+                                 ("alerta", "classico", "vivo")):
             with self.subTest(f"{estado} {de}->{para}"):
                 agora = 7.3
                 m = mascote.Mascote(cor_fixa=(200, 100, 80))

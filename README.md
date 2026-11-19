@@ -31,7 +31,7 @@ mostrando antes o que muda), mostra a prévia da telinha e cuida do serviço em 
 - **Painel**: agentes (cada um com o seu avatar), sessões, quem espera você, limites de uso com o horário de reset, tokens de hoje, CPU e RAM
 - **Agentes**: instalar, conferir, reparar e remover as integrações do Claude Code, Codex e Cursor
 - **Tela**: a prévia ao vivo do que a telinha mostra (o mesmo desenho, sem a tela USB), layout, orientação, brilho e hardware. Layout, girar 180°, clássico deitado e brilho mudam na hora, sem reiniciar nada
-- **Aparência**: o avatar de cada agente (galeria com nove, ou aleatório), a cor e o layout multiagente
+- **Aparência**: o avatar de cada agente (galeria com nove, ou aleatório), o pacote de animações do mascote (Vivo ou Clássico, para todos os agentes), a cor e o layout multiagente
 - **Diagnóstico** (o `ombro doctor`, com relatório para issues) e **Ajustes**
 - **Menu Bar**: o cloud com o resumo; notificações opcionais quando uma sessão espera você
 
@@ -306,7 +306,7 @@ Tudo funciona sem ele. Se quiser deixar opções fixas sem repetir na linha de c
 }
 ```
 
-- As chaves têm o nome das opções da linha de comando, com `_` no lugar de `-`: `usb`, `revisao`, `porta`, `transporte`, `brilho`, `lib`, `paisagem`, `girar`, `sem_macmon`, `claude_dir`, `layout`, `intervalo`, `cor_mascote`, `cor_modo`, `porta_sim`, `nao_abrir` e `debug`. Os avatares ficam num bloco: `"avatars": {"codex": "aleatorio", "random": "sessao"}` ([docs/avatars.md](docs/avatars.md)). `--demo`, `--demo-ciclo` e `--png` só valem na linha de comando.
+- As chaves têm o nome das opções da linha de comando, com `_` no lugar de `-`: `usb`, `revisao`, `porta`, `transporte`, `brilho`, `lib`, `paisagem`, `girar`, `sem_macmon`, `claude_dir`, `layout`, `intervalo`, `cor_mascote`, `cor_modo`, `porta_sim`, `nao_abrir` e `debug`; `pacote_animacao` (`vivo`, o padrão, ou `classico`) escolhe as animações do mascote ([docs/avatars.md](docs/avatars.md#pacote-de-animações)). Os avatares ficam num bloco: `"avatars": {"codex": "aleatorio", "random": "sessao"}` ([docs/avatars.md](docs/avatars.md)). `--demo`, `--demo-ciclo` e `--png` só valem na linha de comando.
 - **Precedência:** opção dada na linha de comando > arquivo > padrão. Uma opção que você não deu na linha de comando não apaga a do arquivo.
 - As opções de ligar e desligar têm a forma negativa, para a linha de comando desfazer o arquivo: `--no-usb`, `--no-paisagem`, `--no-girar`, `--no-sem-macmon`, `--no-nao-abrir`, `--no-debug`.
 - Outro arquivo: `--config /caminho/arquivo.json`. A pasta segue a variável `OMBRO_SCREEN_DIR`, a mesma do `uso.json` do `statusline_tap.py`.
@@ -465,7 +465,8 @@ agentes, os hooks e o layout multiagente estão na seção 9; o ombrod, a IPC e 
 | `logging_config.py` | Formato dos logs, `--debug` e o filtro que evita repetir o mesmo aviso |
 | `layout_ombro.py` | O layout do Ombro (480×320): texto, barras, curva de tokens, aviso e o cloud |
 | `layout_minimal_v2.py` | O layout Minimal v2 (`--layout minimal-v2`), com CPU e RAM em barras e a política de cores |
-| `mascote.py` | O mascote: qual estado mostrar e qual avatar e cor usar; o movimento, o desenho e as trocas vêm do mascotinhos (o pacote `vivo`, o da demonstração dele; alerta e reset ainda no `classico`) |
+| `mascote.py` | O mascote: qual estado mostrar e qual avatar e cor usar; o movimento, o desenho e as trocas vêm do mascotinhos (o pacote de animações escolhido, `vivo` por padrão; alerta e reset sempre no `classico`) |
+| `ombro/animacoes.py` | O pacote de animações: o escolhido, o em uso (`animacao.json`) e quando é seguro trocar (sem atividade em nenhum agente) |
 | `avatares.py`, `avatars/` | Os avatares (formato do open-bot-avatar): o catálogo, a geometria para a telinha e a escolha por agente |
 | `render.py` | Cores, fontes, formatação pt-BR e o painel clássico |
 | `saida.py` | Simulador no navegador e envio para a tela USB (com reconexão) |

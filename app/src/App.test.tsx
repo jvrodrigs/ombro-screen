@@ -1,9 +1,9 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { mockSnapshot } from "./services/mock";
+import { createMockApi, mockAnimation, mockConfig, mockSnapshot } from "./services/mock";
 import { fakeApi, renderApp } from "./test/render";
-import type { Snapshot } from "./types/ombro";
+import type { ConfigSchema, Snapshot } from "./types/ombro";
 
 describe("navegação", () => {
   it("abre no painel e troca de seção por clique e por ⌘2", async () => {
@@ -170,10 +170,12 @@ describe("avatares", () => {
     const dialogo = await screen.findByRole("dialog");
     expect(within(within(dialogo).getByRole("radiogroup", { name: "Avatares" })).getAllByRole("radio")).toHaveLength(14); // padrão, aleatório e os doze
     await userEvent.click(within(dialogo).getByRole("radio", { name: /^Fantasma/ })); // um dos três novos
-    // a prévia grande é a única no palco (com o espaço dos extras); as miniaturas e os cartões seguem no corpo
+    // só as prévias grandes ficam no palco (com o espaço dos extras): a da galeria e a das animações (Aparência);
+    // as miniaturas e os cartões seguem no corpo
     expect(dialogo.querySelectorAll(".avatar-palco")).toHaveLength(1);
     expect(dialogo.querySelector(".avatar-picker-stage .avatar-palco")).not.toBeNull();
-    expect(document.querySelectorAll(".avatar-palco")).toHaveLength(1);
+    expect(document.querySelectorAll(".avatar-palco")).toHaveLength(2);
+    expect(document.querySelector(".animation-preview .avatar-palco")).not.toBeNull();
     await userEvent.click(within(dialogo).getByRole("button", { name: "Usar" }));
     expect(api.configUpdate).toHaveBeenCalledWith({ "avatares.codex": "fantasma" }, true);
     expect(await screen.findByRole("img", { name: "Codex: Fantasma" })).toBeInTheDocument();
@@ -204,3 +206,67 @@ describe("primeiro uso", () => {
 });
 
 vi.setConfig({ testTimeout: 15000 });
+
+describe("Aparência: o pacote de animações", () => {
+  const cartao = async () => (await screen.findByRole("heading", { name: "Animações" })).closest(".card") as HTMLElement;
+
+  it("mostra o em uso, escolher grava pela IPC e, com atividade, explica a espera", async () => {
+    const api = fakeApi();
+    renderApp(api, "appearance");
+    const c = await cartao();
+    await waitFor(() => expect(within(c).getByRole("status")).toHaveTextContent("Vivo em uso no app e na telinha."));
+    expect(within(c).getByRole("radio", { name: "Vivo" })).toBeChecked();
+    expect(within(c).queryByRole("radio", { name: /3D|Terminal/ })).toBeNull(); // em avaliação: não dá para escolher
+    expect(c).toHaveTextContent("3D e Terminal ainda estão em avaliação.");
+    expect(c.querySelector(".animation-preview .avatar-palco")).not.toBeNull();
+    await userEvent.click(within(c).getByRole("radio", { name: "Clássico" }));
+    expect(api.configUpdate).toHaveBeenCalledWith({ pacote_animacao: "classico" }, true);
+    await waitFor(() => expect(within(c).getByRole("radio", { name: "Clássico" })).toBeChecked());
+    // na demonstração o Claude e o Codex estão esperando você: a troca fica pendente
+    expect(within(c).getByRole("status")).toHaveTextContent(
+      "O Clássico entra quando a atividade terminar (Claude Code e Codex: trabalhando ou esperando você). Até lá, segue o Vivo.",
+    );
+  });
+
+  it("sem atividade, a escolha entra na hora", async () => {
+    const base = createMockApi();
+    const api = fakeApi({
+      configUpdate: async (c, p) => ({ ...(await base.configUpdate(c, p)), animation: mockAnimation("classico") }),
+    });
+    renderApp(api, "appearance");
+    const c = await cartao();
+    await waitFor(() => expect(within(c).getByRole("radio", { name: "Clássico" })).toBeEnabled());
+    await userEvent.click(within(c).getByRole("radio", { name: "Clássico" }));
+    await waitFor(() => expect(within(c).getByRole("status")).toHaveTextContent("Clássico em uso no app e na telinha."));
+  });
+
+  it("um pacote que não carregou: diz e segue o em uso", async () => {
+    const base = createMockApi();
+    const api = fakeApi({
+      configUpdate: async (c, p) => ({ ...(await base.configUpdate(c, p)), animation: { ...mockAnimation("classico", "vivo"), pending: false, failed: "classico" } }),
+    });
+    renderApp(api, "appearance");
+    const c = await cartao();
+    await waitFor(() => expect(within(c).getByRole("radio", { name: "Clássico" })).toBeEnabled());
+    await userEvent.click(within(c).getByRole("radio", { name: "Clássico" }));
+    await waitFor(() => expect(within(c).getByRole("status")).toHaveTextContent("Não consegui carregar o Clássico; segue o Vivo."));
+  });
+
+  it("com um ombrod de antes desta opção: fica no Vivo, desligado, e explica", async () => {
+    const s = mockSnapshot();
+    delete s.providers!.animation;
+    const cfg = mockConfig();
+    delete cfg.animation;
+    delete cfg.values.pacote_animacao;
+    const schema = await createMockApi().configSchema();
+    const velho: ConfigSchema = { ...schema, options: schema.options.filter((o) => o.key !== "pacote_animacao") };
+    const api = fakeApi({ getSnapshot: () => Promise.resolve(s), onSnapshot: async () => () => {}, configGet: () => Promise.resolve(cfg), configSchema: () => Promise.resolve(velho) });
+    renderApp(api, "appearance");
+    const c = await cartao();
+    await waitFor(() => expect(within(c).getByRole("status")).toHaveTextContent("O serviço do Ombro em uso ainda não tem esta opção"));
+    const vivo = within(c).getByRole("radio", { name: "Vivo" });
+    expect(vivo).toBeChecked();
+    expect(vivo).toBeDisabled();
+    expect(api.configUpdate).not.toHaveBeenCalled();
+  });
+});

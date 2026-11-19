@@ -47,6 +47,8 @@ from providers.cursor import CursorProvider
 from providers.demo import codex_demo, cursor_demo
 from render import desenhar
 
+from .animacoes import Animacoes, Atividade, ler_aplicado
+
 log = logger("main")
 log_hw = logger("hardware")
 log_render = logger("render")
@@ -117,6 +119,13 @@ def banco_de_estado(cfg: OmbroConfig) -> Path | None:
     return pasta_ombro() / "state.db"
 
 
+def arquivo_da_animacao(cfg: OmbroConfig) -> Path | None:
+    """Onde gravar o pacote de animações em uso entre execuções (o mesmo critério do banco de estado)."""
+    if cfg.demo or cfg.png:
+        return None
+    return pasta_ombro() / "animacao.json"
+
+
 def ao_vivo(cfg: OmbroConfig) -> bool:
     """Este Ombro lê eventos, grava o banco ou fala com a tela USB? Então precisa do lock de instância."""
     return not cfg.png and (not cfg.demo or cfg.usb)
@@ -170,6 +179,17 @@ class Aplicacao:
         if self.demo and cfg.demo_ciclo > 0:  # no ciclo de demonstração, o "concluído" dura um cenário, não 5 min
             self.mascote.duracao_concluido = cfg.demo_ciclo
         self.mascote.inicio = time.monotonic()
+        # o pacote de animações: o escolhido (cfg) e o que estava em uso quando o Ombro parou. Um reinício começa com o
+        # de antes; o escolhido, se for outro, espera um momento seguro como qualquer troca (ombro/animacoes.py)
+        arq_animacao = arquivo_da_animacao(cfg)
+        aplicado = ler_aplicado(arq_animacao) if arq_animacao else cfg.pacote_animacao
+        self.animacoes = Animacoes(cfg.pacote_animacao, aplicado, arq_animacao)
+        try:
+            self.mascote.usar_pacote(self.animacoes.aplicado, self.mascote.inicio, ja=True)
+        except Exception as e:  # noqa: BLE001 - um pacote que não carrega não impede o Ombro de abrir: fica o padrão
+            self.animacoes.recusar(self.animacoes.aplicado, e)
+            self.animacoes.aplicado = self.mascote.pacote
+        self.animacao_publicada = self.animacoes.como_dict()  # o que a IPC lê (trocado inteiro, nunca alterado)
         self.saida = saida
         self._uso, self._ultimo_uso = None, 0.0
         # pedidos de fora do laço; SimpleQueue.put pode ser chamado de um tratador de sinal
@@ -230,7 +250,9 @@ class Aplicacao:
                 self.mascote.ir_para(self.mascote.decidir(base, agora_mono), agora_mono)
                 if self.multi and (antes in DO_CLAUDE) != (self.mascote.estado in DO_CLAUDE):
                     self.atualizar_avatar(agora_mono)  # entrou ou saiu de alerta/reset: muda de quem é o mascote
+                self.trocar_pacote_se_seguro(agora_mono)
                 return self.desenhar_animado(h, uso, agora_mono)
+            self.trocar_pacote_se_seguro(agora_mono)  # sem o mascote na tela, os do app ainda trocam
             return desenhar(h, uso, paisagem_=self.cfg.paisagem_efetiva)
         except Exception:
             # Um erro no desenho é bug, não falha recuperável: registra com o contexto e fecha.
@@ -386,6 +408,9 @@ class Aplicacao:
         if (novo.vista, novo.foco, novo.rotacao, novo.intervalo_rotacao) != (antes.vista, antes.foco, antes.rotacao,
                                                                               antes.intervalo_rotacao):
             self.seletor = SeletorDeVista(novo.vista, novo.foco, novo.rotacao, novo.intervalo_rotacao)
+        if novo.pacote_animacao != antes.pacote_animacao:
+            self.animacoes.pedir(novo.pacote_animacao)  # só a última escolha vale
+            self.trocar_pacote_se_seguro(time.monotonic())  # nada em andamento: troca já (app e telinha)
         if (novo.avatares, novo.avatar_sorteio, novo.cor_modo, novo.layout, novo.vista, novo.foco) != (
                 antes.avatares, antes.avatar_sorteio, antes.cor_modo, antes.layout, antes.vista, antes.foco):
             self.atualizar_avatar(time.monotonic(), ja=True)  # o mascote troca sem esperar o estado mudar
@@ -405,6 +430,33 @@ class Aplicacao:
 
     def definir_vista(self, **mudancas) -> None:
         self.aplicar_cfg(replace(self.cfg, **mudancas))
+
+    # ---------- o pacote de animações (só dentro do laço) ----------
+    def atividade(self) -> Atividade:
+        """As sessões em andamento de todos os agentes ligados, seja qual for o layout ou a visão em foco."""
+        store = self.monitor.store
+        return Atividade.das_sessoes(self.coletado_em is not None,
+                                     ((p.provider_id, store.sessions(p.provider_id)) for p in self.monitor.registry))
+
+    def trocar_pacote_se_seguro(self, agora: float) -> bool:
+        """Se há uma troca de pacote pendente e é um momento seguro (ombro/animacoes.py), troca agora: a telinha no
+        próximo quadro e o app no próximo retrato. Num layout sem o mascote (o clássico), só a atividade dos agentes
+        conta. Verdadeiro se trocou. Chamado a cada quadro, então também acompanha há quanto tempo está tudo quieto."""
+        a = self.animacoes
+        na_tela = self.cfg.animado
+        trocou = False
+        if a.pode_trocar(agora, self.atividade(), lambda: not na_tela or self.mascote.momento_seguro(agora)):
+            try:
+                self.mascote.usar_pacote(a.desejado, agora, ja=not na_tela)
+            except Exception as e:  # noqa: BLE001 - o pacote não carregou: segue o que está em uso
+                a.recusar(a.desejado, e)
+            else:
+                a.confirmar(a.desejado)
+                self._redesenhar = trocou = True
+        publicado = a.como_dict()
+        if publicado != self.animacao_publicada:
+            self.animacao_publicada = publicado
+        return trocou
 
     # ---------- o avatar do mascote ----------
     def _sessao_relevante(self, provider: str) -> Optional[str]:

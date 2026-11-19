@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { montar, quadroSvg, type Definicao, type Mascotinho } from "mascotinhos";
-import { biblioteca, FPS, PROPORCAO_PALCO, T_PARADO, type Enquadre } from "./animacoes";
+import { biblioteca, FPS, momentoSeguro, PROPORCAO_PALCO, T_PARADO, trocarPacote, type Enquadre, type Pacote } from "./animacoes";
+import { usePacoteAplicado } from "./pacote";
 import type { MascotState } from "./state";
+
+/** De quanto em quanto tempo um mascote que espera para trocar de pacote olha de novo (ms). */
+const ESPERA_TROCA_MS = 400;
 
 /**
  * Um avatar desenhado pelo mascotinhos, com as animações da telinha (ver animacoes.ts).
@@ -14,6 +18,10 @@ import type { MascotState } from "./state";
  * da biblioteca, com o espaço dos extras dentro da caixa (a prévia grande da galeria, que fica dentro de um diálogo que
  * rola e cortaria o que vaza). No palco, a largura é `size` (ou a do contêiner, sem `size`) e a altura segue a
  * proporção do palco.
+ * `pacote`: o pacote de animações; sem ele, o EM USO no ombrod (o mesmo da telinha). Um mascote animado que representa
+ * um agente só passa para o pacote novo no ponto seguro dele (ocioso ou alerta assentados, ou o concluído depois da
+ * comemoração; nunca trabalhando, esperando ou reset); uma `previa` (o que você está escolhendo) troca na hora. A troca
+ * é a mistura curta da biblioteca, sem remontar o player.
  * O SVG vem da própria biblioteca, que o monta a partir de números (nada de texto de fora vai cru).
  */
 export function AvatarView({
@@ -24,6 +32,8 @@ export function AvatarView({
   live = false,
   extras = true,
   enquadre = "corpo",
+  pacote,
+  previa = false,
   label,
 }: {
   definition: Definicao;
@@ -36,16 +46,22 @@ export function AvatarView({
   /** Os extras do estado (zzZ, "?", ✓...); a galeria os esconde para mostrar só o personagem. */
   extras?: boolean;
   enquadre?: Enquadre;
+  /** O pacote de animações (padrão: o em uso no ombrod). */
+  pacote?: Pacote;
+  /** Uma prévia de escolha: troca de pacote na hora, sem esperar um ponto seguro. */
+  previa?: boolean;
   label?: string;
 }) {
   const nome = label ?? definition.nome;
+  const emUso = usePacoteAplicado();
+  const pac = pacote ?? emUso;
   const caixa = enquadre === "palco" ? { width: size ?? "100%", aspectRatio: PROPORCAO_PALCO } : { width: size ?? 48, height: size ?? 48 };
   return (
     <span className={enquadre === "palco" ? "avatar avatar-palco" : "avatar"} role="img" aria-label={nome} style={caixa}>
       {live ? (
-        <LiveAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} />
+        <LiveAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} pacote={pac} previa={previa} />
       ) : (
-        <StillAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} />
+        <StillAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} pacote={pac} />
       )}
     </span>
   );
@@ -57,22 +73,25 @@ interface Props {
   state: MascotState;
   extras: boolean;
   enquadre: Enquadre;
+  pacote: Pacote;
 }
 
-function StillAvatar({ definition, color, state, extras, enquadre }: Props) {
+function StillAvatar({ definition, color, state, extras, enquadre, pacote }: Props) {
+  // parado: não há movimento a interromper, então segue o pacote em uso na hora
   const svg = useMemo(
-    () => quadroSvg(definition, state, T_PARADO, { cor: color, biblioteca: biblioteca(), enquadre, extras, prefixo: `p-${definition.id}-` }),
-    [definition, color, state, extras, enquadre],
+    () => quadroSvg(definition, state, T_PARADO, { cor: color, biblioteca: biblioteca(pacote), enquadre, extras, prefixo: `p-${definition.id}-` }),
+    [definition, color, state, extras, enquadre, pacote],
   );
   // eslint-disable-next-line react/no-danger
   return <span className="avatar-body" aria-hidden dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
-function LiveAvatar({ definition, color, state, extras, enquadre }: Props) {
+function LiveAvatar({ definition, color, state, extras, enquadre, pacote, previa }: Props & { previa: boolean }) {
   const host = useRef<HTMLSpanElement>(null);
   const player = useRef<Mascotinho | null>(null);
   // o que o player está mostrando: as mudanças de props viram transições da biblioteca, nunca uma montagem nova
   const mostrado = useRef({ definition, color, state, extras, enquadre });
+  const pacoteMostrado = useRef(pacote);
   const [falhou, setFalhou] = useState(false);
 
   useEffect(() => {
@@ -83,7 +102,7 @@ function LiveAvatar({ definition, color, state, extras, enquadre }: Props) {
         forma: atual.definition,
         cor: atual.color,
         estado: atual.state,
-        biblioteca: biblioteca(),
+        biblioteca: biblioteca(pacoteMostrado.current),
         enquadre: atual.enquadre,
         extras: atual.extras,
         fps: FPS, // o limite do app (ver animacoes.ts); o laço, a pausa e o "reduzir movimento" seguem os da biblioteca
@@ -110,6 +129,25 @@ function LiveAvatar({ definition, color, state, extras, enquadre }: Props) {
     if (enquadre !== antes.enquadre) p.ajustar({ enquadre });
   }, [definition, color, state, extras, enquadre]);
 
-  if (falhou) return <StillAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} />;
+  // o pacote: troca quando for seguro para este mascote (uma prévia, na hora). Só o último pedido conta: um novo
+  // cancela a espera do anterior, e voltar ao que já está na tela não faz nada.
+  useEffect(() => {
+    let espera: number | undefined;
+    const tentar = () => {
+      espera = undefined;
+      const p = player.current;
+      if (!p || pacoteMostrado.current === pacote) return;
+      if (previa || momentoSeguro(p)) {
+        trocarPacote(p, biblioteca(pacote));
+        pacoteMostrado.current = pacote;
+      } else {
+        espera = window.setTimeout(tentar, ESPERA_TROCA_MS);
+      }
+    };
+    tentar();
+    return () => window.clearTimeout(espera);
+  }, [pacote, previa]);
+
+  if (falhou) return <StillAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} pacote={pacote} />;
   return <span ref={host} className="avatar-body avatar-live" aria-hidden />;
 }

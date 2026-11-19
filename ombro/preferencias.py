@@ -3,7 +3,7 @@
 `ESQUEMA` é a fonte da verdade: a IPC (`config.schema`) entrega essa lista para o Ombro.app montar a tela de
 ajustes sem saber nada de antemão. Cada opção diz o tipo, os valores permitidos, o grupo e se vale na hora
 (`live`) ou só depois de reiniciar o ombrod. Vale na hora tudo o que o laço consegue pôr em uso sem refazer o que
-abriu ao iniciar (brilho, layout, girar, paisagem, cores, avatares, visão); fica para o reinício o que escolhe a
+abriu ao iniciar (brilho, layout, girar, paisagem, cores, avatares, visão, pacote de animações); fica para o reinício o que escolhe a
 saída e as fontes (usb, revisão, transporte, portas, agentes ligados, macmon, debug). A validação é a mesma do
 config.json (`config.validar`), mais as regras daqui.
 
@@ -24,7 +24,8 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
 
 import avatares
-from config import AVATAR_CHAVES, LAYOUTS, PROVIDERS, REVISOES, TRANSPORTES, VERSAO, VISTAS, ConfigInvalida, validar
+from config import (AVATAR_CHAVES, LAYOUTS, PACOTES_ANIMACAO, PROVIDERS, REVISOES, TRANSPORTES, VERSAO, VISTAS,
+                    ConfigInvalida, validar)
 
 from .arquivos import assinatura, gravar_atomico
 
@@ -74,6 +75,9 @@ ESQUEMA: Tuple[Opcao, ...] = (
           avatares.CORES_MODO),
     Opcao("intervalo", "appearance", "number", "segundos entre quadros (null: o padrão do layout)", True,
           minimo=0.05, maximo=10, nulo=True),
+    # vale na hora, mas com atividade em andamento a troca espera um momento seguro (o estado dela vem em `animation`)
+    Opcao("pacote_animacao", "appearance", "enum", "o pacote de animações do mascote, no app e na telinha; com um "
+          "agente trabalhando ou esperando você, a troca espera a atividade terminar", True, PACOTES_ANIMACAO),
     # layout multiagente
     Opcao("vista", "multi_agent", "enum", "visão do layout multiagente", True, VISTAS),
     Opcao("foco", "multi_agent", "enum", "o agente da visão focus", True, PROVIDERS, nulo=True),

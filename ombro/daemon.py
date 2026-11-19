@@ -314,7 +314,7 @@ class Daemon:
         if isinstance(sujeito, tuple):  # quem o mascote representa agora, e com qual avatar (v1: campo novo)
             m = app.mascote
             d["mascot"] = {"avatar": m.forma.avatar, "provider": sujeito[0], "state": m.estado,
-                           "color": "#%02X%02X%02X" % m.cor}
+                           "color": "#%02X%02X%02X" % m.cor, "package": m.pacote}
         d["frames"] = app.quadros if app else 0
         if d.get("connected_since"):
             d["connected_since"] = _iso(d["connected_since"])
@@ -415,9 +415,16 @@ class Daemon:
             "system": sistema_do_hardware(getattr(self.app, "ultimo_hw", None)),
         }
 
+    def _animacao(self) -> Optional[dict]:
+        """O pacote de animações escolhido, o em uso e a espera (ombro/animacoes.py); None sem o laço rodando."""
+        app = self.app
+        return getattr(app, "animacao_publicada", None) if app is not None else None
+
     def m_providers(self, _p) -> dict:
+        # `animation` vem aqui porque o app já lê providers.list a cada retrato: os mascotes dele seguem o pacote em uso
         return {"providers": self.publicado["providers"], "collected_at": self.publicado["collected_at"],
-                "ombro_avatar": self.publicado.get("avatar_ombro"), "random_mode": self.publicado.get("avatar_sorteio")}
+                "ombro_avatar": self.publicado.get("avatar_ombro"), "random_mode": self.publicado.get("avatar_sorteio"),
+                "animation": self._animacao()}
 
     def m_sessions(self, p) -> dict:
         lista = self.publicado["sessions"]
@@ -460,7 +467,8 @@ class Daemon:
                 "editable": list(preferencias.EDITAVEIS), "live": list(preferencias.AO_VIVO),
                 "layouts_live": list(LAYOUTS), "views": list(VISTAS),
                 # `values` é o que está em uso; `pending`, o que está gravado e só vale ao reiniciar o ombrod
-                "pending": dict(self._pendentes), "revision": self._revisao, "instance": self._instancia}
+                "pending": dict(self._pendentes), "revision": self._revisao, "instance": self._instancia,
+                "animation": self._animacao()}
 
     def m_config_schema(self, _p) -> dict:
         """O que dá para mudar, com tipo, valores e se vale na hora: o Ombro.app monta os ajustes a partir disto."""
@@ -526,7 +534,8 @@ class Daemon:
             return {"applied": list(vivas), "restart_required": [k for k in frias if k in self._pendentes],
                     "deferred": adiadas, "persisted": persistir, "file": arquivo,
                     "values": {k: preferencias.valor(cfg, k) for k in mudancas},
-                    "pending": dict(self._pendentes), "revision": self._revisao, "instance": self._instancia}
+                    "pending": dict(self._pendentes), "revision": self._revisao, "instance": self._instancia,
+                    "animation": self._animacao()}
 
     def _no_laco(self, fn):
         try:

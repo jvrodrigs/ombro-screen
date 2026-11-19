@@ -10,6 +10,7 @@ import { Appearance } from "./features/appearance/Appearance";
 import { Diagnostics } from "./features/diagnostics/Diagnostics";
 import { Settings } from "./features/settings/Settings";
 import { Onboarding } from "./features/onboarding/Onboarding";
+import { PacoteDoOmbro } from "./features/avatars/pacote";
 import { PAGES, useOmbro, type Page } from "./hooks/useOmbro";
 
 const NAV: Record<Page, { label: string; icon: ComponentType<{ size?: number }>; component: ComponentType }> = {
@@ -95,6 +96,8 @@ export default function App() {
 
   const Current = NAV[page].component;
   return (
+    // todos os mascotes do app seguem o pacote de animações em uso no ombrod (o mesmo da telinha)
+    <PacoteDoOmbro>
     <div className="shell">
       <Sidebar />
       <main ref={main} className="content" aria-labelledby="page-title">
@@ -107,5 +110,6 @@ export default function App() {
         </div>
       </main>
     </div>
+    </PacoteDoOmbro>
   );
 }

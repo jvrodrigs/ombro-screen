@@ -283,6 +283,32 @@
 }
 
 /* ---------- aparência ---------- */
+/* As animações: a prévia do pacote escolhido (o palco, como na galeria) ao lado da escolha; empilha em telas estreitas. */
+.animation-settings {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  grid-template-areas: "previa escolha" "estados estados";
+  gap: var(--sp-3) var(--sp-4);
+  align-items: start;
+}
+.animation-preview {
+  grid-area: previa;
+  display: flex;
+  justify-content: center;
+}
+.animation-controls {
+  grid-area: escolha;
+}
+.animation-controls > * + * {
+  margin-top: var(--sp-2);
+}
+.animation-states {
+  grid-area: estados;
+  display: flex;
+}
+.animation-states .segmented {
+  flex-wrap: wrap;
+}
 .appearance-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);

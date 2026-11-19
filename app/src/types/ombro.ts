@@ -170,6 +170,25 @@ export interface Health {
   components: Record<string, HealthComponent>;
 }
 
+/**
+ * O pacote de animações do mascote (ombro/animacoes.py): o escolhido, o em uso no app e na telinha, e por que a troca
+ * ainda espera. Ausente num ombrod de antes desta opção (então vale o "vivo").
+ */
+export interface AnimationStatus {
+  desired: string;
+  applied: string;
+  pending: boolean;
+  /** starting: o Ombro ainda não leu os agentes; activity: um agente trabalhando ou esperando você; settling: algo
+   * acabou de terminar; mascot: o mascote da telinha está no meio de uma animação. */
+  waiting_for: "starting" | "activity" | "settling" | "mascot" | null;
+  busy_providers: ProviderId[];
+  /** Um pacote que não carregou (segue o em uso). */
+  failed: string | null;
+  choices: string[];
+  /** Os pacotes da biblioteca que ainda não dá para escolher, com o porquê. */
+  unavailable: { id: string; reason: string }[];
+}
+
 export interface Snapshot {
   seq: number;
   at_ms: number;
@@ -180,6 +199,7 @@ export interface Snapshot {
     collected_at: string | null;
     ombro_avatar?: ResolvedAvatar | null;
     random_mode?: "inicio" | "sessao";
+    animation?: AnimationStatus | null;
   } | null;
   sessions: { sessions: Session[]; collected_at: string | null } | null;
   health: Health | null;
@@ -207,7 +227,7 @@ export interface DisplayStatus {
   last_error?: string | null;
   url?: string | null;
   /** Quem o mascote da telinha representa agora, com qual avatar, estado e cor. */
-  mascot?: { avatar: string; provider: ProviderId | null; state: string; color: string };
+  mascot?: { avatar: string; provider: ProviderId | null; state: string; color: string; package?: string };
 }
 
 export type Preview =
@@ -232,6 +252,7 @@ export interface ConfigInfo {
   revision?: number;
   /** Qual ombrod respondeu: as revisões só se comparam dentro da mesma instância (reiniciou, recomeçam). */
   instance?: string;
+  animation?: AnimationStatus | null;
 }
 
 export interface SchemaOption {
@@ -265,6 +286,7 @@ export interface ConfigUpdateResult {
   pending?: Record<string, ConfigValue>;
   revision?: number;
   instance?: string;
+  animation?: AnimationStatus | null;
 }
 
 /** O que a CLI imprimiu (`result`) e o código de saída. */

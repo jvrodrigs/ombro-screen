@@ -12,9 +12,15 @@ import { catalog, chooseAvatar } from "../avatars/catalog";
 import type { MascotState } from "../avatars/state";
 
 const NOMES: Record<Pacote, { label: string; desc: string }> = {
-  vivo: { label: "Vivo", desc: "Olhos que mudam com o estado, zzZ, engrenagem, “?” e um ✓ com faíscas. O padrão." },
-  classico: { label: "Clássico", desc: "Os movimentos de antes, mais contidos: pulinhos, zZ e um ✓ simples." },
+  vivo: { label: "Vivo", desc: "Olhos que mudam com o estado, zzZ, engrenagem, “?”, um ✓ com faíscas e uma bateria no limite. O padrão." },
+  classico: { label: "Clássico", desc: "Os movimentos de antes, mais contidos: pulinhos, zZ, um ✓ simples e uma gota no limite." },
 };
+// a prévia mostra os seis estados: o pacote vale para todos, alerta e reset inclusive
+const ESTADOS_DA_PREVIA: { value: MascotState; label: string }[] = [
+  ...ESTADOS,
+  { value: "alerta", label: "Limite" },
+  { value: "reset", label: "Reset" },
+];
 const EM_AVALIACAO: Record<string, string> = { "3d": "3D", terminal: "Terminal" };
 
 function nomeDe(x: string): string {
@@ -87,7 +93,7 @@ export function AnimationSettings({ config }: { config: ConfigStore }) {
           </div>
         </div>
         <div className="animation-states">
-          <Segmented<MascotState> label="Estado da prévia" value={estado} onChange={setEstado} options={ESTADOS} />
+          <Segmented<MascotState> label="Estado da prévia" value={estado} onChange={setEstado} options={ESTADOS_DA_PREVIA} />
         </div>
         <div className="animation-controls">
           <Segmented<Pacote>

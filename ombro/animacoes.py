@@ -41,8 +41,10 @@ FORMATO = 1  # versão do animacao.json
 FIM_DA_CONCLUSAO = 2.0  # o mesmo do mascote.py (um teste confere)
 # o que a interface mostra dos pacotes que ainda não dá para escolher
 EM_AVALIACAO = {
-    "3d": "falta validar o volume na tela USB e o custo do 3D no app",
-    "terminal": "falta validar a leitura das letras na tela USB e nos layouts menores",
+    "3d": "muda o desenho do corpo (luz e volume), não só o movimento: falta trocar o desenho sem salto no app e "
+          "validar na tela USB",
+    "terminal": "troca a cor de cada agente pelo verde do terminal, corta as legendas nos layouts menores e mostraria "
+                "um limite fixo, não a cota real",
 }
 
 

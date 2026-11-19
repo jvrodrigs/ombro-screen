@@ -15,9 +15,8 @@ cor, os olhos (pílulas que piscam e olham em volta), o volume e o movimento sã
 
 - **No Ombro.app** o desenho e o movimento são os do [mascotinhos](https://github.com/GilsonB12/mascotinhos) para
   JavaScript (pacote npm `mascotinhos`, versão fixada), com as mesmas animações da telinha: o pacote de animações
-  em uso (o `vivo`, o padrão, ou o `classico`; ver [Pacote de animações](#pacote-de-animações)) para ocioso,
-  trabalhando, esperando e concluído, e o `classico` para alerta e reset (`app/src/features/avatars/animacoes.ts`,
-  o par do `PACOTES`/`DO_CLASSICO` do `mascote.py`). Ele também valida cada definição. Os cartões dos agentes e a
+  em uso (o `vivo`, o padrão, ou o `classico`; ver [Pacote de animações](#pacote-de-animações)) nos seis estados
+  (`app/src/features/avatars/animacoes.ts`, o par do `PACOTES` do `mascote.py`). Ele também valida cada definição. Os cartões dos agentes e a
   prévia da galeria usam o player da biblioteca, animado pelo estado real de cada agente: a pose, os olhos, as
   piscadas, os extras e a mistura de um estado no outro são dela, e trocar de avatar ou de cor passa pela transição
   dela (o app não faz movimento em CSS). No app ele desenha a no máximo 30 quadros por segundo (a opção `fps` da
@@ -30,11 +29,15 @@ cor, os olhos (pílulas que piscam e olham em volta), o volume e o movimento sã
   extras de texto usam a JetBrains Mono Bold de `fontes/` (a mesma da telinha), carregada localmente pelo app.
 - **Na telinha** o desenho é um adaptador mínimo em Python (`avatares.py`): lê o mesmo JSON, transforma o path em
   polígonos (os comandos `M L H V C S Q T A Z`, a regra nonzero do SVG) e põe os olhos como o contrato descreve
-  (4x11 unidades vezes a escala, aumentados até 1,45x onde cabem, como no motor). O movimento e o desenho (os seis
+  (4x11 unidades vezes a escala, aumentados até 1,45x onde cabem, como no motor). O leitor de path é uma cópia do
+  `mascotinhos.formas`: o `avatares.py` fica só com a biblioteca padrão porque o `config`, o `doctor` e o
+  `launchagent` o importam sem carregar o Pillow; um teste confere que as duas cópias dão os mesmos polígonos. O movimento e o desenho (os seis
   estados, os olhos, as piscadas e os extras) são os da biblioteca [mascotinhos](https://github.com/GilsonB12/mascotinhos):
-  ocioso, trabalhando, esperando e concluído são os do pacote de animações em uso: o `vivo`, o padrão e o da
-  demonstração dela (dorme de olhos fechados com zzZ; trabalha de olhos semicerrados com linhas e engrenagem; espera
-  com "?"; conclui feliz, com ✓ e faíscas), ou o `classico` (os de antes); alerta e reset são sempre os do `classico`. A mistura de
+  os seis estados são os do pacote de animações em uso: o `vivo`, o padrão e o da demonstração dela (dorme de olhos
+  fechados com zzZ; trabalha de olhos semicerrados com linhas e engrenagem; espera com "?"; conclui feliz, com ✓ e
+  faíscas; perto do limite, encolhe e treme vigiando uma bateria vermelha que pisca, suando; no reset, a bateria enche
+  de novo e ele dá um pulo feliz com faíscas), ou o `classico` (os de antes: exatamente o motor antigo do Ombro, nos
+  seis estados, com a gota no alerta e o confete no reset). A mistura de
   um estado no outro e a troca de avatar também são as da biblioteca (o `Animador`); o `mascote.py` só decide o
   estado e qual avatar e cor usar. Só a forma vem do avatar. Quando o corpo
   inclina (esperando, concluído), os olhos andam de lado como andavam no cloud antigo, cujos olhos ficavam mais
@@ -53,16 +56,36 @@ no app e na telinha; os avatares e as cores continuam por agente.
 
 | Pacote | O que é |
 | --- | --- |
-| `vivo` (padrão) | O da demonstração do mascotinhos: olhos que mudam com o estado, zzZ, engrenagem, "?" e ✓ com faíscas. |
-| `classico` | Os movimentos de antes, mais contidos: pulinhos, zZ e um ✓ simples. |
+| `vivo` (padrão) | O da demonstração do mascotinhos: olhos que mudam com o estado, zzZ, engrenagem, "?", ✓ com faíscas, uma bateria vermelha perto do limite e a bateria enchendo no reset. |
+| `classico` | Os movimentos de antes (o motor antigo do Ombro), mais contidos: pulinhos, zZ, um ✓ simples, a gota perto do limite e o confete no reset. |
+
+O pacote vale para os **seis** estados, alerta e reset inclusive. As regras do Ombro continuam as mesmas nos dois:
+a prioridade dos estados (esperando > alerta > trabalhando > concluído > ocioso, com o reset por cima), o reset por 3 s
+(a história do reset do `vivo`, da bateria enchendo ao pouso, cabe nesse tempo; um teste confere) e os alertas de
+cota, que são do layout e do estado, não do pacote. A prévia em **Aparência → Animações** mostra os seis.
+
+O reset é igual no app e na telinha: começa quando o horário de reset de uma janela (5 h ou semana) avança mais de
+1 h entre duas leituras seguidas e dura 3 s, sem recomeçar a cada leitura. Se o trabalho termina junto (o caso da
+demonstração: do alerta com uma sessão trabalhando para parado), o reset aparece inteiro e o concluído vem depois,
+pelo prazo dele contado do fim do trabalho. Uma janela que some (a fonte caiu, o ombrod reiniciou, o app reabriu) é
+esquecida: a volta dela não reapresenta um reset antigo.
 
 Os dois desenham chapado, como a telinha sempre desenhou. A biblioteca tem mais dois pacotes, que o Ombro ainda não
-oferece (o app mostra "em avaliação"):
+oferece (o app mostra "em avaliação"). Os dois funcionam no mascotinhos 0.2.0, em Python e em JavaScript; o que falta
+é do Ombro:
 
-- **3D** (`3d`, com volume): o volume ainda não foi conferido na tela USB, e o volume do player JavaScript é uma
-  aproximação do de Python (os dois não ficam iguais). Em Python, um quadro custa ~2 ms (mediana; o `vivo`, ~0,3 ms).
-- **Terminal** (`terminal`, em células de letra): as letras ficam difíceis de ler no tamanho do mascote na tela
-  480×320 e nos layouts menores, e a cor de fósforo ignora a cor de cada agente. Um quadro custa ~2,8 ms em Python.
+- **3D** (`3d`, com luz e volume): lê bem na coluna do mascote e nos layouts menores e mantém a cor de cada agente.
+  Mas ele muda o **desenho** do corpo, não só o movimento: o Ombro troca de pacote misturando a pose e cruzando os
+  extras, e o corpo chapado viraria o corpo com volume de uma vez, num salto (no app, o player desenha uma camada só e
+  não cruza dois desenhos). O volume do player JavaScript também é uma aproximação do de Python (gradientes), e
+  ainda não foi conferido na tela USB. Custo: ~2 ms por quadro em Python (o `vivo`, ~0,3 ms) e um SVG ~2x maior no app.
+- **Terminal** (`terminal`, em células de letra): troca a cor de cada agente pelo verde de fósforo (os agentes ficam
+  iguais), as legendas dele ("> trabalhando", "confirma? [s/n]") são cortadas no tamanho dos layouts menores e
+  repetem o que o layout já escreve, e o alerta mostra um limite fixo ("! LIMITE 92%") se o Ombro não passar a cota
+  real. Custo: ~2,8 ms por quadro em Python e um SVG ~5x maior no app (~15x mais lento para gerar).
+
+Para oferecer um deles, o Ombro precisaria trocar o estilo junto com o pacote (telinha e app) sem salto, passar os
+dados que o pacote escreve (a cota, no Terminal) e validar na tela USB. Até lá, ficam fora da escolha.
 
 **A troca nunca corta o que o mascote está mostrando.** Quem decide é o ombrod (`ombro/animacoes.py`):
 

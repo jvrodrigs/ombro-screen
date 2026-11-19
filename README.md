@@ -31,7 +31,7 @@ mostrando antes o que muda), mostra a prévia da telinha e cuida do serviço em 
 - **Painel**: agentes (cada um com o seu avatar), sessões, quem espera você, limites de uso com o horário de reset, tokens de hoje, CPU e RAM
 - **Agentes**: instalar, conferir, reparar e remover as integrações do Claude Code, Codex e Cursor
 - **Tela**: a prévia ao vivo do que a telinha mostra (o mesmo desenho, sem a tela USB), layout, orientação, brilho e hardware. Layout, girar 180°, clássico deitado e brilho mudam na hora, sem reiniciar nada
-- **Aparência**: o avatar de cada agente (galeria com nove, ou aleatório), o pacote de animações do mascote (Vivo ou Clássico, para todos os agentes), a cor e o layout multiagente
+- **Aparência**: o avatar de cada agente (galeria com doze, ou aleatório), o pacote de animações do mascote (Vivo ou Clássico, nos seis estados, para todos os agentes), a cor e o layout multiagente
 - **Diagnóstico** (o `ombro doctor`, com relatório para issues) e **Ajustes**
 - **Menu Bar**: o cloud com o resumo; notificações opcionais quando uma sessão espera você
 
@@ -61,6 +61,8 @@ Passo a passo, primeiro uso e como desinstalar: [docs/macos-installation.md](doc
   usa só o app do Claude não tem uma fonte que os atualize sozinha: o Ombro mostra a idade do número em vez de
   inventar um valor ([seção 4](#4-de-onde-vem-o-uso-de-5-h-e-da-semana)).
 - **Telinhas B, C, D e WeAct:** ainda só pelo repositório (precisam da biblioteca GPL da tela, que não vai no app).
+- **Animações:** dá para escolher o pacote Vivo (padrão) ou o Clássico. Os estilos 3D e Terminal do mascotinhos
+  aparecem como "em avaliação" e não podem ser escolhidos ([os motivos](docs/avatars.md#pacote-de-animações)).
 - É uma beta: abra uma [issue](https://github.com/jvrodrigs/ombro-screen/issues) com o relatório do Diagnóstico
   (Copiar relatório) se algo der errado.
 
@@ -465,7 +467,7 @@ agentes, os hooks e o layout multiagente estão na seção 9; o ombrod, a IPC e 
 | `logging_config.py` | Formato dos logs, `--debug` e o filtro que evita repetir o mesmo aviso |
 | `layout_ombro.py` | O layout do Ombro (480×320): texto, barras, curva de tokens, aviso e o cloud |
 | `layout_minimal_v2.py` | O layout Minimal v2 (`--layout minimal-v2`), com CPU e RAM em barras e a política de cores |
-| `mascote.py` | O mascote: qual estado mostrar e qual avatar e cor usar; o movimento, o desenho e as trocas vêm do mascotinhos (o pacote de animações escolhido, `vivo` por padrão; alerta e reset sempre no `classico`) |
+| `mascote.py` | O mascote: qual estado mostrar e qual avatar e cor usar; o movimento, o desenho e as trocas vêm do mascotinhos (o pacote de animações escolhido, `vivo` por padrão, nos seis estados) |
 | `ombro/animacoes.py` | O pacote de animações: o escolhido, o em uso (`animacao.json`) e quando é seguro trocar (sem atividade em nenhum agente) |
 | `avatares.py`, `avatars/` | Os avatares (formato do open-bot-avatar): o catálogo, a geometria para a telinha e a escolha por agente |
 | `render.py` | Cores, fontes, formatação pt-BR e o painel clássico |

@@ -81,7 +81,7 @@ Os tamanhos do macOS saem do `docs/icon.png` com `npx tauri icon ../docs/icon.pn
 
 `src/features/avatars/`: o catálogo (os mesmos arquivos de `avatars/` que a telinha usa, validados pelo
 mascotinhos), a regra de escolha (igual à do `avatares.py`, inclusive o hash do aleatório por sessão), as animações
-(`animacoes.ts`: os pacotes `vivo` e `classico`, com alerta e reset do `classico`, como no `mascote.py`, e a troca de pacote no ponto seguro de cada mascote; `pacote.tsx`: o pacote em uso que o ombrod publica), o `AvatarView` (o player
+(`animacoes.ts`: os pacotes `vivo` e `classico`, cada um com os seis estados, como no `mascote.py`, e a troca de pacote no ponto seguro de cada mascote; `pacote.tsx`: o pacote em uso que o ombrod publica), o `AvatarView` (o player
 do mascotinhos nos cartões dos agentes e na prévia da galeria; um SVG parado nas listas e miniaturas) e as seções
 Aparência > Avatares e Aparência > Animações. Detalhes:
 [avatars.md](avatars.md).

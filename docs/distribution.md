@@ -99,15 +99,16 @@ O `release.yml` tem dois jobs:
    assinatura ad-hoc, a versão do `Info.plist`, que não há bancos, configurações, logs nem a biblioteca GPL no app,
    que o `$HOME` do runner não está no executável, no código do Ombro nem nos avisos, e o `hdiutil verify` do DMG; gera `Ombro-v<versão>-macos-arm64.dmg` e o
    `SHA256SUMS.txt`.
-2. **draft-release** (só em tag; o único com `contents: write`): cria o rascunho com o DMG, o `SHA256SUMS.txt` e
-   notas com a instalação e a primeira abertura. Uma versão com `-` (ex.: `0.9.0-beta.1`) vira pré-release.
+2. **draft-release** (só no push de uma tag `v*`, nunca no disparo manual; o único com `contents: write`): confere
+   que o DMG chegou do job anterior e bate com o `SHA256SUMS.txt`, e cria o rascunho com os dois e notas com a
+   instalação e a primeira abertura. Uma versão com `-` (ex.: `0.9.0-beta.1`) vira pré-release.
 
 Não há secrets: o workflow usa só o `GITHUB_TOKEN`. Pull requests nunca rodam o `release.yml`. Publicar o rascunho
 é sempre manual.
 
 ## Versões
 
-Versionamento semântico, com pré-releases antes da 1.0: `0.9.0-beta.1`, `0.9.0-beta.2`, `0.9.0`… A versão vive
+Versionamento semântico, com pré-releases antes da 1.0: `0.9.0-beta.1`, `0.9.0-beta.2`, `0.9.0-beta.3`, `0.9.0`… A versão vive
 em `app/package.json` (o `tauri.conf.json` lê dela), em `app/src-tauri/Cargo.toml` e no `VERSAO` de
 `ombro/__init__.py` (o ombrod e a CLI); as três precisam bater com a tag. Uma tag com `-` vira pré-release no GitHub.
 

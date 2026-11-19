@@ -341,10 +341,26 @@ pub async fn prefs_set(app: AppHandle, patch: PrefsPatch) -> Result<PrefsView> {
 #[tauri::command]
 pub async fn autostart_set(app: AppHandle, enabled: bool) -> Result<bool> {
     use tauri_plugin_autostart::ManagerExt;
+    autostart_permitido(cfg!(debug_assertions))?;
     let m = app.autolaunch();
     let r = if enabled { m.enable() } else { m.disable() };
     r.map_err(|_| AppError::new(ErrorKind::NotAllowed, "não consegui mudar a abertura no login"))?;
     Ok(m.is_enabled().unwrap_or(enabled))
+}
+
+/// O build de desenvolvimento não mexe na abertura no login, nem para ligar nem para desligar: tem o mesmo
+/// identificador e o mesmo nome do app instalado, então o plugin grava e apaga o mesmo
+/// ~/Library/LaunchAgents/Ombro.plist. Ligar faria o login abrir o target/debug; desligar apagaria a opção do app
+/// instalado.
+fn autostart_permitido(debug: bool) -> Result<()> {
+    if debug {
+        return Err(AppError::new(
+            ErrorKind::NotAllowed,
+            "No build de desenvolvimento, \"Abrir o Ombro ao entrar no Mac\" fica como está: ele usaria o mesmo \
+             item de login do app instalado. Mude essa opção no Ombro.app.",
+        ));
+    }
+    Ok(())
 }
 
 // ---------- links (fixos) ----------
@@ -419,5 +435,13 @@ mod tests {
             let m: Map<String, Value> = serde_json::from_value(ruim).unwrap();
             assert!(validate_changes(&m).is_err());
         }
+    }
+
+    #[test]
+    fn autostart_so_no_app_montado() {
+        assert!(autostart_permitido(false).is_ok());
+        let e = autostart_permitido(true).unwrap_err();
+        assert_eq!(e.kind, ErrorKind::NotAllowed);
+        assert!(e.message.contains("Ombro.app"));
     }
 }

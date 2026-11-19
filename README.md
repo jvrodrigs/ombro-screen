@@ -46,7 +46,8 @@ no app, a revisão A (a Turing de 3,5", 480×320). Claude Code, Codex e Cursor s
 3. **Primeira abertura:** a beta tem assinatura ad-hoc e **não é notarizada pela Apple**, então o macOS avisa que
    não pôde verificar o app. Se você confia na origem, feche o aviso, vá em **Ajustes do Sistema > Privacidade e
    Segurança**, clique em **Abrir Mesmo Assim** ao lado do Ombro e depois em **Abrir**
-   ([como a Apple explica](https://support.apple.com/pt-br/102445)). Só é preciso uma vez.
+   ([como a Apple explica](https://support.apple.com/pt-br/102445)). Só é preciso uma vez por versão:
+   ao atualizar, a versão nova pede a mesma autorização.
 
 Passo a passo, primeiro uso e como desinstalar: [docs/macos-installation.md](docs/macos-installation.md).
 
@@ -407,7 +408,7 @@ Providers:     3 configurados, 2 instalados, 2 operacionais
 Sessões:       3
 Aguardando:    1
 Armazenamento: persistent
-IPC:           v1 (ombrod 0.9.0-beta.2, PID 4321)
+IPC:           v1 (ombrod 0.9.0-beta.3, PID 4321)
 ```
 
 | Comando | O que mostra ou faz |

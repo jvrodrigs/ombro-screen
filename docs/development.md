@@ -70,6 +70,9 @@ cd app/src-tauri && cargo clippy --all-targets -- -D warnings && cargo test
   dry-run e confirmação antes de qualquer mudança.
 - Um ombrod por vez: o app conversa com o que já roda; se o LaunchAgent estiver instalado, espera o launchd; senão,
   inicia um filho e o encerra ao sair. Com o LaunchAgent de antes da Fase 4 instalado, não inicia nada.
+- No build de desenvolvimento, "Abrir o Ombro ao entrar no Mac" não muda: o `autostart_set` recusa ligar e desligar.
+  O build de debug tem o mesmo identificador do app instalado e usaria o mesmo `~/Library/LaunchAgents/Ombro.plist`,
+  apontando o login para o `target/debug` ou apagando a opção do app instalado. Teste essa opção no app montado.
 
 ## Ícones
 

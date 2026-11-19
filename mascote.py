@@ -193,22 +193,27 @@ class Mascote(oa.Animador):
     def decidir(self, u, agora: float) -> str:
         """Estado do cloud a partir do que o Claude Code está fazendo."""
         j5, js = u.cinco_horas, u.semana
-        # janela do plano (5h ou semana) que reiniciou: o horário de reset avançou mais de uma hora
-        for nome, j in (("5h", j5), ("semana", js)):
-            if not (j and j.reseta_em):
+        # janela do plano (5h ou semana) que reiniciou: o horário de reset avançou mais de uma hora. As janelas são as
+        # mesmas que o app recebe (providers/claude.py): a que expirou sem número novo vale pelo horário em que
+        # reiniciou; a que sumiu (a fonte caiu) é esquecida, e a volta dela não é reset. Assim um reset antigo não
+        # reaparece depois de uma reconexão (como no app, que só compara retratos seguidos).
+        expiradas = getattr(u, "expiradas", {})
+        vistos = {}
+        for nome, campo, j in (("5h", "cinco_horas", j5), ("semana", "semana", js)):
+            t = j.reseta_em if j else expiradas.get(campo)
+            if not t:
                 continue
             ant = self._reseta_ant.get(nome)
-            if ant and j.reseta_em - ant > timedelta(hours=1):
+            if ant and t - ant > timedelta(hours=1):
                 self._reset_ate = agora + DURACAO_RESET
-            self._reseta_ant[nome] = j.reseta_em
+            vistos[nome] = t
+        self._reseta_ant = vistos
         # terminou: havia sessão trabalhando e agora nenhuma trabalha nem espera você
         # (de "esperando" direto para parada não conta: você cancelou ou fechou a sessão)
         ativo = u.trabalhando > 0
         if self._havia_trabalho and not ativo and not u.esperando:
             self._terminou_em = agora
         self._havia_trabalho = ativo
-        if agora < self._reset_ate:
-            return "reset"
         if u.esperando:
             alvo = "esperando"
         elif any(j and j.pct >= 90 for j in (j5, js)):
@@ -219,12 +224,16 @@ class Mascote(oa.Animador):
             alvo = "concluido"
         else:
             alvo = "ocioso"
-        # só sossega (concluído ou ocioso) depois de uns segundos sem atividade: o status oscila
+        # só sossega (concluído ou ocioso) depois de uns segundos sem atividade: o status oscila. A contagem corre
+        # também durante o reset, para que ele dure DURACAO_RESET na telinha (como o RESET_MS no app), e não o
+        # dobro: antes, os 3 s de calma só começavam a contar quando o reset acabava.
+        segurar = False
         if alvo in CALMOS and self.estado not in CALMOS:
             if self._calmo_desde is None:
                 self._calmo_desde = agora
-            if agora - self._calmo_desde < 3.0:
-                return self.estado
+            segurar = agora - self._calmo_desde < 3.0
         else:
             self._calmo_desde = None
-        return alvo
+        if agora < self._reset_ate:
+            return "reset"
+        return self.estado if segurar else alvo

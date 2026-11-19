@@ -38,6 +38,80 @@ class Decidir(unittest.TestCase):
         self.assertEqual(m.decidir(uso(pct5=2, reset5=timedelta(hours=5)), 3.9), "reset")
         self.assertEqual(m.decidir(uso(pct5=2, reset5=timedelta(hours=5)), 4.1), "ocioso")
 
+    def _reset_na_tela(self, depois):
+        """Como o daemon faz: decide e vai para o estado a cada 0,1 s. Devolve quanto tempo o reset ficou na tela e
+        o estado seguinte."""
+        m = Mascote()
+        m.ir_para(m.decidir(uso(pct5=93, trabalhando=1), 0), 0)
+        inicio = fim = seguinte = None
+        for k in range(1, 120):
+            t = round(k * 0.1, 1)
+            u = uso(pct5=2, reset5=timedelta(hours=5), **depois) if t >= 1 else uso(pct5=93, trabalhando=1)
+            e = m.decidir(u, t)
+            m.ir_para(e, t)
+            if e == "reset" and inicio is None:
+                inicio = t
+            if inicio is not None and e != "reset" and fim is None:
+                fim, seguinte = t, e
+        return round(fim - inicio, 1), seguinte
+
+    def test_reset_seguido_de_calma_dura_o_mesmo_que_no_app(self):
+        # o reset chega junto com o fim do trabalho: dura DURACAO_RESET, não DURACAO_RESET + os 3 s de calma
+        self.assertEqual(self._reset_na_tela({}), (mascote.DURACAO_RESET, "concluido"))
+
+    def test_reset_seguido_de_trabalho_volta_a_trabalhar(self):
+        self.assertEqual(self._reset_na_tela({"trabalhando": 1}), (mascote.DURACAO_RESET, "trabalhando"))
+
+    def test_reset_seguido_de_espera_vai_para_esperando(self):
+        self.assertEqual(self._reset_na_tela({"esperando": 1}), (mascote.DURACAO_RESET, "esperando"))
+
+    def test_reset_junto_com_o_fim_do_trabalho_depois_concluido_ate_o_prazo_dele(self):
+        m = Mascote()
+        m.ir_para(m.decidir(uso(trabalhando=1), 0), 0)
+        for k in range(1, 31):  # 3 s de reset, lidos a cada 0,1 s (retratos repetidos)
+            t = round(1 + k * 0.1 - 0.1, 1)
+            m.ir_para(m.decidir(uso(pct5=2, reset5=timedelta(hours=5)), t), t)
+            self.assertEqual(m.estado, "reset", t)
+        m.ir_para(m.decidir(uso(pct5=2, reset5=timedelta(hours=5)), 4.0), 4.0)
+        self.assertEqual(m.estado, "concluido")  # o concluído conta do fim do trabalho (t=1), não do fim do reset
+        self.assertEqual(m.decidir(uso(pct5=2, reset5=timedelta(hours=5)), 1 + m.duracao_concluido - 0.1), "concluido")
+        self.assertEqual(m.decidir(uso(pct5=2, reset5=timedelta(hours=5)), 1 + m.duracao_concluido + 0.1), "ocioso")
+
+    def test_leituras_repetidas_nao_recomecam_o_reset(self):
+        m = Mascote()
+        m.decidir(uso(), 0)
+        for t in (1.0, 1.5, 2.0, 3.5, 3.9):
+            self.assertEqual(m.decidir(uso(reset5=timedelta(hours=7)), t), "reset")
+        self.assertEqual(m.decidir(uso(reset5=timedelta(hours=7)), 1 + mascote.DURACAO_RESET), "ocioso")
+
+    def test_reconexao_nao_reapresenta_reset_antigo(self):
+        # a fonte some (o arquivo do statusline sumiu, o daemon perdeu a leitura) e volta com o horário novo
+        m = Mascote()
+        m.decidir(uso(), 0)
+        m.decidir(UsoClaude(), 1)
+        self.assertEqual(m.decidir(uso(reset5=timedelta(hours=7)), 2), "ocioso")
+        # e o daemon reiniciado (Mascote novo) só lembra o que vê primeiro
+        self.assertEqual(Mascote().decidir(uso(reset5=timedelta(hours=7)), 0), "ocioso")
+
+    def test_o_ciclo_da_demonstracao_reseta_a_cada_volta(self):
+        # 2h14 -> 30 min (alerta) -> 5 h (reset), e de novo: o horário volta atrás entre um ciclo e outro
+        m = Mascote()
+        for ciclo in range(3):
+            t = ciclo * 48.0
+            m.decidir(uso(reset5=timedelta(hours=2, minutes=14)), t)
+            m.decidir(uso(pct5=93, reset5=timedelta(minutes=30), trabalhando=1), t + 32)
+            self.assertEqual(m.decidir(uso(pct5=4, reset5=timedelta(hours=5)), t + 40), "reset", ciclo)
+
+    def test_janela_expirada_reseta_uma_vez_quando_o_numero_novo_chega(self):
+        # como o app vê: a janela que reiniciou sem número novo fica com o horário em que reiniciou
+        m = Mascote()
+        m.decidir(uso(), 0)
+        expirada = UsoClaude(cinco_horas=None, semana=Janela(50.0, AGORA + timedelta(days=3)),
+                             expiradas={"cinco_horas": AGORA + timedelta(hours=2)})
+        self.assertEqual(m.decidir(expirada, 1), "ocioso")
+        self.assertEqual(m.decidir(uso(pct5=1, reset5=timedelta(hours=7)), 2), "reset")
+        self.assertEqual(m.decidir(uso(pct5=1, reset5=timedelta(hours=7)), 9), "ocioso")
+
     def test_reset_da_semana(self):
         m = Mascote()
         m.decidir(uso(pct_sem=97), 0)

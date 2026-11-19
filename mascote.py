@@ -3,9 +3,8 @@
 A forma e os olhos vêm do avatar (avatars/, formato do open-bot-avatar; ver avatares.py): o padrão é o
 Ombro Cloud, e cada agente pode ter o seu. As animações são as da biblioteca mascotinhos
 (https://github.com/GilsonB12/mascotinhos), num dos pacotes dela (a preferência `pacote_animacao`): o "vivo", o
-padrão (olhos que mudam com o estado, zzZ, linhas e engrenagem, "?", ✓ com faíscas), ou o "classico"; os dois
-desenhados chapados. Alerta e reset continuam, por enquanto, com as animações do "classico" em qualquer pacote;
-para passá-los ao pacote escolhido, basta tirá-los de DO_CLASSICO.
+padrão (olhos que mudam com o estado, zzZ, linhas e engrenagem, "?", bateria, ✓ com faíscas), ou o "classico"; os
+dois desenhados chapados. Os seis estados vêm do pacote escolhido, sem misturar um no outro.
 O texto sai na JetBrains Mono Bold que vem com o mascotinhos (a mesma de fontes/).
 
 O Animador do mascotinhos faz o resto do que é animação: a mistura entre estados, a troca de avatar, a cor e o
@@ -33,21 +32,19 @@ from render import S, VERDE
 # ---------- as animações: as da biblioteca, sem nada refeito aqui ----------
 # Os pacotes que dá para escolher (config.PACOTES_ANIMACAO), na ordem da interface; o primeiro, "vivo", é o padrão (o
 # da demonstração do mascotinhos, o de sempre desde a 0.2.0). Os dois são desenhados chapados, iguais na telinha e no
-# app. Os em avaliação ("3d", "terminal") trazem cada um o seu jeito de desenhar (volume; letras) e ainda faltam ser
-# validados na tela USB e no app (ver docs/avatars.md).
+# app, e cada um tem os seis estados. Os em avaliação ("3d", "terminal") trazem cada um o seu jeito de desenhar
+# (volume; letras) e continuam fora da escolha (os motivos: ombro/animacoes.py e docs/avatars.md).
 PACOTES, EM_AVALIACAO = PACOTES_ANIMACAO, PACOTES_EM_AVALIACAO
 PACOTE = PACOTES[0]
-DO_CLASSICO = ("alerta", "reset")  # estes usam o pacote "classico" em qualquer pacote; os outros, o escolhido
-_classico = oa.Biblioteca.carregar(pacote="classico")
 
 
 @lru_cache(maxsize=None)
 def biblioteca(pacote: str = PACOTE) -> oa.Biblioteca:
-    """As animações de um pacote, com alerta e reset do "classico" por cima (montada uma vez por pacote). Levanta
-    ValueError com um pacote fora de PACOTES, e o erro da biblioteca se ela não conseguir carregá-lo."""
+    """Os seis estados de um pacote, como a biblioteca os traz (carregada uma vez por pacote). Levanta ValueError com
+    um pacote fora de PACOTES, e o erro da biblioteca se ela não conseguir carregá-lo."""
     if pacote not in PACOTES:
         raise ValueError(f"pacote de animações fora da escolha: {pacote!r} (há: {', '.join(PACOTES)})")
-    return oa.Biblioteca.carregar(pacote=pacote).com(*(_classico[e] for e in DO_CLASSICO))
+    return oa.Biblioteca.carregar(pacote=pacote)
 
 
 BIBLIOTECA = biblioteca(PACOTE)
@@ -61,16 +58,17 @@ ESTILO = oa.Estilo(enquadramento=ENQUADRAMENTO, paleta=oa.Paleta(verde=VERDE), f
 
 BX0, BY0, BX1, BY1 = palco.BX0, palco.BY0, palco.BX1, palco.BY1  # a área onde o avatar cabe (unidades da camada)
 CX, W, H = palco.CX, palco.W, palco.H
-ESC = ENQUADRAMENTO.esc
 ALTURA_OLHAR = palco.ALTURA_OLHAR  # na inclinação, os olhos andam como se estivessem a esta altura da base
 
 ESTADOS = ("ocioso", "trabalhando", "esperando", "alerta", "reset", "concluido")
 DURACAO_CONCLUIDO = 300.0  # segundos mostrando "concluído" depois que o Claude termina; depois, dorme
+DURACAO_RESET = 3.0  # segundos comemorando a janela de limite que reiniciou (o RESET_MS do app)
 # A comemoração do "concluído" (o pulo, o ✓ se desenhando e as faíscas) acaba antes disto, em qualquer pacote (um
 # teste confere nos arquivos da biblioteca); depois, o mascote só balança. É o ponto seguro para trocar de pacote.
 FIM_DA_CONCLUSAO = 2.0
-# Os estados em que dá para trocar de pacote sem cortar nada: parado (ocioso), perto do limite (alerta: o mesmo nos
-# dois pacotes) e o concluído depois da comemoração. Trabalhando, esperando e reset nunca.
+# Os estados em que dá para trocar de pacote sem cortar nada: os que repetem sem uma história com começo e fim
+# (ocioso; alerta, que pode durar horas perto do limite: a troca cruza a bateria e o suor de um pacote com os do
+# outro) e o concluído depois da comemoração. Trabalhando, esperando e reset nunca.
 TROCA_SEGURA = ("ocioso", "alerta", "concluido")
 CALMOS = ("ocioso", "concluido")  # estados sem nenhuma sessão ativa
 CAMPOS = oa.CAMPOS  # dx, dy, sx, sy, rot, kL, kW, olhaX, olhaY, pisca
@@ -195,22 +193,27 @@ class Mascote(oa.Animador):
     def decidir(self, u, agora: float) -> str:
         """Estado do cloud a partir do que o Claude Code está fazendo."""
         j5, js = u.cinco_horas, u.semana
-        # janela do plano (5h ou semana) que reiniciou: o horário de reset avançou mais de uma hora
-        for nome, j in (("5h", j5), ("semana", js)):
-            if not (j and j.reseta_em):
+        # janela do plano (5h ou semana) que reiniciou: o horário de reset avançou mais de uma hora. As janelas são as
+        # mesmas que o app recebe (providers/claude.py): a que expirou sem número novo vale pelo horário em que
+        # reiniciou; a que sumiu (a fonte caiu) é esquecida, e a volta dela não é reset. Assim um reset antigo não
+        # reaparece depois de uma reconexão (como no app, que só compara retratos seguidos).
+        expiradas = getattr(u, "expiradas", {})
+        vistos = {}
+        for nome, campo, j in (("5h", "cinco_horas", j5), ("semana", "semana", js)):
+            t = j.reseta_em if j else expiradas.get(campo)
+            if not t:
                 continue
             ant = self._reseta_ant.get(nome)
-            if ant and j.reseta_em - ant > timedelta(hours=1):
-                self._reset_ate = agora + 3.0
-            self._reseta_ant[nome] = j.reseta_em
+            if ant and t - ant > timedelta(hours=1):
+                self._reset_ate = agora + DURACAO_RESET
+            vistos[nome] = t
+        self._reseta_ant = vistos
         # terminou: havia sessão trabalhando e agora nenhuma trabalha nem espera você
         # (de "esperando" direto para parada não conta: você cancelou ou fechou a sessão)
         ativo = u.trabalhando > 0
         if self._havia_trabalho and not ativo and not u.esperando:
             self._terminou_em = agora
         self._havia_trabalho = ativo
-        if agora < self._reset_ate:
-            return "reset"
         if u.esperando:
             alvo = "esperando"
         elif any(j and j.pct >= 90 for j in (j5, js)):
@@ -221,12 +224,16 @@ class Mascote(oa.Animador):
             alvo = "concluido"
         else:
             alvo = "ocioso"
-        # só sossega (concluído ou ocioso) depois de uns segundos sem atividade: o status oscila
+        # só sossega (concluído ou ocioso) depois de uns segundos sem atividade: o status oscila. A contagem corre
+        # também durante o reset, para que ele dure DURACAO_RESET na telinha (como o RESET_MS no app), e não o
+        # dobro: antes, os 3 s de calma só começavam a contar quando o reset acabava.
+        segurar = False
         if alvo in CALMOS and self.estado not in CALMOS:
             if self._calmo_desde is None:
                 self._calmo_desde = agora
-            if agora - self._calmo_desde < 3.0:
-                return self.estado
+            segurar = agora - self._calmo_desde < 3.0
         else:
             self._calmo_desde = None
-        return alvo
+        if agora < self._reset_ate:
+            return "reset"
+        return self.estado if segurar else alvo

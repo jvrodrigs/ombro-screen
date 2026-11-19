@@ -22,7 +22,7 @@ import avatares  # noqa: E402
 import config  # noqa: E402
 import mascote  # noqa: E402
 
-NATIVOS = ("ocioso", "trabalhando", "esperando", "concluido")  # os quatro estados que já usam o pacote novo
+NATIVOS = mascote.ESTADOS  # os seis estados: todos do pacote vivo, alerta e reset inclusive
 VIVO = oa.Biblioteca.carregar(pacote="vivo")
 CLASSICO = oa.Biblioteca.carregar(pacote="classico")
 INSTANTES = (0.0, 0.2, 0.6, 1.0, 1.4, 2.2, 3.0, 4.6, 7.2, 12.4)  # a 5 quadros por segundo: múltiplos de 0,2 s
@@ -34,8 +34,8 @@ ROTEIRO = ((0.0, "ocioso", None), (1.3, "trabalhando", None), (1.6, None, "orbit
 
 
 def esperado(estado: str) -> oa.Biblioteca:
-    """De qual pacote o estado vem: o vivo, menos os que ainda ficam no clássico."""
-    return CLASSICO if estado in mascote.DO_CLASSICO else VIVO
+    """De qual pacote o estado vem: do vivo, todos (nenhum fica no clássico)."""
+    return VIVO
 
 
 def estilo_da_biblioteca() -> oa.Estilo:
@@ -47,7 +47,7 @@ class Pacote(unittest.TestCase):
     def test_o_pacote_e_o_da_demonstracao(self):
         self.assertEqual(mascote.PACOTE, "vivo")
         self.assertIn("vivo", oa.pacotes())
-        self.assertEqual(set(mascote.DO_CLASSICO), {"alerta", "reset"})  # só estes ficam para depois
+        self.assertFalse(hasattr(mascote, "DO_CLASSICO"))  # nenhum estado vem de outro pacote
         self.assertEqual(set(mascote.BIBLIOTECA.estados()), set(mascote.ESTADOS))
 
     def test_cada_estado_e_a_animacao_da_biblioteca(self):
@@ -56,7 +56,7 @@ class Pacote(unittest.TestCase):
             self.assertEqual(nosso.arquivo, dela.arquivo, e)  # o mesmo arquivo do pacote, sem cópia no Ombro
             self.assertEqual((nosso.olhos, nosso.extras), (dela.olhos, dela.extras), e)
 
-    def test_os_quatro_estados_iniciais_sao_os_nativos_do_vivo(self):
+    def test_os_seis_estados_sao_os_nativos_do_vivo(self):
         b = mascote.BIBLIOTECA
         self.assertEqual(b["ocioso"].olhos, "fechados")  # dorme
         self.assertIn("zzz", [x[0] for x in b["ocioso"].extras])
@@ -66,6 +66,11 @@ class Pacote(unittest.TestCase):
         self.assertEqual([x[1]["simbolo"] for x in b["esperando"].extras if x[0] == "sinal"], ["?"])
         self.assertEqual(b["concluido"].olhos, "felizes")
         self.assertIn("visto", [x[0] for x in b["concluido"].extras])
+        self.assertEqual(b["alerta"].olhos, "redondos")  # aflito, vigiando a bateria
+        self.assertEqual({x[0] for x in b["alerta"].extras}, {"bateria", "gotas"})
+        self.assertEqual({x[0] for x in b["reset"].extras}, {"bateria", "faiscas"})  # a bateria enche de novo
+        for e in ("alerta", "reset"):
+            self.assertNotEqual(b[e].arquivo, CLASSICO[e].arquivo, e)
 
     def test_a_pose_e_a_da_biblioteca(self):
         for e in mascote.ESTADOS:
@@ -163,7 +168,7 @@ class Transicoes(unittest.TestCase):
         nos três modos de cor: a mistura entre estados, a troca de avatar e o realce são os da biblioteca."""
         cat = avatares.catalogo()
         nuvem = cat.avatares["ombro-cloud"]
-        bib = VIVO.com(CLASSICO["alerta"], CLASSICO["reset"])
+        bib = VIVO
         for kw in (dict(cor_modo="agente"), dict(cor_modo="sorteada"), dict(cor_fixa=(223, 133, 89))):
             random.seed(1234)
             m = mascote.Mascote(**kw)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ProviderInfo } from "../../types/ombro";
-import { current, EMPTY_MEMORY, step, type MascotState, type Memory } from "./state";
+import { current, EMPTY_MEMORY, nextChange, step, type MascotState, type Memory } from "./state";
 
 /** O estado do mascote de um agente, acompanhando os retratos do ombrod (com concluído e reset, como a telinha). */
 export function useMascotState(p: Pick<ProviderInfo, "state" | "working" | "waiting" | "errors" | "quotas">): MascotState {
@@ -14,13 +14,14 @@ export function useMascotState(p: Pick<ProviderInfo, "state" | "working" | "wait
   if (ultimaChave.current !== chave) {
     const agora = Date.now();
     // o primeiro retrato só é lembrado: abrir o app com tudo parado não é "terminou agora"
-    mem.current = primeiro.current ? { ...step(EMPTY_MEMORY, p, agora), transient: null } : step(mem.current, p, agora);
+    mem.current = primeiro.current ? { ...step(EMPTY_MEMORY, p, agora), resetUntil: null, doneUntil: null } : step(mem.current, p, agora);
     primeiro.current = false;
     ultimaChave.current = chave;
   }
 
-  // um estado de passagem acaba sozinho: um render quando o prazo dele vence
-  const ate = mem.current.transient?.until;
+  // o reset e o concluído acabam sozinhos: um único timer, para o próximo prazo que vence (o fim do reset e, depois,
+  // o do concluído, se ele ainda valer)
+  const ate = nextChange(mem.current, Date.now());
   useEffect(() => {
     if (!ate) return;
     const id = window.setTimeout(() => refazer((n) => n + 1), Math.max(0, ate - Date.now()) + 20);

@@ -4,7 +4,9 @@ Formato: o do open-bot-avatar (https://github.com/DominikScholz/open-bot-avatar,
 avatar é um JSON em avatars/defs/<id>.json com um path SVG numa caixa 0..100 e o par de olhos; o
 avatars/catalog.json traz o que é do Ombro (descrição, cor, se entra no sorteio, o padrão de cada agente).
 O Ombro.app lê os mesmos arquivos (com o mascotinhos para JavaScript); este módulo é o adaptador mínimo para a
-telinha: transforma o path em polígonos e decide qual avatar e qual cor usar. Só biblioteca padrão.
+telinha: transforma o path em polígonos e decide qual avatar e qual cor usar. Só biblioteca padrão: o config, o doctor
+e o launchagent o importam sem carregar o Pillow. Por isso o leitor de path é uma cópia do mascotinhos.formas, e um
+teste (test_avatares.py) confere que as duas dão os mesmos polígonos.
 
 Escolha, por agente (preferência no config.json, bloco "avatars"):
   "padrao"      o avatar padrão do agente no catálogo
@@ -26,7 +28,6 @@ PASTA = Path(__file__).resolve().parent / "avatars"
 ESPECIAIS = ("padrao", "aleatorio")
 SORTEIOS = ("inicio", "sessao")
 CORES_MODO = ("agente", "sorteada")
-GLOBAL = "padrao"  # a "preferência" de quando não há agente definido (o avatar do Ombro)
 _ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _COR = re.compile(r"#[0-9A-Fa-f]{6}")
 EYE_W, EYE_H = 4.0, 11.0  # olho neutro com scale 1 (contrato v1)
@@ -196,10 +197,6 @@ def poligonos(d: str) -> List[List[Ponto]]:
     if not polys:
         raise AvatarInvalido("o path não tem nenhuma forma fechada")
     return polys
-
-
-def _area(p: Sequence[Ponto]) -> float:
-    return sum(p[i - 1][0] * p[i][1] - p[i][0] * p[i - 1][1] for i in range(len(p))) / 2
 
 
 def _enrolamento(polys: Sequence[Sequence[Ponto]], x: float, y: float) -> int:

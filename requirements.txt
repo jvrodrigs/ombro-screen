@@ -1,6 +1,6 @@
 Pillow>=10.0
 psutil>=5.9
 pyserial>=3.5   # só para a tela USB de verdade
-mascotinhos==0.2.0  # o movimento e o desenho do mascote (pacote "vivo"); a mesma versão do app/backend/requirements.lock
+mascotinhos==0.2.0  # o movimento e o desenho do mascote (pacotes "vivo" e "classico"); a mesma versão do app/backend/requirements.lock
 numpy>=1.24          # exigido pela biblioteca da tela (serialize.py)
 pyusb>=1.2; sys_platform == "darwin"   # Mac: envio direto pelo USB (também precisa de: brew install libusb)

@@ -79,6 +79,25 @@ class Path_(unittest.TestCase):
         uniao = avatares.poligonos("M10 10H60V60H10ZM40 40H90V90H40Z")  # mesmo sentido: somam
         self.assertTrue(avatares.dentro(uniao, 50, 50))
 
+    def test_o_leitor_de_path_e_o_do_mascotinhos(self):
+        """O avatares.py fica só com a biblioteca padrão (o config, o doctor e o launchagent o importam sem Pillow), então
+        o leitor de path dele é uma cópia do mascotinhos.formas. A cópia não pode divergir: os mesmos polígonos e o
+        mesmo aumento dos olhos para os doze avatares e para os casos difíceis do formato."""
+        from mascotinhos import formas
+        casos = [av.path for av in avatares.catalogo().avatares.values()] + [
+            "M10 50C10 20 90 20 90 50S10 80 10 50ZM20 20Q30 10 40 20T60 20Z", "m10 10h80v80h-80z",
+            "M20 50A30 30 0 1 1 80 50A30 30 0 1 1 20 50Z", "M10 10H90V90H10ZM30 30V70H70V30Z"]
+        for d in casos:
+            self.assertEqual(avatares.poligonos(d), formas.poligonos(d), d[:40])
+        for av in avatares.catalogo().avatares.values():
+            olhos = formas.Olhos(av.olhos.x, av.olhos.y, av.olhos.spacing, av.olhos.scale)
+            self.assertEqual(av.aumento_olhos(), formas.aumento_olhos(av.poligonos, olhos), av.id)
+        for ruim in ("10 10", "M10 10L", "M10 10 L20 20", "M10 10#"):
+            with self.assertRaises(avatares.AvatarInvalido):
+                avatares.poligonos(ruim)
+            with self.assertRaises(formas.DefinicaoInvalida):
+                formas.poligonos(ruim)
+
     def test_path_invalido(self):
         for ruim in ("", "L10 10", "M10 10 L", "M10 10 X 20 20", "M10 10 L20 20 <script>"):
             with self.assertRaises(avatares.AvatarInvalido, msg=ruim):
@@ -172,6 +191,23 @@ class Mascote_(unittest.TestCase):
             for est in mascote.ESTADOS:
                 img = mascote.desenhar_cloud(mascote.parametros(est, 1.0), est, 1.0, (200, 100, 80), forma=f)
                 self.assertGreater(img.getbbox()[2] - img.getbbox()[0], 50, f"{av.id}/{est}")
+
+    def test_os_doze_nos_dois_pacotes_com_a_cor_do_agente(self):
+        """Cada avatar, em cada pacote que dá para escolher e em cada estado (alerta e reset inclusive): desenha inteiro
+        e com a cor pedida no corpo (a do agente), pelo Mascote, como os layouts pedem a camada."""
+        cor = (37, 150, 190)  # uma cor que nenhum extra usa
+        for pacote in mascote.PACOTES:
+            for av in avatares.catalogo().avatares.values():
+                m = mascote.Mascote(cor_fixa=cor)
+                m.usar_pacote(pacote, 0.0, ja=True)
+                m.usar(av, cor, 0.0, ja=True)
+                for i, est in enumerate(mascote.ESTADOS):
+                    m.ir_para(est, i * 10.0)
+                    img = m.camada(i * 10.0 + 1.0)
+                    x0, _, x1, _ = img.getbbox()
+                    self.assertGreater(x1 - x0, 50, f"{pacote}/{av.id}/{est}")
+                    corpo = sum(n for n, (r, g, b, a) in img.getcolors(1 << 20) if (r, g, b) == cor and a == 255)
+                    self.assertGreater(corpo, 2000, f"{pacote}/{av.id}/{est}: o corpo não está na cor do agente")
 
     def test_furo_do_anel_aparece_na_tela(self):
         orb = mascote.forma_de(avatares.catalogo().avatares["orbita"])

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as mq from "mascotinhos";
 import type { Mascotinho } from "mascotinhos";
-import { biblioteca, DO_CLASSICO, FIM_DA_CONCLUSAO, momentoSeguro, PACOTE, PACOTES, pacoteValido, trocarPacote } from "./animacoes";
+import { biblioteca, FIM_DA_CONCLUSAO, momentoSeguro, PACOTE, PACOTES, pacoteValido, trocarPacote } from "./animacoes";
 import { catalog } from "./catalog";
 import type { MascotState } from "./state";
 
@@ -17,18 +17,18 @@ describe("os pacotes", () => {
     for (const fora of ["3d", "terminal", undefined, null, 7, "VIVO"]) expect(pacoteValido(fora)).toBe("vivo");
   });
 
-  it("cada pacote tem os estados do Ombro, com alerta e reset do clássico", () => {
-    const classico = mq.bibliotecaDoPacote("classico");
+  it("cada pacote tem os seis estados do Ombro, todos dele (alerta e reset inclusive)", () => {
     for (const p of PACOTES) {
       const b = biblioteca(p);
-      expect(biblioteca(p)).toBe(b); // montada uma vez
+      expect(biblioteca(p)).toBe(b); // carregada uma vez
       const dela = mq.bibliotecaDoPacote(p);
       for (const e of STATES) {
-        const fonte = DO_CLASSICO.includes(e) ? classico : dela;
-        for (const t of [0, 0.7, 2.3, 6.1]) expect(b.parametros(e, t), `${p} ${e} ${t}`).toEqual(fonte.parametros(e, t));
+        for (const t of [0, 0.7, 2.3, 6.1]) expect(b.parametros(e, t), `${p} ${e} ${t}`).toEqual(dela.parametros(e, t));
       }
     }
-    expect(biblioteca("vivo").parametros("ocioso", 1.3)).not.toEqual(biblioteca("classico").parametros("ocioso", 1.3));
+    for (const e of STATES) {
+      expect(biblioteca("vivo").parametros(e, 1.3), e).not.toEqual(biblioteca("classico").parametros(e, 1.3));
+    }
   });
 
   it("um pacote que não carrega cai no padrão, sem derrubar o mascote", async () => {

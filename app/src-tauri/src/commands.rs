@@ -155,7 +155,10 @@ const COR_AVATAR_PREFIXO: &str = "cores_avatares.";
 
 /// O id de um avatar (a mesma gramática do avatares.py): grupos de `a-z0-9` separados por um único hífen.
 fn id_de_avatar_valido(id: &str) -> bool {
-    !id.is_empty() && id.split('-').all(|g| !g.is_empty() && g.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()))
+    !id.is_empty()
+        && id
+            .split('-')
+            .all(|g| !g.is_empty() && g.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()))
 }
 
 /// Uma chave de preferência: a regra de sempre (`a-z`, `_`, `.`, até 40) e, só no namespace `cores_avatares.`, o id de
@@ -458,12 +461,18 @@ mod tests {
         // os ids de verdade: avatars/catalog.json, na raiz do repositório
         let caminho = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../avatars/catalog.json");
         let catalogo: Value = serde_json::from_str(&std::fs::read_to_string(caminho).unwrap()).unwrap();
-        let ids: Vec<&str> = catalogo["avatars"].as_array().unwrap().iter().map(|a| a["id"].as_str().unwrap()).collect();
+        let ids: Vec<&str> = catalogo["avatars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["id"].as_str().unwrap())
+            .collect();
         assert_eq!(ids.len(), 12);
         assert!(ids.contains(&"ombro-cloud"));
         for id in ids {
             for v in [json!("rgb"), json!("default"), json!("#3D7A4F"), Value::Null] {
-                let m: Map<String, Value> = serde_json::from_value(json!({ format!("cores_avatares.{id}"): v })).unwrap();
+                let m: Map<String, Value> =
+                    serde_json::from_value(json!({ format!("cores_avatares.{id}"): v })).unwrap();
                 assert!(validate_changes(&m).is_ok(), "{id}");
             }
         }

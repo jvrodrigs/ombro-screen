@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { createMockApi, mockAnimation, mockConfig, mockSnapshot } from "./services/mock";
 import { fakeApi, renderApp } from "./test/render";
-import type { ConfigSchema, Snapshot } from "./types/ombro";
+import type { ConfigSchema, ConfigUpdateResult, Snapshot } from "./types/ombro";
 
 describe("navegação", () => {
   it("abre no painel e troca de seção por clique e por ⌘2", async () => {
@@ -188,6 +188,214 @@ describe("avatares", () => {
     expect(api.configUpdate).toHaveBeenCalledWith({ avatar_sorteio: "sessao" }, true);
     await userEvent.click(screen.getByRole("radio", { name: "Sorteada" }));
     expect(api.configUpdate).toHaveBeenCalledWith({ cor_mascote: null, cor_modo: "sorteada" }, true);
+  });
+});
+
+describe("cor do corpo do avatar (Aparência > Avatares)", () => {
+  const abrir = async (api: ReturnType<typeof fakeApi>, avatar = /^Fantasma/) => {
+    renderApp(api, "appearance");
+    await screen.findByRole("img", { name: "Codex: Órbita" });
+    await userEvent.click(screen.getAllByRole("button", { name: "Escolher…" })[1]);
+    const dialogo = await screen.findByRole("dialog");
+    await userEvent.click(within(dialogo).getByRole("radio", { name: avatar }));
+    return dialogo;
+  };
+
+  it("personalizada: rascunho válido em tempo real, mensagem no inválido e Aplicar grava por id, persistente", async () => {
+    const api = fakeApi();
+    const dialogo = await abrir(api);
+    const grupo = within(dialogo).getByRole("group", { name: /Cor do corpo: Fantasma/ });
+    expect(within(grupo).getByRole("radio", { name: "Padrão" })).toBeChecked();
+    expect(within(grupo).queryByLabelText("Cor")).toBeNull(); // o campo só aparece em Personalizada
+    await userEvent.click(within(grupo).getByRole("radio", { name: "Personalizada" }));
+    const campo = within(grupo).getByLabelText("Cor");
+    await userEvent.clear(campo);
+    await userEvent.type(campo, "#3D7A4");
+    expect(within(grupo).getByRole("alert")).toHaveTextContent("6 dígitos hexadecimais");
+    expect(campo).toHaveAttribute("aria-invalid", "true");
+    expect(within(grupo).queryByRole("img", { name: /Amostra/ })).toBeNull();
+    expect(within(grupo).getByRole("button", { name: "Aplicar" })).toBeDisabled();
+    await userEvent.type(campo, "F");
+    expect(within(grupo).queryByRole("alert")).toBeNull();
+    expect(within(grupo).getByRole("img", { name: "Amostra da cor #3D7A4F" })).toBeInTheDocument(); // a amostra só em custom
+    // o rascunho válido já está na prévia: o avatar troca (0,6 s) e a cor do destino entra junto com a forma
+    await waitFor(() => expect(dialogo.querySelector(".avatar-picker-stage svg path")!.getAttribute("fill")!.toUpperCase()).toBe("#3D7A4F"), { timeout: 3000 });
+    await userEvent.click(within(grupo).getByRole("button", { name: "Aplicar" }));
+    expect(api.configUpdate).toHaveBeenCalledWith({ "cores_avatares.fantasma": "#3D7A4F" }, true);
+  });
+
+  it("Padrão grava default e RGB grava rgb, por avatar", async () => {
+    const api = fakeApi();
+    const dialogo = await abrir(api, /^Cubo/);
+    const grupo = within(dialogo).getByRole("group", { name: /Cor do corpo: Cubo/ });
+    await userEvent.click(within(grupo).getByRole("radio", { name: "RGB" }));
+    expect(within(grupo).queryByLabelText("Cor")).toBeNull();
+    expect(within(grupo).getByText(/Reduzir movimento/)).toBeInTheDocument();
+    await userEvent.click(within(grupo).getByRole("button", { name: "Aplicar" }));
+    expect(api.configUpdate).toHaveBeenCalledWith({ "cores_avatares.cubo": "rgb" }, true);
+    // o mapa em uso volta no retrato: "Usar a cor global" aparece e remove a entrada (null herda)
+    await userEvent.click(await within(dialogo).findByRole("button", { name: "Usar a cor global" }));
+    expect(api.configUpdate).toHaveBeenCalledWith({ "cores_avatares.cubo": null }, true);
+    await userEvent.click(within(dialogo).getByRole("radio", { name: "Personalizada" }));
+    await userEvent.click(within(dialogo).getByRole("radio", { name: "Padrão" }));
+    await userEvent.click(within(dialogo).getByRole("button", { name: "Aplicar" }));
+    expect(api.configUpdate).toHaveBeenCalledWith({ "cores_avatares.cubo": "default" }, true);
+  });
+
+  const palcoFill = (dialogo: HTMLElement) => dialogo.querySelector(".avatar-picker-stage svg path")?.getAttribute("fill")?.toUpperCase();
+
+  it("R4-06: cola um texto longo sem truncar, mantém a última prévia válida e não deixa aplicar", async () => {
+    const api = fakeApi();
+    const dialogo = await abrir(api);
+    const grupo = within(dialogo).getByRole("group", { name: /Cor do corpo: Fantasma/ });
+    await userEvent.click(within(grupo).getByRole("radio", { name: "Personalizada" }));
+    const campo = within(grupo).getByLabelText("Cor");
+    await userEvent.clear(campo);
+    await userEvent.type(campo, "#112233");
+    await waitFor(() => expect(palcoFill(dialogo)).toBe("#112233"), { timeout: 3000 });
+    await userEvent.clear(campo);
+    await userEvent.click(campo);
+    await userEvent.paste("#1234567"); // sete dígitos: a colagem não é cortada em seis, e é inválida
+    expect(campo).toHaveValue("#1234567");
+    expect(within(grupo).getByRole("alert")).toBeInTheDocument();
+    expect(within(grupo).getByRole("button", { name: "Aplicar" })).toBeDisabled();
+    expect(palcoFill(dialogo)).toBe("#112233"); // a prévia fica na última válida do rascunho
+    await userEvent.clear(campo);
+    expect(palcoFill(dialogo)).toBe("#112233");
+    expect(within(grupo).getByRole("button", { name: "Aplicar" })).toBeDisabled();
+    await userEvent.paste("#445566");
+    expect(within(grupo).queryByRole("alert")).toBeNull();
+    expect(within(grupo).getByRole("button", { name: "Aplicar" })).toBeEnabled();
+    await waitFor(() => expect(palcoFill(dialogo)).toBe("#445566"));
+  });
+
+  it("R4-07: mudança externa confirmada atualiza o gravado, o rascunho sobrevive (inclusive à reabertura) e um retrato velho não vence o update", async () => {
+    let empurrar!: (s: Snapshot) => void;
+    const api = fakeApi({
+      onSnapshot: async (cb) => {
+        empurrar = cb;
+        return () => {};
+      },
+    });
+    const dialogo = await abrir(api);
+    let grupo = within(dialogo).getByRole("group", { name: /Cor do corpo: Fantasma/ });
+    expect(within(grupo).queryByRole("button", { name: "Usar a cor global" })).toBeNull(); // nada gravado ainda
+    await userEvent.click(within(grupo).getByRole("radio", { name: "Personalizada" }));
+    const campo = within(grupo).getByLabelText("Cor");
+    await userEvent.clear(campo);
+    await userEvent.type(campo, "#ABCDEF"); // o rascunho do usuário
+    // outro cliente grava o fantasma em rgb; o ombrod confirma e o próximo retrato publica
+    await api.configUpdate({ "cores_avatares.fantasma": "rgb" }, true);
+    await act(async () => empurrar(await api.getSnapshot()));
+    expect(await within(grupo).findByRole("button", { name: "Usar a cor global" })).toBeInTheDocument(); // o gravado mudou
+    expect(within(grupo).getByRole("radio", { name: "Personalizada" })).toBeChecked(); // e o rascunho ficou
+    expect(within(grupo).getByLabelText("Cor")).toHaveValue("#ABCDEF");
+    // fechar e reabrir: o rascunho de cada id continua
+    await userEvent.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Escolher…" })[1]);
+    const dialogo2 = await screen.findByRole("dialog");
+    await userEvent.click(within(dialogo2).getByRole("radio", { name: /^Fantasma/ }));
+    grupo = within(dialogo2).getByRole("group", { name: /Cor do corpo: Fantasma/ });
+    expect(within(grupo).getByLabelText("Cor")).toHaveValue("#ABCDEF");
+    // aplicar grava; um retrato ainda velho (rgb) chegando depois NÃO desfaz a resposta mais nova do update
+    await userEvent.click(within(grupo).getByRole("button", { name: "Aplicar" }));
+    expect(api.configUpdate).toHaveBeenCalledWith({ "cores_avatares.fantasma": "#ABCDEF" }, true);
+    await act(async () => empurrar({ ...(await api.getSnapshot()), providers: { ...(await api.getSnapshot()).providers!, avatar_colors: { fantasma: "rgb" } } }));
+    await waitFor(() => expect(within(grupo).getByRole("radio", { name: "Personalizada" })).toBeChecked());
+    expect(within(grupo).getByLabelText("Cor")).toHaveValue("#ABCDEF");
+    expect(within(grupo).getByRole("radio", { name: "RGB" })).not.toBeChecked();
+  });
+
+  it("R8-04: update local rev11 com o refresh pendente e mudança externa rev12 no meio: reconcilia ao terminar, sem reload contínuo", async () => {
+    const adiado = <T,>() => {
+      let resolver!: (v: T) => void;
+      const promessa = new Promise<T>((r) => (resolver = r));
+      return { promessa, resolver };
+    };
+    const configRev = (revision: number, cores: Record<string, string>) => ({ ...mockConfig(), revision, instance: "t1", values: { ...mockConfig().values, cores_avatares: cores } });
+    const retrato = (cores: Record<string, string>): Snapshot => {
+      const s = mockSnapshot();
+      return { ...s, providers: { ...s.providers!, avatar_colors: cores } };
+    };
+    let atual = configRev(10, {});
+    let leituras = 0;
+    let armado = false;
+    let empurrar!: (s: Snapshot) => void;
+    const atualizacao = adiado<ConfigUpdateResult>();
+    const refresco = adiado<void>();
+    const api = fakeApi({
+      configGet: () => {
+        leituras++;
+        return Promise.resolve(structuredClone(atual));
+      },
+      configUpdate: () => atualizacao.promessa,
+      refresh: () => (armado ? refresco.promessa : Promise.resolve()),
+      onSnapshot: async (cb) => {
+        empurrar = cb;
+        return () => {};
+      },
+    });
+    const dialogo = await abrir(api);
+    // um rascunho do Cubo (outro id), que nada disto pode apagar
+    await userEvent.click(within(dialogo).getByRole("radio", { name: /^Cubo/ }));
+    await userEvent.click(within(within(dialogo).getByRole("group", { name: /Cor do corpo: Cubo/ })).getByRole("radio", { name: "Personalizada" }));
+    const campoCubo = within(dialogo).getByLabelText("Cor");
+    await userEvent.clear(campoCubo);
+    await userEvent.type(campoCubo, "#ABCDEF");
+    // a gravação local do Fantasma (rgb): o update fica pendente
+    await userEvent.click(within(dialogo).getByRole("radio", { name: /^Fantasma/ }));
+    let grupo = within(dialogo).getByRole("group", { name: /Cor do corpo: Fantasma/ });
+    await userEvent.click(within(grupo).getByRole("radio", { name: "RGB" }));
+    armado = true;
+    await userEvent.click(within(grupo).getByRole("button", { name: "Aplicar" }));
+    // o update responde rev11; o store lê de novo e o refresh fica pendente
+    atual = configRev(11, { fantasma: "rgb" });
+    await act(async () =>
+      atualizacao.resolver({ applied: ["cores_avatares.fantasma"], restart_required: [], deferred: [], persisted: true, file: null, values: { "cores_avatares.fantasma": "rgb" }, pending: {}, revision: 11, instance: "t1" } as ConfigUpdateResult),
+    );
+    await waitFor(() => expect(leituras).toBeGreaterThanOrEqual(2)); // a leitura do início e a do fim do update
+    const antes = leituras;
+    // enquanto o refresh está pendente, outro cliente grava (rev12) e os retratos chegam (repetidos)
+    atual = configRev(12, { fantasma: "#123456" });
+    await act(async () => empurrar(retrato({ fantasma: "#123456" })));
+    await act(async () => empurrar(retrato({ fantasma: "#123456" })));
+    expect(leituras).toBe(antes); // ainda pendente: nenhuma leitura no meio da operação local
+    // a operação local termina: reconcilia o que chegou nesse meio tempo (config.get versionado manda)
+    await act(async () => refresco.resolver());
+    await waitFor(() => expect(leituras).toBe(antes + 1));
+    grupo = within(dialogo).getByRole("group", { name: /Cor do corpo: Fantasma/ });
+    await waitFor(() => expect(within(grupo).getByRole("radio", { name: "Personalizada" })).toBeChecked());
+    expect(within(grupo).getByLabelText("Cor")).toHaveValue("#123456"); // o gravado é o do rev12, não o do rev11
+    // retratos idênticos depois: nada de leitura contínua
+    await act(async () => empurrar(retrato({ fantasma: "#123456" })));
+    await act(async () => empurrar(retrato({ fantasma: "#123456" })));
+    expect(leituras).toBe(antes + 1);
+    // o rascunho do outro id continua
+    await userEvent.click(within(dialogo).getByRole("radio", { name: /^Cubo/ }));
+    expect(within(within(dialogo).getByRole("group", { name: /Cor do corpo: Cubo/ })).getByLabelText("Cor")).toHaveValue("#ABCDEF");
+  });
+
+  it("a cor vale só para o avatar escolhido e aparece nos cartões; os controles legados seguem", async () => {
+    const api = fakeApi();
+    await api.configUpdate({ "cores_avatares.ombro-cloud": "#112233" }, true);
+    renderApp(api, "appearance");
+    const cartaoClaude = await screen.findByRole("img", { name: /^Claude Code: Ombro Cloud/ });
+    await waitFor(() => expect(cartaoClaude.querySelector("path")!.getAttribute("fill")!.toUpperCase()).toBe("#112233"));
+    const orbita = screen.getByRole("img", { name: /^Codex: Órbita/ });
+    expect(orbita.querySelector("path")!.getAttribute("fill")!.toUpperCase()).not.toBe("#112233");
+    expect(screen.getByRole("radio", { name: "Do agente" })).toBeInTheDocument(); // cor global, como antes
+    expect(screen.getByRole("radio", { name: "Fixa" })).toBeInTheDocument();
+  });
+
+  it("falha ao gravar mostra o erro e mantém o rascunho", async () => {
+    const api = fakeApi();
+    const dialogo = await abrir(api);
+    (api.configUpdate as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("o ombrod recusou"));
+    const grupo = within(dialogo).getByRole("group", { name: /Cor do corpo: Fantasma/ });
+    await userEvent.click(within(grupo).getByRole("radio", { name: "RGB" }));
+    await userEvent.click(within(grupo).getByRole("button", { name: "Aplicar" }));
+    expect(await within(grupo).findByText(/o ombrod recusou/)).toBeInTheDocument();
+    expect(within(grupo).getByRole("radio", { name: "RGB" })).toBeChecked();
   });
 });
 

@@ -140,6 +140,10 @@ export const mockSchema: ConfigSchema = {
       key: `avatares.${p}`, group: "avatars", type: "enum" as const, description: `avatar ${p}`, live: true, nullable: false,
       choices: ["padrao", "aleatorio", "ombro-cloud", "sereno", "orbita", "cubo", "scout", "pixel", "chevron", "maestro", "nova"],
     })),
+    ...["ombro-cloud", "sereno", "orbita", "cubo", "scout", "pixel", "chevron", "maestro", "nova", "bolota", "broto", "fantasma"].map((id) => ({
+      key: `cores_avatares.${id}`, group: "avatars", type: "string" as const, live: true, nullable: true,
+      description: `cor do avatar ${id}: "default", "rgb" (ciclo de cores) ou #RRGGBB; null herda as cores globais`,
+    })),
     { key: "avatar_sorteio", group: "avatars", type: "enum", description: "o aleatório: um por inicialização, ou um por sessão", live: true, nullable: false, choices: ["inicio", "sessao"] },
     { key: "pacote_animacao", group: "appearance", type: "enum", description: "o pacote de animações do mascote, no app e na telinha", live: true, nullable: false, choices: ["vivo", "classico"] },
     { key: "intervalo", group: "appearance", type: "number", description: "segundos entre quadros (null: o padrão do layout)", live: true, nullable: true, min: 0.05, max: 10 },
@@ -160,7 +164,7 @@ export function mockConfig(): ConfigInfo {
     file: "~/.ombro-screen/config.json", file_exists: false,
     values: {
       brilho: 30, cor_mascote: null, cor_modo: "agente", avatar_sorteio: "inicio",
-      avatares: { claude: "padrao", codex: "padrao", cursor: "padrao", padrao: "padrao" },
+      avatares: { claude: "padrao", codex: "padrao", cursor: "padrao", padrao: "padrao" }, cores_avatares: {},
       debug: false, foco: null, girar: false, intervalo: null, intervalo_rotacao: 15,
       layout: "auto", paisagem: false, porta: "AUTO", porta_sim: 5680, providers: ["claude", "codex", "cursor"],
       revisao: "A", rotacao: false, sem_macmon: false, transporte: "auto", usb: false, vista: "overview",
@@ -228,13 +232,19 @@ export function createMockApi(): OmbroApi {
   let instancias = 1;
   // O contrato do ombrod: `values` é o que está em uso; o que só vale ao reiniciar fica em `pending`.
   const emUso = (k: string): ConfigValue =>
-    k.startsWith("avatares.")
+    k.startsWith("cores_avatares.")
+      ? ((config.values.cores_avatares as Record<string, ConfigValue>)[k.slice(15)] ?? null)
+      : k.startsWith("avatares.")
       ? ((config.values.avatares as Record<string, ConfigValue>)[k.slice(9)] ?? "padrao")
       : k.startsWith("providers.")
         ? config.providers_enabled[k.slice(10) as ProviderId]
         : (config.values[k] as ConfigValue);
   const aplicar = (k: string, v: ConfigValue) => {
-    if (k.startsWith("avatares.")) (config.values.avatares as Record<string, unknown>)[k.slice(9)] = v;
+    if (k.startsWith("cores_avatares.")) {
+      const mapa = config.values.cores_avatares as Record<string, unknown>;
+      if (v === null) delete mapa[k.slice(15)];
+      else mapa[k.slice(15)] = typeof v === "string" && /^#?[0-9a-f]{6}$/i.test(v) ? "#" + v.replace("#", "").toUpperCase() : v;
+    } else if (k.startsWith("avatares.")) (config.values.avatares as Record<string, unknown>)[k.slice(9)] = v;
     else if (k.startsWith("providers.")) config.providers_enabled[k.slice(10) as ProviderId] = v === true;
     else config.values[k] = v;
   };
@@ -266,11 +276,16 @@ export function createMockApi(): OmbroApi {
       instance: config.instance, animation: structuredClone(animacaoDoMock),
     };
   };
+  // o retrato publica o mapa de cores por avatar em uso (o avatar_colors do providers.list)
+  const retrato = (): Snapshot => {
+    const s = mockSnapshot();
+    return s.providers ? { ...s, providers: { ...s.providers, avatar_colors: { ...(config.values.cores_avatares as Record<string, string>) } } } : s;
+  };
   return {
     kind: "mock",
-    getSnapshot: () => Promise.resolve(mockSnapshot()),
+    getSnapshot: () => Promise.resolve(retrato()),
     onSnapshot: async (cb) => {
-      const t = setInterval(() => cb(mockSnapshot()), 3000);
+      const t = setInterval(() => cb(retrato()), 3000);
       return () => clearInterval(t);
     },
     onNavigate: async () => () => {},

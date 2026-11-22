@@ -68,7 +68,7 @@ export function Appearance() {
 
       <div className="appearance-layout">
         <div className="stack">
-          <AvatarSettings config={config.config} onChanged={() => config.reload()} />
+          <AvatarSettings config={config.config} onChanged={() => config.reload()} update={config.update} />
 
           <AnimationSettings config={config} />
 

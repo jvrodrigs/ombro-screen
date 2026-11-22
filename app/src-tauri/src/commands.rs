@@ -150,9 +150,25 @@ pub async fn config_schema(app: AppHandle) -> Result<Value> {
 
 // ---------- preferências (validadas de novo pelo ombrod, que é a fonte da verdade) ----------
 
+/// Prefixo das chaves da cor do corpo por avatar: `cores_avatares.<id>`.
+const COR_AVATAR_PREFIXO: &str = "cores_avatares.";
+
+/// O id de um avatar (a mesma gramática do avatares.py): grupos de `a-z0-9` separados por um único hífen.
+fn id_de_avatar_valido(id: &str) -> bool {
+    !id.is_empty() && id.split('-').all(|g| !g.is_empty() && g.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()))
+}
+
+/// Uma chave de preferência: a regra de sempre (`a-z`, `_`, `.`, até 40) e, só no namespace `cores_avatares.`, o id de
+/// um avatar (com hífen e dígitos). Quais ids existem é do ombrod (a lista de opções dele é a que vale).
+fn chave_de_preferencia_valida(k: &str) -> bool {
+    if let Some(id) = k.strip_prefix(COR_AVATAR_PREFIXO) {
+        return k.len() <= 64 && id_de_avatar_valido(id);
+    }
+    !k.is_empty() && k.len() <= 40 && k.chars().all(|c| c.is_ascii_lowercase() || c == '_' || c == '.')
+}
+
 fn validate_changes(changes: &Map<String, Value>) -> Result<()> {
-    let ok_key =
-        |k: &str| !k.is_empty() && k.len() <= 40 && k.chars().all(|c| c.is_ascii_lowercase() || c == '_' || c == '.');
+    let ok_key = chave_de_preferencia_valida;
     let ok_value = |v: &Value| match v {
         Value::Null | Value::Bool(_) | Value::Number(_) => true,
         Value::String(s) => s.len() <= 64,
@@ -435,6 +451,45 @@ mod tests {
             let m: Map<String, Value> = serde_json::from_value(ruim).unwrap();
             assert!(validate_changes(&m).is_err());
         }
+    }
+
+    #[test]
+    fn cor_do_avatar_aceita_os_ids_do_catalogo_e_recusa_chaves_invalidas() {
+        // os ids de verdade: avatars/catalog.json, na raiz do repositório
+        let caminho = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../avatars/catalog.json");
+        let catalogo: Value = serde_json::from_str(&std::fs::read_to_string(caminho).unwrap()).unwrap();
+        let ids: Vec<&str> = catalogo["avatars"].as_array().unwrap().iter().map(|a| a["id"].as_str().unwrap()).collect();
+        assert_eq!(ids.len(), 12);
+        assert!(ids.contains(&"ombro-cloud"));
+        for id in ids {
+            for v in [json!("rgb"), json!("default"), json!("#3D7A4F"), Value::Null] {
+                let m: Map<String, Value> = serde_json::from_value(json!({ format!("cores_avatares.{id}"): v })).unwrap();
+                assert!(validate_changes(&m).is_ok(), "{id}");
+            }
+        }
+        for ruim in [
+            "cores_avatares.",
+            "cores_avatares.Sereno",
+            "cores_avatares.-a",
+            "cores_avatares.a-",
+            "cores_avatares.a--b",
+            "cores_avatares.a_b",
+            "cores_avatares.a.b",
+            "cores_avatares.a b",
+            "cores_avatares.a;rm",
+            "cores_avatares./etc",
+            "outro.ombro-cloud", // o hífen só vale nesse namespace
+            "ombro-cloud",
+            "cores-avatares.x",
+        ] {
+            let m: Map<String, Value> = serde_json::from_value(json!({ ruim: "rgb" })).unwrap();
+            assert!(validate_changes(&m).is_err(), "{ruim}");
+        }
+        let longo: Map<String, Value> =
+            serde_json::from_value(json!({ format!("cores_avatares.{}", "a".repeat(50)): "rgb" })).unwrap();
+        assert!(validate_changes(&longo).is_err());
+        let valor_ruim: Map<String, Value> = serde_json::from_value(json!({"cores_avatares.sereno": ["rgb"]})).unwrap();
+        assert!(validate_changes(&valor_ruim).is_err());
     }
 
     #[test]

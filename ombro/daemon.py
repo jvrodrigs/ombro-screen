@@ -30,7 +30,7 @@ import signal
 import sys
 import threading
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -134,6 +134,16 @@ class SaidaIndisponivel:
         pass
 
 
+@dataclass(frozen=True)
+class Confirmado:
+    """O estado das preferências que um config.update CONFIRMOU (pôs em uso e, se pedido, gravou): a configuração, a
+    revisão e o que está pendente, juntos. Quem lê (config.get, providers.list) pega a referência de uma vez, então
+    nunca vê o provisório de um update em curso nem um mapa de um estado com a revisão de outro."""
+    cfg: OmbroConfig
+    revisao: int
+    pendentes: dict
+
+
 class Daemon:
     def __init__(self, cfg: OmbroConfig, trava: Optional[Trava] = None, socket_caminho: Optional[Path] = None):
         self.cfg = cfg
@@ -155,6 +165,9 @@ class Daemon:
         self._pendentes: Dict = {}  # preferências gravadas que só entram em uso ao reiniciar: {chave: valor gravado}
         self._revisao = 0  # sobe a cada mudança de preferência: quem lê descarta uma resposta mais velha
         self._instancia = f"{os.getpid()}-{int(self.iniciado_em * 1000)}"  # a revisão só se compara no mesmo ombrod
+        # o que os leitores veem (config.get, providers.list): trocado inteiro, de uma vez, só quando um config.update
+        # termina com sucesso. Durante o update (pôr em uso, gravar, um possível desfazer) o app.cfg é provisório e não é lido
+        self._confirmado = Confirmado(cfg, 0, {})
 
     # ---------- ciclo de vida ----------
     def _mudar(self, novo: str) -> None:
@@ -424,6 +437,7 @@ class Daemon:
         # `animation` vem aqui porque o app já lê providers.list a cada retrato: os mascotes dele seguem o pacote em uso
         return {"providers": self.publicado["providers"], "collected_at": self.publicado["collected_at"],
                 "ombro_avatar": self.publicado.get("avatar_ombro"), "random_mode": self.publicado.get("avatar_sorteio"),
+                "avatar_colors": dict(self._confirmado.cfg.cores_avatares),  # {id: "default" | "rgb" | "#RRGGBB"}, o confirmado
                 "animation": self._animacao()}
 
     def m_sessions(self, p) -> dict:
@@ -450,7 +464,8 @@ class Daemon:
         return self.app.cfg if self.app is not None else self.cfg
 
     def m_config_get(self, _p) -> dict:
-        cfg = self._cfg_atual()
+        confirmado = self._confirmado  # uma leitura só: a configuração, a revisão e o pendente são do mesmo estado
+        cfg = confirmado.cfg
         valores = {}
         for k in sorted(PERSISTENTES):
             v = getattr(cfg, k)
@@ -458,6 +473,8 @@ class Daemon:
                 v = curto(v)
             elif k == "avatares":
                 v = {chave: cfg.avatar(chave) for chave in AVATAR_CHAVES}  # todas, com "padrao" no que falta
+            elif k == "cores_avatares":
+                v = dict(v)  # {id: "default" | "rgb" | "#RRGGBB"}; só os que têm entrada
             elif isinstance(v, tuple):
                 v = list(v)
             valores[k] = v
@@ -467,7 +484,7 @@ class Daemon:
                 "editable": list(preferencias.EDITAVEIS), "live": list(preferencias.AO_VIVO),
                 "layouts_live": list(LAYOUTS), "views": list(VISTAS),
                 # `values` é o que está em uso; `pending`, o que está gravado e só vale ao reiniciar o ombrod
-                "pending": dict(self._pendentes), "revision": self._revisao, "instance": self._instancia,
+                "pending": dict(confirmado.pendentes), "revision": confirmado.revisao, "instance": self._instancia,
                 "animation": self._animacao()}
 
     def m_config_schema(self, _p) -> dict:
@@ -531,6 +548,7 @@ class Daemon:
                 else:
                     self._pendentes[k] = v
             self._revisao += 1
+            self._confirmado = Confirmado(cfg, self._revisao, dict(self._pendentes))  # confirmado: em uso e (se pedido) gravado
             return {"applied": list(vivas), "restart_required": [k for k in frias if k in self._pendentes],
                     "deferred": adiadas, "persisted": persistir, "file": arquivo,
                     "values": {k: preferencias.valor(cfg, k) for k in mudancas},

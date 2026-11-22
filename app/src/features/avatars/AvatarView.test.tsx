@@ -69,8 +69,11 @@ describe("AvatarView animado (o player do mascotinhos)", () => {
     rerender(<AvatarView definition={av("fantasma").definition} color="#6FA8DC" state="esperando" live />);
     expect(usarForma).toHaveBeenLastCalledWith(av("fantasma").definition, "#6FA8DC");
 
+    // a troca de avatar ainda está em andamento: a cor-base nova refaz o destino (mesmo instante de início), sem
+    // ajustar({cor}), que a cortaria (os testes de cores.test.tsx cobrem antes e depois do ponto médio e sem troca)
     rerender(<AvatarView definition={av("fantasma").definition} color="#123456" state="esperando" live />);
-    expect(ajustar).toHaveBeenLastCalledWith({ cor: "#123456" });
+    expect(usarForma).toHaveBeenLastCalledWith(av("fantasma").definition, "#123456");
+    expect(ajustar).not.toHaveBeenCalledWith({ cor: "#123456" });
 
     rerender(<AvatarView definition={av("fantasma").definition} color="#123456" state="esperando" live extras={false} />);
     expect(ajustar).toHaveBeenLastCalledWith({ extras: false });

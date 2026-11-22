@@ -99,7 +99,9 @@ Campos acrescentados para o Ombro.app (ainda v1; quem não os conhece os ignora)
   `{scope, total_tokens, input_tokens, output_tokens, messages}`, só números.
 - `providers.list[].avatar`: `{avatar, color, choice}`: o avatar que o ombrod usa para o agente agora (com o
   "aleatório ao iniciar" já sorteado), a cor dele e a preferência (`padrao`, `aleatorio` ou um id). No resultado
-  também: `ombro_avatar` (o do Ombro, sem agente em foco) e `random_mode` (`inicio` ou `sessao`).
+  também: `ombro_avatar` (o do Ombro, sem agente em foco), `random_mode` (`inicio` ou `sessao`) e `avatar_colors`
+  (`{id: "default" | "rgb" | "#RRGGBB"}`, só os avatares com cor própria; vazio sem nenhuma, e ausente num ombrod de
+  antes: o app trata como "ninguém muda de cor").
 - `display.status.mascot`: `{avatar, provider, state, color, package}`: quem o mascote da telinha representa agora
   e o pacote de animações que ele está usando.
 - `animation` (no `providers.list`, no `config.get` e na resposta do `config.update`): o pacote de animações do
@@ -137,6 +139,7 @@ fonte da verdade (`ombro/preferencias.py`); o Ombro.app monta a tela de ajustes 
 | `display` | `usb`, `revisao`, `transporte`, `porta` (`AUTO` ou `/dev/cu.<nome>`), `porta_sim` (1024–65535) | ao reiniciar |
 | `appearance` | `layout` (todos, incluindo o `classico`), `cor_mascote`, `cor_modo` (`agente`, `sorteada`) | na hora |
 | `avatars` | `avatares.claude`, `avatares.codex`, `avatares.cursor`, `avatares.padrao` (`padrao`, `aleatorio` ou o id de um avatar do catálogo), `avatar_sorteio` (`inicio`, `sessao`) | na hora |
+| `avatars` | `cores_avatares.<id>` (um por avatar do catálogo): `"default"`, `"rgb"` ou `"#RRGGBB"` (normalizado); `null` remove a entrada e o avatar volta a herdar `cor_mascote`/`cor_modo`. Em `config.get`, `values.cores_avatares` é o mapa `{id: valor}` | na hora |
 | `appearance` | `intervalo` (0,05–10 s, ou `null` para o padrão do layout) | na hora |
 | `appearance` | `pacote_animacao` (`vivo`, o padrão, ou `classico`) | gravado na hora; entra em uso na hora sem atividade, ou quando a atividade terminar (ver `animation`) |
 | `multi_agent` | `vista`, `foco`, `rotacao`, `intervalo_rotacao` | na hora |

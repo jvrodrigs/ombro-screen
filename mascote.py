@@ -16,6 +16,7 @@ dura até 5 min, ou até começar outra coisa, e depois o cloud volta a dormir).
 """
 from __future__ import annotations
 
+import colorsys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -77,6 +78,18 @@ TRANSICAO = oa.TRANSICAO  # s: a troca de avatar. O corpo encolhe e fecha os olh
 REALCE = oa.REALCE  # s: no modo "agente" (a cor não muda de um estado para outro), a cor clareia e volta na troca
 
 Forma = oa.Forma  # um avatar já posto na área do mascote: os polígonos, os olhos e o contorno (x0, y0 = topo, x1)
+CICLO_RGB_S = 12.0  # s: uma volta do ciclo de cores ("rgb") de um avatar; o mesmo CICLO_RGB_S do app (cicloRgb.ts)
+CICLO_RGB_LUZ, CICLO_RGB_SAT = 0.58, 0.78  # luminosidade e saturação do ciclo: lê bem no fundo escuro, sem passar de claro
+
+
+def cor_do_ciclo(agora: float) -> tuple[int, int, int]:
+    """A cor do ciclo "rgb" em `agora` (relógio monotônico, em segundos): uma volta de matiz a cada CICLO_RGB_S, com a
+    mesma fase para todos, sem depender de quando o estado ou o avatar começou. A mesma conta do app (cicloRgb.ts)."""
+    h = (agora % CICLO_RGB_S) / CICLO_RGB_S
+    r, g, b = colorsys.hls_to_rgb(h, CICLO_RGB_LUZ, CICLO_RGB_SAT)
+    return int(round(r * 255)), int(round(g * 255)), int(round(b * 255))
+
+
 cor_sorteada = oa.cor_sorteada  # matiz livre; saturação e luminosidade limitadas para ler bem sobre o fundo escuro
 misturar = oa.misturar
 _pt = ENQUADRAMENTO.pt  # coordenada da camada (unidades do palco) -> pixel da camada (já em S vezes)
@@ -123,11 +136,64 @@ class Mascote(oa.Animador):
     _troca_pacote: tuple | None = None  # (biblioteca de antes, desde quando) enquanto mistura um pacote no outro
     _pose_da_troca: tuple | None = field(default=None, repr=False)  # (pose, u) do último quadro da troca de pacote
 
+    # a cor do corpo pedida pelo usuário (config.cores_avatares), por id de avatar: ("padrao",) = a cor original (a do
+    # agente), por cima das globais; ("fixa", rgb); ("rgb",) = o ciclo de cores. Vale a do avatar realmente DESENHADO (a
+    # forma de agora): numa troca de avatar, ela muda no meio, junto com a forma, e uma edição de outro id não toca nada
+    entradas: dict = field(default_factory=dict)
+    movimento_reduzido: bool = False  # o "reduzir movimento": o ciclo fica na cor-base, parado (quem usa atualiza)
+
     def usar(self, av: "avatares.Avatar", cor_agente: tuple[int, int, int] | None, agora: float, ja: bool = False) -> None:
         """Pede o avatar `av` com a cor do agente dele (sem ela, a do avatar). A troca é a do Animador: uma transição
         de TRANSICAO s (encolhe e pisca, a forma muda no meio); `ja` (uma mudança de preferência, um PNG) troca agora.
         Pedir o mesmo de novo não faz nada."""
         super().usar(forma_de(av), cor_agente or avatares.cor_hex(av.cor), agora, ja)
+
+    @property
+    def _entrada(self) -> tuple | None:
+        return self.entradas.get(self.forma.avatar)
+
+    @property
+    def em_ciclo_rgb(self) -> bool:
+        return self._entrada == ("rgb",)
+
+    @property
+    def usa_ciclo_rgb(self) -> bool:
+        """O avatar desenhado agora, ou o que entra no meio de uma troca de avatar, está no ciclo "rgb"? Quem usa lê o
+        "reduzir movimento" do sistema antes do primeiro quadro do ciclo, inclusive o do ponto médio da troca."""
+        if self.em_ciclo_rgb:
+            return True
+        return self._troca is not None and self.entradas.get(self._troca[0].avatar) == ("rgb",)
+
+    def definir_entradas(self, entradas: dict) -> None:
+        """As cores por id de avatar (uma mudança de preferência). Não mexe em nenhuma troca em andamento: o que vale é
+        sempre a entrada da forma desenhada, lida na hora de desenhar; só acerta `cor` se a do avatar de agora mudou."""
+        antes = self._entrada
+        self.entradas = dict(entradas)
+        if antes != self._entrada:
+            self.cor = self._cor_do_estado()
+
+    def _cor_do_estado(self):
+        e = self._entrada
+        if e is None:
+            return super()._cor_do_estado()
+        return e[1] if e[0] == "fixa" else self.cor_base
+
+    def _aplicar(self, forma, cor) -> None:
+        antes = self._entrada
+        super()._aplicar(forma, cor)  # a forma nova já vale: a entrada dela também
+        if antes is not None or self._entrada is not None:  # sem entrada dos dois lados, o Animador decide (como sempre)
+            self.cor = self._cor_do_estado()
+
+    def cor_atual(self, agora: float):
+        """A cor do quadro. Sem entrada, a do Animador (com o realce da troca de estado). Com entrada: a fixa; a original
+        ("padrao"); o ciclo "rgb", função só do relógio `agora` (a fase não recomeça com o estado), ou a cor-base parada
+        no "reduzir movimento". Entradas explícitas não têm o realce da troca de estado."""
+        e = self._entrada
+        if e is None:
+            return super().cor_atual(agora)
+        if e[0] == "rgb":
+            return self.cor_base if self.movimento_reduzido else cor_do_ciclo(agora)
+        return e[1] if e[0] == "fixa" else self.cor_base
 
     # ---------- o pacote de animações ----------
     def usar_pacote(self, pacote: str, agora: float, ja: bool = False) -> None:

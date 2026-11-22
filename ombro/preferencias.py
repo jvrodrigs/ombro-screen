@@ -25,7 +25,7 @@ from typing import Dict, Iterable, Optional, Tuple
 
 import avatares
 from config import (AVATAR_CHAVES, LAYOUTS, PACOTES_ANIMACAO, PROVIDERS, REVISOES, TRANSPORTES, VERSAO, VISTAS,
-                    ConfigInvalida, validar)
+                    ConfigInvalida, validar, valor_cor_avatar)
 
 from .arquivos import assinatura, gravar_atomico
 
@@ -91,6 +91,12 @@ ESQUEMA: Tuple[Opcao, ...] = (
             avatares.ESPECIAIS + avatares.catalogo().ids())
       for p, nome in (("claude", "do Claude Code"), ("codex", "do Codex"), ("cursor", "do Cursor"),
                       ("padrao", "do Ombro, quando nenhum agente está em foco"))),
+    # a cor do corpo de cada avatar, por id: "default" (a original), "rgb" (o ciclo) ou "#RRGGBB"; null remove a entrada
+    # e o avatar volta a herdar cor_mascote/cor_modo. Só os avatares do catálogo (como em avatares.*)
+    *(Opcao(f"cores_avatares.{aid}", "avatars", "string",
+            f"cor do avatar {aid}: \"default\", \"rgb\" (ciclo de cores) ou #RRGGBB; null herda as cores globais", True,
+            nulo=True)
+      for aid in avatares.catalogo().ids()),
     Opcao("avatar_sorteio", "avatars", "enum", "o aleatório: um por inicialização do Ombro, ou um por sessão", True,
           avatares.SORTEIOS),
     # coleta e diagnóstico
@@ -113,21 +119,29 @@ def valor(cfg, chave: str):
         return chave.split(".", 1)[1] in cfg.providers
     if chave.startswith("avatares."):
         return cfg.avatar(chave.split(".", 1)[1])
+    if chave.startswith("cores_avatares."):
+        return cfg.cor_avatar(chave.split(".", 1)[1])  # None: herda as cores globais
     return getattr(cfg, chave)
 
 
 def aplicar_em(cfg, mudancas: Dict):
     """`cfg` com `mudancas` (já validadas). Só gera a configuração nova: quem a põe em uso é a Aplicacao."""
-    simples, avs, provs = {}, dict(cfg.avatares), set(cfg.providers)
+    simples, avs, provs, cores = {}, dict(cfg.avatares), set(cfg.providers), dict(cfg.cores_avatares)
     for chave, v in mudancas.items():
-        if chave.startswith("avatares."):
+        if chave.startswith("cores_avatares."):
+            aid = chave.split(".", 1)[1]
+            if v is None:
+                cores.pop(aid, None)  # herda de novo
+            else:
+                cores[aid] = v
+        elif chave.startswith("avatares."):
             avs[chave.split(".", 1)[1]] = v
         elif chave.startswith("providers."):
             (provs.add if v else provs.discard)(chave.split(".", 1)[1])
         else:
             simples[chave] = v
     return replace(cfg, **simples, avatares=tuple((k, avs[k]) for k in AVATAR_CHAVES if k in avs),
-                   providers=tuple(p for p in PROVIDERS if p in provs))
+                   cores_avatares=tuple(sorted(cores.items())), providers=tuple(p for p in PROVIDERS if p in provs))
 
 
 def esquema() -> dict:
@@ -151,6 +165,9 @@ def validar_mudancas(mudancas: Dict, ligados: Iterable[str] = PROVIDERS) -> Dict
             if not isinstance(v, bool):
                 raise ConfigInvalida(f"{chave} deve ser true ou false (veio {v!r})")
             limpo[chave] = v
+            continue
+        if chave.startswith("cores_avatares."):  # o id existe (o esquema tem uma opção por avatar do catálogo)
+            limpo[chave] = None if v is None else valor_cor_avatar(chave, v)
             continue
         if chave.startswith("avatares."):  # pela IPC, só os avatares que existem (o arquivo aceita mais, com aviso)
             if v not in o.opcoes:
@@ -199,6 +216,15 @@ def gravar(arquivo: Path, mudancas: Dict) -> Tuple[Path, Dict]:
     for chave, valor in mudancas.items():
         if chave in NO_BLOCO_MULTI:
             bloco("multi_agent")[NO_BLOCO_MULTI[chave]] = valor
+        elif chave.startswith("cores_avatares."):
+            aid = chave.split(".", 1)[1]
+            if valor is None:  # null remove a entrada (e o bloco, se esvaziar): o avatar volta a herdar
+                if isinstance(dados.get("cores_avatares"), dict):
+                    dados["cores_avatares"].pop(aid, None)
+                    if not dados["cores_avatares"]:
+                        del dados["cores_avatares"]
+            else:
+                bloco("cores_avatares")[aid] = valor
         elif chave.startswith("avatares."):
             alvo = chave.split(".", 1)[1]
             bloco("avatars")["default" if alvo == "padrao" else alvo] = valor

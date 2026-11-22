@@ -37,7 +37,12 @@ function merge(c: ConfigInfo, r: ConfigUpdateResult): ConfigInfo {
   const providers = { ...c.providers_enabled };
   for (const [k, v] of Object.entries(r.values ?? {})) {
     if (k.startsWith("avatares.")) values.avatares = { ...(values.avatares as Record<string, unknown>), [k.slice(9)]: v };
-    else if (k.startsWith("providers.")) providers[k.slice(10) as keyof typeof providers] = v === true;
+    else if (k.startsWith("cores_avatares.")) {
+      const mapa = { ...((values.cores_avatares as Record<string, unknown> | undefined) ?? {}) };
+      if (v === null) delete mapa[k.slice(15)]; // null remove a entrada: o avatar volta a herdar
+      else mapa[k.slice(15)] = v;
+      values.cores_avatares = mapa;
+    } else if (k.startsWith("providers.")) providers[k.slice(10) as keyof typeof providers] = v === true;
     else values[k] = v;
   }
   return {

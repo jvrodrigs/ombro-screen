@@ -41,6 +41,7 @@ AVATAR_CHAVES = PROVIDERS + ("padrao",)  # um avatar por agente, e o do Ombro (s
 # em avaliação no Ombro (num config.json, valem o padrão, com um aviso). Ver mascote.py e docs/avatars.md.
 PACOTES_ANIMACAO = ("vivo", "classico")
 PACOTES_EM_AVALIACAO = ("3d", "terminal")
+COR_AVATAR_ESPECIAIS = ("default", "rgb")
 _COR = re.compile(r"#?[0-9a-fA-F]{6}")
 
 
@@ -79,6 +80,9 @@ class OmbroConfig:
     # avatares (avatars/ e avatares.py); no arquivo: {"avatars": {"claude": "sereno", "default": ..., "random": "sessao"}}
     avatares: tuple = ()  # pares (agente ou "padrao", "padrao" | "aleatorio" | id); o que falta é "padrao"
     avatar_sorteio: str = "inicio"  # o "aleatorio": um por inicialização do Ombro, ou um por sessão
+    # a cor do corpo de cada avatar, por id: {"sereno": "#3D7A4F", "cubo": "rgb", "pixel": "default"}. Sem entrada, valem
+    # o cor_mascote e o cor_modo de sempre; uma entrada explícita vale por cima deles. Pares (id, valor) em ordem de id.
+    cores_avatares: tuple = ()
     # o pacote de animações do mascote, no app e na telinha: o que você escolheu. O que está em uso pode ser outro por
     # um tempo (a troca espera a atividade em andamento terminar; ver ombro/animacoes.py)
     pacote_animacao: str = PACOTES_ANIMACAO[0]
@@ -121,6 +125,10 @@ class OmbroConfig:
     def avatar(self, chave: str) -> str:
         """A escolha de avatar de um agente (ou "padrao", a do Ombro): "padrao", "aleatorio" ou um id."""
         return dict(self.avatares).get(chave, "padrao")
+
+    def cor_avatar(self, avatar_id: str) -> str | None:
+        """A entrada de cor deste avatar ("default", "rgb" ou "#RRGGBB"), ou None se ele herda as preferências globais."""
+        return dict(self.cores_avatares).get(avatar_id)
 
     @property
     def cor_mascote_rgb(self) -> tuple[int, int, int] | None:
@@ -227,6 +235,8 @@ def validar(nome: str, v, base: Path | None = None):
                 raise ConfigInvalida(f"avatares: entrada inválida {par!r}")
             limpo[_escolha("avatares", par[0], AVATAR_CHAVES)] = _valor_avatar(f"avatares.{par[0]}", par[1])
         return tuple((k, limpo[k]) for k in AVATAR_CHAVES if k in limpo)
+    if nome == "cores_avatares":
+        return _cores_avatares(v)
     if nome == "claude_dir":
         return None if v is None else _texto(nome, v)
     if nome in ("lib", "png", "arquivo"):
@@ -240,6 +250,38 @@ def _valor_avatar(nome: str, v) -> str:
     if not isinstance(v, str) or not (v in _av.ESPECIAIS or _av._ID.fullmatch(v)):
         raise ConfigInvalida(f"{nome} deve ser \"padrao\", \"aleatorio\" ou o id de um avatar (veio {v!r})")
     return v
+
+
+def valor_cor_avatar(nome: str, v) -> str:
+    """O valor de cor de um avatar: "default" (a cor original do avatar/agente), "rgb" (o ciclo de cores) ou uma cor
+    "#RRGGBB" (com ou sem #, em qualquer caixa), normalizada para "#RRGGBB". Sem coerção: só texto."""
+    if isinstance(v, str):
+        t = v.strip()
+        if t.lower() in COR_AVATAR_ESPECIAIS:
+            return t.lower()
+        if _COR.fullmatch(t):
+            return "#" + t.lstrip("#").upper()
+    raise ConfigInvalida(f"{nome} deve ser \"default\", \"rgb\" ou uma cor como \"#3D7A4F\" (veio {v!r})")
+
+
+def _cores_avatares(v) -> tuple:
+    """{"sereno": "#3D7A4F", "cubo": "rgb"} -> pares em ordem de id. Um valor null remove a entrada (herda). Um id que
+    não está no catálogo passa (como em avatares: apagar um avatar não impede o Ombro de abrir)."""
+    pares = v.items() if isinstance(v, dict) else v
+    if not isinstance(pares, (list, tuple)) and not isinstance(v, dict):
+        raise ConfigInvalida(f"cores_avatares deve ser um objeto, como {{\"sereno\": \"#3D7A4F\"}} (veio {v!r})")
+    limpo = {}
+    for par in pares:
+        if not (isinstance(par, (list, tuple)) and len(par) == 2):
+            raise ConfigInvalida(f"cores_avatares: entrada inválida {par!r}")
+        aid, valor = par
+        if not isinstance(aid, str) or not _av._ID.fullmatch(aid):
+            raise ConfigInvalida(f"cores_avatares: o id de avatar {aid!r} não é válido")
+        if valor is None:
+            limpo.pop(aid, None)
+        else:
+            limpo[aid] = valor_cor_avatar(f"cores_avatares.{aid}", valor)
+    return tuple(sorted(limpo.items()))
 
 
 def _avatars(v) -> dict:
@@ -320,6 +362,14 @@ def ler_arquivo(arq: Path, obrigatorio: bool = False) -> tuple[dict, list[str]]:
             for chave, escolha in valores.get("avatares", ()) if nome == "avatars" else ():
                 if escolha not in _av.ESPECIAIS and escolha not in _av.catalogo().avatares:
                     avisos.append(f"{arq.name}: o avatar \"{escolha}\" ({chave}) não existe; vale o padrão")
+        elif nome == "cores_avatares":
+            try:
+                valores[nome] = validar(nome, v)
+            except ConfigInvalida as e:
+                raise ConfigInvalida(f"{arq}: {e}") from None
+            for aid, _ in valores[nome]:
+                if aid not in _av.catalogo().avatares:
+                    avisos.append(f"{arq.name}: cores_avatares: o avatar \"{aid}\" não existe; a cor é ignorada")
         elif nome == "pacote_animacao" and isinstance(v, str) and v not in PACOTES_ANIMACAO:
             # um pacote que este Ombro não oferece (em avaliação, de outra versão, ou digitado errado) não impede o
             # Ombro de abrir: vale o padrão

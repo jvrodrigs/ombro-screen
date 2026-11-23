@@ -199,6 +199,8 @@ export interface Snapshot {
     collected_at: string | null;
     ombro_avatar?: ResolvedAvatar | null;
     random_mode?: "inicio" | "sessao";
+    /** A cor do corpo por id de avatar: "default", "rgb" ou "#RRGGBB" (só os que têm entrada; ver cores.tsx). */
+    avatar_colors?: Record<string, string>;
     animation?: AnimationStatus | null;
   } | null;
   sessions: { sessions: Session[]; collected_at: string | null } | null;

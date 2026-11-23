@@ -10,6 +10,7 @@ import { Appearance } from "./features/appearance/Appearance";
 import { Diagnostics } from "./features/diagnostics/Diagnostics";
 import { Settings } from "./features/settings/Settings";
 import { Onboarding } from "./features/onboarding/Onboarding";
+import { CoresDosAvatares } from "./features/avatars/cores";
 import { PacoteDoOmbro } from "./features/avatars/pacote";
 import { PAGES, useOmbro, type Page } from "./hooks/useOmbro";
 
@@ -98,6 +99,7 @@ export default function App() {
   return (
     // todos os mascotes do app seguem o pacote de animações em uso no ombrod (o mesmo da telinha)
     <PacoteDoOmbro>
+    <CoresDosAvatares>
     <div className="shell">
       <Sidebar />
       <main ref={main} className="content" aria-labelledby="page-title">
@@ -110,6 +112,7 @@ export default function App() {
         </div>
       </main>
     </div>
+    </CoresDosAvatares>
     </PacoteDoOmbro>
   );
 }

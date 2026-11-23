@@ -179,6 +179,45 @@ avatar), e a cor clareia por meio segundo a cada troca de estado, para a troca c
 uma cor a cada troca de estado (o comportamento de antes). `cor_mascote` (uma cor
 fixa, `#RRGGBB`) vale por cima dos dois.
 
+### Cor do corpo por avatar
+
+Cada avatar pode ter a sua cor, por **id** (a cor é do avatar, não do agente: no "aleatório", o avatar que sai leva a
+dele). Em **Aparência > Avatares > Escolher…**, embaixo da prévia: **Padrão**, **Personalizada** (um seletor e o campo
+`#RRGGBB`, com a amostra) ou **RGB**. A prévia mostra o rascunho assim que ele é válido; **Aplicar** grava (persistente)
+e **Usar a cor global** remove a entrada. No `config.json`:
+
+```json
+{ "cores_avatares": { "sereno": "#3D7A4F", "cubo": "rgb", "pixel": "default" } }
+```
+
+| Valor | O que é |
+| --- | --- |
+| `"default"` | a cor original (a do agente, ou a do avatar), por cima do `cor_mascote` e do `cor_modo` |
+| `"#RRGGBB"` | essa cor, parada (com ou sem `#`, em qualquer caixa; é gravada como `#RRGGBB`) |
+| `"rgb"` | o corpo passa por todas as cores, uma volta a cada 12 s |
+| sem entrada (ou `null`) | o avatar herda o que valia antes: `cor_mascote` e `cor_modo`. Pela IPC, `null` remove a entrada |
+
+- **Só o corpo muda**: a forma, os olhos, os extras (zzZ, "?", ✓), a transparência, as poses e as transições de forma e
+  de pacote são os da biblioteca, nos doze avatares e nos dois pacotes.
+- **Vale a cor do avatar realmente desenhado**: numa troca de avatar, a cor (e o ciclo) do destino entra no ponto médio,
+  junto com a forma, na telinha e no app. Mudar a cor de qualquer id, inclusive do destino, nunca corta a transição em
+  andamento. Uma entrada explícita não tem o realce de meio segundo da troca de estado: `"default"` mantém a cor-base em
+  todo quadro, sem pulso, na telinha e no app; sem entrada, vale o caminho de antes (com o realce).
+- **O ciclo `rgb`** é função só de um relógio monotônico (a mesma fase para todos os avatares, sem recomeçar a cada
+  estado), nos quadros que já são desenhados: no app, nos do player; na telinha, nos dela. Luminosidade 0,58 e saturação
+  0,78, para ler bem sobre o fundo escuro (`mascote.cor_do_ciclo` e `cores.tsx` dão os mesmos valores).
+- **Reduzir movimento**: no app, a media query `prefers-reduced-motion` do WebView; na telinha, o ombrod lê a mesma
+  preferência do macOS sozinho (`NSWorkspace.accessibilityDisplayShouldReduceMotion`, `ombro/movimento.py`, com `ctypes`,
+  guardada por 5 s e só consultada quando há um avatar em `rgb`), com o app fechado. Ligada, ou sem como ler, o `rgb`
+  fica parado na cor original; o `rgb` salvo continua no arquivo.
+- O PNG (`--png`) também respeita o "reduzir movimento": o quadro final sai na cor original se ele estiver ligado.
+- `providers.list` (`avatar_colors`) e `config.get` publicam só o estado **confirmado**, o mesmo para os dois: a
+  configuração, a revisão e o pendente saem juntos de uma referência trocada de uma vez ao fim de um `config.update` bem
+  sucedido. Durante o update (pôr em uso, gravar e, se falhar, desfazer) nenhum leitor vê o valor provisório nem um mapa
+  com a revisão de outro estado; os leitores não esperam por trava.
+- As miniaturas e a lista de sessões do app ficam paradas (sem laço): no `rgb`, mostram a cor original.
+- Um id que não está no catálogo é aceito no arquivo (com um aviso) e ignorado; pela IPC só os avatares do catálogo.
+
 ## Adicionar um avatar
 
 1. Desenhe no [editor do open-bot-avatar](https://dominikscholz.github.io/open-bot-avatar/) ou à mão: um path na

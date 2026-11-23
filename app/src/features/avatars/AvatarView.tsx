@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { montar, quadroSvg, type Definicao, type Mascotinho } from "mascotinhos";
 import { biblioteca, FPS, momentoSeguro, PROPORCAO_PALCO, T_PARADO, trocarPacote, type Enquadre, type Pacote } from "./animacoes";
+import { corEfetiva, ligarCorDoCorpo, mudarCorBase, useCoresDosAvatares, type EntradaCor } from "./cores";
 import { usePacoteAplicado } from "./pacote";
 import type { MascotState } from "./state";
 
@@ -22,6 +23,14 @@ const ESPERA_TROCA_MS = 400;
  * um agente só passa para o pacote novo no ponto seguro dele (ocioso ou alerta assentados, ou o concluído depois da
  * comemoração; nunca trabalhando, esperando ou reset); uma `previa` (o que você está escolhendo) troca na hora. A troca
  * é a mistura curta da biblioteca, sem remontar o player.
+ * `entrada`: a cor do corpo escolhida para este avatar (por id, ver cores.tsx). Sem ela (undefined), a que o ombrod publica
+ * para o id; `null` = nenhuma (a prévia de um rascunho "Padrão"). "custom" troca a cor do corpo; "rgb" gira o corpo pelo
+ * ciclo de cores nos quadros que o player já desenha (parado na cor-base com o "reduzir movimento"; nas miniaturas e
+ * listas, que não têm player, a cor-base). Só o corpo: a forma, os olhos, os extras e a transparência não mudam. No
+ * `entradas`: as cores por id que valem por cima das do ombrod (a prévia de rascunhos: um por avatar; null = nenhuma),
+ * resolvidas pelo avatar realmente desenhado, então o rascunho de um avatar vale até a troca efetiva para outro. No
+ * player, a cor vem sempre do avatar realmente desenhado (numa troca de avatar, muda no meio, com a forma); `color` é
+ * a cor-base (a do agente), e a transição nunca é cortada por uma mudança de cor.
  * O SVG vem da própria biblioteca, que o monta a partir de números (nada de texto de fora vai cru).
  */
 export function AvatarView({
@@ -35,6 +44,8 @@ export function AvatarView({
   pacote,
   previa = false,
   label,
+  entrada,
+  entradas,
 }: {
   definition: Definicao;
   color: string;
@@ -51,17 +62,24 @@ export function AvatarView({
   /** Uma prévia de escolha: troca de pacote na hora, sem esperar um ponto seguro. */
   previa?: boolean;
   label?: string;
+  entrada?: EntradaCor | null;
+  entradas?: Record<string, EntradaCor | null>;
 }) {
   const nome = label ?? definition.nome;
+  const doOmbro = useCoresDosAvatares();
+  const chaveSobre = JSON.stringify([entradas ?? null, entrada === undefined ? "-" : entrada, definition.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sobre = useMemo<Record<string, EntradaCor | null>>(() => ({ ...(entradas ?? {}), ...(entrada !== undefined ? { [definition.id]: entrada } : {}) }), [chaveSobre]);
+  const pedida = definition.id in sobre ? sobre[definition.id] : (doOmbro[definition.id] ?? null);
   const emUso = usePacoteAplicado();
   const pac = pacote ?? emUso;
   const caixa = enquadre === "palco" ? { width: size ?? "100%", aspectRatio: PROPORCAO_PALCO } : { width: size ?? 48, height: size ?? 48 };
   return (
     <span className={enquadre === "palco" ? "avatar avatar-palco" : "avatar"} role="img" aria-label={nome} style={caixa}>
       {live ? (
-        <LiveAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} pacote={pac} previa={previa} />
+        <LiveAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} pacote={pac} previa={previa} mapa={doOmbro} sobre={sobre} />
       ) : (
-        <StillAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} pacote={pac} />
+        <StillAvatar definition={definition} color={corEfetiva(color, pedida)} state={state} extras={extras} enquadre={enquadre} pacote={pac} />
       )}
     </span>
   );
@@ -86,7 +104,17 @@ function StillAvatar({ definition, color, state, extras, enquadre, pacote }: Pro
   return <span className="avatar-body" aria-hidden dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
-function LiveAvatar({ definition, color, state, extras, enquadre, pacote, previa }: Props & { previa: boolean }) {
+function LiveAvatar({
+  definition,
+  color,
+  state,
+  extras,
+  enquadre,
+  pacote,
+  previa,
+  mapa,
+  sobre,
+}: Props & { previa: boolean; mapa: Record<string, EntradaCor>; sobre: Record<string, EntradaCor | null> }) {
   const host = useRef<HTMLSpanElement>(null);
   const player = useRef<Mascotinho | null>(null);
   // o que o player está mostrando: as mudanças de props viram transições da biblioteca, nunca uma montagem nova
@@ -123,11 +151,34 @@ function LiveAvatar({ definition, color, state, extras, enquadre, pacote, previa
     mostrado.current = { definition, color, state, extras, enquadre };
     if (!p) return;
     if (definition !== antes.definition) p.usarForma(definition, color); // encolhe, pisca e troca no meio
-    else if (color !== antes.color) p.ajustar({ cor: color });
+    else if (color !== antes.color) mudarCorBase(p, definition, color); // sem cortar nem reiniciar uma troca em andamento
     if (state !== antes.state) p.irPara(state); // mistura com o estado anterior
     if (extras !== antes.extras) p.ajustar({ extras });
     if (enquadre !== antes.enquadre) p.ajustar({ enquadre });
   }, [definition, color, state, extras, enquadre]);
+
+  // as cores por avatar, sempre as mais novas: quem decide é a entrada do avatar realmente desenhado (cores.tsx), lida a
+  // cada quadro. O `entrada` explícito (uma prévia) vale para o avatar desta view; os demais ids, o mapa do ombrod
+  const fonte = useRef({ mapa, sobre });
+  fonte.current = { mapa, sobre };
+  const resolver = useCallback((id: string) => (id in fonte.current.sobre ? fonte.current.sobre[id] : (fonte.current.mapa[id] ?? null)), []);
+  useEffect(() => {
+    const p = player.current;
+    if (!p) return;
+    const desligar = ligarCorDoCorpo(p, resolver);
+    if (resolver(p.animador.forma.avatar)) p.ajustar({}); // um redesenho (parado, no "reduzir movimento", não há quadros)
+    return desligar;
+  }, [resolver, falhou]);
+  // mudou a cor pedida (de qualquer id): só um redesenho, sem tocar na transição nem na cor-base do player
+  const chaveCores = JSON.stringify([mapa, sobre]);
+  const primeira = useRef(true);
+  useEffect(() => {
+    if (primeira.current) {
+      primeira.current = false;
+      return;
+    }
+    player.current?.ajustar({});
+  }, [chaveCores]);
 
   // o pacote: troca quando for seguro para este mascote (uma prévia, na hora). Só o último pedido conta: um novo
   // cancela a espera do anterior, e voltar ao que já está na tela não faz nada.
@@ -148,6 +199,6 @@ function LiveAvatar({ definition, color, state, extras, enquadre, pacote, previa
     return () => window.clearTimeout(espera);
   }, [pacote, previa]);
 
-  if (falhou) return <StillAvatar definition={definition} color={color} state={state} extras={extras} enquadre={enquadre} pacote={pacote} />;
+  if (falhou) return <StillAvatar definition={definition} color={corEfetiva(color, definition.id in sobre ? sobre[definition.id] : (mapa[definition.id] ?? null))} state={state} extras={extras} enquadre={enquadre} pacote={pacote} />;
   return <span ref={host} className="avatar-body avatar-live" aria-hidden />;
 }

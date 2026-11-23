@@ -20,3 +20,8 @@ state.db
 eventos/
 run/
 backups/
+
+# Configuração local dos agentes do Maestri
+/.maestri/
+/AGENTS.md
+/CLAUDE.md

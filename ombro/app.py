@@ -48,6 +48,7 @@ from providers.demo import codex_demo, cursor_demo
 from render import desenhar
 
 from .animacoes import Animacoes, Atividade, ler_aplicado
+from .movimento import MovimentoReduzido
 
 log = logger("main")
 log_hw = logger("hardware")
@@ -175,6 +176,8 @@ class Aplicacao:
         self._ultimo_hw = Hardware(disponivel=False)  # até a primeira leitura boa
         self.semente = random.getrandbits(32)  # o "aleatório ao iniciar": sorteado agora, o mesmo até reiniciar
         self.mascote = Mascote(cor_fixa=cfg.cor_mascote_rgb, cor_modo=cfg.cor_modo)
+        self.mascote.definir_entradas(self.entradas_de_cor())
+        self.movimento = MovimentoReduzido()  # o "reduzir movimento" do macOS, lido só se algum avatar usa o ciclo "rgb"
         self.sujeito_atual: tuple = (None, None)  # (agente, sessão) de quem o mascote está falando agora
         if self.demo and cfg.demo_ciclo > 0:  # no ciclo de demonstração, o "concluído" dura um cenário, não 5 min
             self.mascote.duracao_concluido = cfg.demo_ciclo
@@ -242,6 +245,12 @@ class Aplicacao:
             return desenhar_minimal(h, uso, self.mascote, datetime.now(), agora_mono, agente=CLAUDE)
         return desenhar_ombro(h, uso, self.mascote, datetime.now(), agora_mono)
 
+    def sincronizar_movimento(self) -> None:
+        """Atualiza o "reduzir movimento" do mascote (a leitura do macOS, guardada por alguns segundos: nada de consulta
+        por quadro) quando o avatar desenhado, ou o que entra numa troca, está no ciclo "rgb". Sem ciclo, nem consulta."""
+        if self.mascote.usa_ciclo_rgb:
+            self.mascote.movimento_reduzido = self.movimento.reduzido()
+
     def quadro(self, h, uso, agora_mono):
         try:
             if self.cfg.animado:
@@ -251,6 +260,7 @@ class Aplicacao:
                 if self.multi and (antes in DO_CLAUDE) != (self.mascote.estado in DO_CLAUDE):
                     self.atualizar_avatar(agora_mono)  # entrou ou saiu de alerta/reset: muda de quem é o mascote
                 self.trocar_pacote_se_seguro(agora_mono)
+                self.sincronizar_movimento()
                 return self.desenhar_animado(h, uso, agora_mono)
             self.trocar_pacote_se_seguro(agora_mono)  # sem o mascote na tela, os do app ainda trocam
             return desenhar(h, uso, paisagem_=self.cfg.paisagem_efetiva)
@@ -271,6 +281,7 @@ class Aplicacao:
         img = self.quadro(self.ler_hw(), uso, agora)
         if self.cfg.animado:  # sem mistura com o estado anterior, e já no meio do movimento
             self.mascote.anterior = None
+            self.sincronizar_movimento()  # o "reduzir movimento" vale também no quadro final (o ciclo "rgb" fica parado)
             img = self.desenhar_animado(self.ler_hw(), self.ler_claude(), agora + 1.0)
         img.save(destino)
         log.info("quadro salvo em %s", curto(destino))
@@ -411,6 +422,10 @@ class Aplicacao:
         if novo.pacote_animacao != antes.pacote_animacao:
             self.animacoes.pedir(novo.pacote_animacao)  # só a última escolha vale
             self.trocar_pacote_se_seguro(time.monotonic())  # nada em andamento: troca já (app e telinha)
+        if novo.cores_avatares != antes.cores_avatares:
+            # só as entradas de cor: nenhuma troca imediata de avatar (uma edição de outro id não corta a transição em
+            # andamento); a do avatar desenhado e a do que entra no meio da troca são lidas na hora de desenhar
+            self.mascote.definir_entradas(self.entradas_de_cor())
         if (novo.avatares, novo.avatar_sorteio, novo.cor_modo, novo.layout, novo.vista, novo.foco) != (
                 antes.avatares, antes.avatar_sorteio, antes.cor_modo, antes.layout, antes.vista, antes.foco):
             self.atualizar_avatar(time.monotonic(), ja=True)  # o mascote troca sem esperar o estado mudar
@@ -496,10 +511,25 @@ class Aplicacao:
         cat = avatares.catalogo()
         return avatares.cor_hex(cat.cor_agente.get(provider, av.cor) if provider else av.cor)
 
+    def entradas_de_cor(self) -> dict:
+        """As cores pedidas por id de avatar (config.cores_avatares) como o mascote as lê: "default" -> ("padrao",), a cor
+        original (a do agente, por cima do cor_mascote/cor_modo); "rgb" -> ("rgb",), o ciclo; "#RRGGBB" -> ("fixa", rgb).
+        Sem entrada, o avatar herda o que valia antes."""
+        out = {}
+        for aid, valor in self.cfg.cores_avatares:
+            if valor == "default":
+                out[aid] = ("padrao",)
+            elif valor == "rgb":
+                out[aid] = ("rgb",)
+            else:
+                out[aid] = ("fixa", avatares.cor_hex(valor))
+        return out
+
     def atualizar_avatar(self, agora: float, ja: bool = False) -> None:
         """Pede ao mascote o avatar de quem ele representa agora (entra na próxima troca de estado)."""
         provider, sessao = self.sujeito_atual = self.sujeito()
-        av = self.avatar_de(provider, sessao)
+        av = self.avatar_de(provider, sessao)  # a cor pedida é do avatar já resolvido (inclusive o aleatório por sessão)
+        self.mascote.definir_entradas(self.entradas_de_cor())
         self.mascote.usar(av, self.cor_de(provider, av), agora, ja=ja)
 
     def avatares_resolvidos(self) -> dict:

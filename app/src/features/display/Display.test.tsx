@@ -77,6 +77,91 @@ describe("layouts", () => {
 
 });
 
+describe("agente de cada layout", () => {
+  const seletor = () => screen.findByRole("combobox", { name: "Agente deste layout" }) as Promise<HTMLSelectElement>;
+  const habilitado = async () => {
+    const s = await seletor();
+    await waitFor(() => expect(s).toBeEnabled());
+    return s;
+  };
+
+  it("mostra a escolha do layout em uso, grava ao vivo e cada layout guarda a sua", async () => {
+    const api = fakeApi();
+    renderApp(api, "display");
+    const s = await habilitado();
+    expect(s).toHaveValue("claude"); // sem escolha, o Claude
+    expect(within(s).getAllByRole("option").map((o) => (o as HTMLOptionElement).value)).toEqual(["automatic", "claude", "codex", "cursor", "opencode"]);
+    await userEvent.selectOptions(s, "codex");
+    expect(api.configUpdate).toHaveBeenLastCalledWith({ agente_auto: "codex" }, true);
+    await waitFor(() => expect(s).toHaveValue("codex"));
+    await userEvent.click(await radio(/Minimal v2/));
+    await waitFor(async () => expect(await seletor()).toHaveValue("claude"));
+    await userEvent.selectOptions(await habilitado(), "opencode");
+    expect(api.configUpdate).toHaveBeenLastCalledWith({ agente_minimal: "opencode" }, true);
+    await userEvent.click(await radio(/Clássico/));
+    await waitFor(async () => expect(await seletor()).toHaveValue("claude"));
+    await userEvent.selectOptions(await habilitado(), "automatic");
+    expect(api.configUpdate).toHaveBeenLastCalledWith({ agente_classico: "automatic" }, true);
+    await userEvent.click(await radio(/^Ombro/)); // o Ombro divide a escolha do Automático
+    await waitFor(async () => expect(await seletor()).toHaveValue("codex"));
+    await userEvent.click(await radio(/Minimal v2/));
+    await waitFor(async () => expect(await seletor()).toHaveValue("opencode"));
+    expect(api.daemonRestart).not.toHaveBeenCalled();
+  });
+
+  it("diz o que a telinha está mostrando, inclusive quando o agente escolhido não está disponível", async () => {
+    const base = createMockApi();
+    const api = fakeApi({
+      displayStatus: async () => ({ ...(await base.displayStatus()), agent: { selected: "claude", effective: "claude" as const, condition: "desligado" as const } }),
+    });
+    renderApp(api, "display");
+    expect(await screen.findByText(/Na telinha agora: Claude Code · Desligado/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["desconhecido", "Sem notícias"],
+    ["sem_sessoes", "Sem sessões"],
+    ["nao_instalado", "Não instalado"],
+    ["indisponivel", "Indisponível"],
+    ["desconectado", "Desconectado"],
+  ] as const)("diz a condição real do Claude (%s), nunca ocioso", async (condition, rotulo) => {
+    const base = createMockApi();
+    const api = fakeApi({
+      displayStatus: async () => ({ ...(await base.displayStatus()), agent: { selected: "claude", effective: "claude" as const, condition } }),
+    });
+    renderApp(api, "display");
+    expect(await screen.findByText(new RegExp(`Na telinha agora: Claude Code · ${rotulo}`))).toBeInTheDocument();
+    expect(screen.queryByText(/Na telinha agora:.*Ocioso/)).toBeNull();
+  });
+
+  it("não mostra o estado de outra escolha como se fosse o de agora", async () => {
+    const base = createMockApi();
+    const api = fakeApi({
+      displayStatus: async () => ({ ...(await base.displayStatus()), agent: { selected: "codex", effective: "codex" as const, condition: "trabalhando" as const } }),
+    });
+    renderApp(api, "display");
+    await habilitado();
+    expect(screen.queryByText(/Na telinha agora/)).toBeNull();
+  });
+
+  it("falha ao mudar mantém a escolha em uso e mostra o erro", async () => {
+    const api = fakeApi({ configUpdate: () => Promise.reject({ kind: "ipc", message: "o ombrod não respondeu" }) });
+    renderApp(api, "display");
+    const s = await habilitado();
+    await userEvent.selectOptions(s, "cursor");
+    expect(await screen.findByText(/o ombrod não respondeu/)).toBeInTheDocument();
+    expect(s).toHaveValue("claude");
+  });
+
+  it("no Multiagente não há seletor", async () => {
+    renderApp(fakeApi(), "display");
+    await habilitado();
+    await userEvent.click(await radio(/Multiagente/));
+    expect(await screen.findByText(/mostra todos os agentes ligados/)).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Agente deste layout" })).toBeNull();
+  });
+});
+
 describe("girar 180°", () => {
   it("liga e desliga na hora, e o switch mostra o que o ombrod confirmou", async () => {
     const api = fakeApi();

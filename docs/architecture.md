@@ -11,7 +11,8 @@ Claude Code: ~/.claude, ~/.claude.json, ~/.ombro-screen/uso.json ──► colet
 Claude Code, Codex, Cursor: hooks ──► ombro_hook.py ──► ~/.ombro-screen/eventos/ ──► core/caixa.py
         │  a cada 5 s, Monitor.atualizar_todos(): entrega os eventos e coleta cada provider
         ▼
-providers/claude.py · codex.py · cursor.py       convertem para o modelo do core ──► ProviderSnapshot
+providers/claude.py · codex.py · cursor.py · opencode.py   convertem para o modelo do core ──► ProviderSnapshot
+        (o OpenCode: um plugin em integrations/opencode/ grava eventos na mesma caixa, ver docs/providers/opencode.md)
         ▼
 core/state.py              StateStore: consolida, separa por provider, descobre o que mudou
         ├──► core/events.py        EventBus: avisa as mudanças ──► log de depuração

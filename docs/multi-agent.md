@@ -47,6 +47,48 @@ Terminal fechado, Mac dormindo, um evento perdido: para quem só avisa por event
 eventos há 4 h sai da tela. Ao reiniciar, as sessões voltam do banco com estado desconhecido até o próximo
 evento confirmar.
 
+## O agente dos layouts de um agente só
+
+Os layouts do Ombro, Minimal v2 e clássico mostram **um** agente, escolhido para cada um (na página **Tela** do app,
+em "Agente deste layout", ou no `config.json`):
+
+```json
+{"agente_auto": "automatic", "agente_classico": "codex", "agente_minimal": "opencode"}
+```
+
+- `agente_auto` vale para os layouts `auto` e `ombro` (são o mesmo desenho); o clássico e o Minimal v2 têm a deles.
+  Sem a chave, o Claude: os quadros são os de sempre. Muda na hora, sem reiniciar.
+- Valores: `claude`, `codex`, `cursor`, `opencode` ou `automatic` (não confundir com o *layout* `auto`).
+- **`automatic`:** entre os agentes ligados com uma sessão que não esteja desconectada, o da sessão que mais precisa
+  de você (erro, aprovação, espera), depois quem trabalha, depois a parada e a sem notícias; dentro de cada grupo, a
+  atualizada há menos tempo; no empate, a ordem Claude, Codex, Cursor, OpenCode. Sem candidato, a tela diz que
+  nenhum agente tem sessão: nada de antes fica, e o Claude não entra no lugar.
+- **Sem troca silenciosa:** um agente desligado, não instalado, sem a integração, com a coleta falhando,
+  desconectado ou sem sessões continua escolhido, e a tela diz a condição dele.
+- Com um agente que não é o Claude, aparece só o que ele informa: condição, até três sessões, quantas há e quem
+  espera ou parou com erro. Tokens e limites ficam como "—" ou "não informado", nunca zero. O Cursor não informa
+  quando espera você, e a tela diz isso. Um erro aparece em texto; o mascote reage como sempre reagiu no Claude.
+- O mascote passa a usar o avatar e a cor do agente mostrado (as preferências de sempre). Ao trocar de agente, ele
+  esquece o que sabia do anterior: a troca não vira "concluído" nem "reset".
+- Limitação: ligar ou desligar um agente só vale ao reiniciar o monitoramento.
+- Nenhum agente, o Claude inclusive, "conclui" quando o trabalho some, fica sem notícias, sai do ar ou a coleta
+  falha: o mascote só comemora um fim confirmado.
+
+### O Claude no desenho de sempre
+
+Com o Claude ligado e tudo confirmado (trabalhando, esperando, ocioso, com erro ou no limite, e nenhuma sessão sem
+notícias), os quadros são **idênticos** aos de antes. O que muda é só o que não está confirmado:
+
+| Situação | O que a tela diz |
+| --- | --- |
+| Alguma sessão sem notícias | ponto cinza; "há sessão sem notícias" embaixo; sem nada confirmado em andamento, o título vira "sem notícias" |
+| Sem sessões | "sem sessões" / "nenhuma sessão aberta" |
+| Coleta falhando, com limites ou tokens de antes | "coleta falhou"; sessões "—" |
+| Dado de tokens ausente numa dessas situações | "—", nunca 0 |
+| Não instalado, coleta falhando sem dado nenhum, ou desligado | a mesma tela de condição dos outros agentes |
+
+Os limites de uso e os tokens do Claude continuam na tela quando existem; um limite no fim continua em alerta.
+
 ## O layout multiagente
 
 ```bash
@@ -65,7 +107,7 @@ python3 tela.py --layout multiagente --demo --demo-ciclo 7        # com dados in
   `rotate_interval` segundos (mínimo 5). Enquanto alguém precisa de você, a tela fica parada na atenção.
 
 Prioridade de atenção: erro > aguarda aprovação > aguarda você > limite de uso no fim > trabalhando > ocioso.
-O cloud do layout multiagente reage a todos os agentes; nos layouts de sempre, só ao Claude, como antes.
+O cloud do layout multiagente reage a todos os agentes; nos layouts de um agente só, ao agente do layout.
 
 Estados de um agente, todos com texto (não só cor): trabalhando, ocioso, aguarda você, aguarda aprovação,
 parou com erro, limite no fim, sem notícias, sem sessões, **não configurado** (instalado, sem os hooks do

@@ -195,6 +195,17 @@ class Mascote(oa.Animador):
             return self.cor_base if self.movimento_reduzido else cor_do_ciclo(agora)
         return e[1] if e[0] == "fixa" else self.cor_base
 
+    # ---------- a fonte ----------
+    def esquecer_fonte(self) -> None:
+        """O mascote passa a falar de outra fonte (outro agente, ou o conjunto): o que se lembrava da atividade e dos
+        resets da anterior não vale. Sem isto, a troca pareceria um "concluído" ou um reset de plano. O que está na
+        tela não é cortado: o próximo estado entra pela mistura de sempre, sem esperar os segundos de calma."""
+        self._havia_trabalho = False
+        self._terminou_em = None
+        self._reseta_ant = {}
+        self._reset_ate = 0.0
+        self._calmo_desde = float("-inf")
+
     # ---------- o pacote de animações ----------
     def usar_pacote(self, pacote: str, agora: float, ja: bool = False) -> None:
         """Passa a usar o pacote `pacote`. A troca é a mesma mistura de DURACAO_MISTURA s que a biblioteca faz entre

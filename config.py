@@ -34,6 +34,11 @@ NOMES_LAYOUT = {"auto": "do Ombro", "ombro": "do Ombro", "classico": "clássico"
                 "multiagente": "multiagente"}
 PROVIDERS = ("claude", "codex", "cursor", "opencode")  # na ordem em que aparecem na tela
 VISTAS = ("overview", "focus", "attention")  # visões do layout multiagente
+# o agente de cada layout de um agente só: um fixo, ou "automatic" (o que mais precisa de você agora). Os layouts
+# "auto" e "ombro" são o mesmo desenho e dividem a mesma preferência; o multiagente não usa nenhuma
+AGENTES_DE_LAYOUT = ("automatic",) + PROVIDERS
+CHAVE_DO_AGENTE = {"auto": "agente_auto", "ombro": "agente_auto", "classico": "agente_classico",
+                   "minimal-v2": "agente_minimal"}
 MIN_ROTACAO = 5.0  # segundos: trocar de visão mais rápido que isso deixa a tela instável
 SO_NA_LINHA_DE_COMANDO = ("demo", "demo_ciclo", "png", "arquivo")  # ações de uma vez, não preferências
 AVATAR_CHAVES = PROVIDERS + ("padrao",)  # um avatar por agente, e o do Ombro (sem agente em foco)
@@ -91,6 +96,10 @@ class OmbroConfig:
     nao_abrir: bool = False
     # diagnóstico
     debug: bool = False
+    # o agente de cada layout de um agente (AGENTES_DE_LAYOUT); sem a chave no arquivo, o Claude, como sempre
+    agente_auto: str = "claude"
+    agente_classico: str = "claude"
+    agente_minimal: str = "claude"
     # agentes monitorados e o layout multiagente
     providers: tuple = PROVIDERS  # os ligados; no arquivo: {"providers": {"codex": {"enabled": false}}}
     vista: str = "overview"  # no arquivo: {"multi_agent": {"view": ...}}
@@ -121,6 +130,12 @@ class OmbroConfig:
         if self.intervalo is not None:
             return self.intervalo
         return 0.2 if self.animado else 1.0
+
+    @property
+    def agente_do_layout(self) -> str | None:
+        """O agente escolhido para o layout em uso ("claude", ..., "automatic"); None no multiagente."""
+        chave = CHAVE_DO_AGENTE.get(self.layout)
+        return getattr(self, chave) if chave else None
 
     def avatar(self, chave: str) -> str:
         """A escolha de avatar de um agente (ou "padrao", a do Ombro): "padrao", "aleatorio" ou um id."""
@@ -205,6 +220,8 @@ def validar(nome: str, v, base: Path | None = None):
         return _escolha(nome, v, TRANSPORTES)
     if nome == "layout":
         return _escolha(nome, v, LAYOUTS)
+    if nome in ("agente_auto", "agente_classico", "agente_minimal"):
+        return _escolha(nome, v, AGENTES_DE_LAYOUT)
     if nome == "porta":
         return _texto(nome, v)
     if nome == "brilho":

@@ -3,7 +3,7 @@ import { Badge, Button, Card, KeyValues, Notice, PageHeader, Toggle } from "../.
 import { useAction, useAsync, useInterval } from "../../hooks/useAsync";
 import { useOmbro } from "../../hooks/useOmbro";
 import { errorMessage } from "../../services/api";
-import { DASH, LAYOUT_NAMES, ago } from "../../lib/format";
+import { DASH, LAYOUT_NAMES, PROVIDER_NAMES, PROVIDER_STATE, ago } from "../../lib/format";
 import { useConfig, type ConfigStore } from "../../hooks/useConfig";
 import type { ConfigValue, DisplayStatus } from "../../types/ombro";
 import { Preview } from "./Preview";
@@ -116,6 +116,12 @@ export function DisplayPage() {
   const layoutAtual = typeof valores.layout === "string" ? valores.layout : null;
   const classico = layoutAtual === "classico";
 
+  // o agente do layout em uso: cada layout de um agente guarda o seu (o multiagente mostra todos)
+  const chaveDoAgente = layoutAtual ? CHAVE_DO_AGENTE[layoutAtual] : undefined;
+  const opcaoDoAgente = chaveDoAgente ? cfg.options.get(chaveDoAgente) : undefined;
+  // o que a telinha mostra agora, só se a resposta for deste mesmo layout e desta mesma escolha
+  const naTela = d && d.layout === layoutAtual && d.agent && d.agent.selected === valores[chaveDoAgente ?? ""] ? d.agent : null;
+
   // brilho: o valor mostrado acompanha o arraste; ao soltar vai ao ombrod, e depois volta a mostrar o que ele confirmou
   const [arraste, setArraste] = useState<number | null>(null);
   const brilho = arraste ?? (typeof valores.brilho === "number" ? valores.brilho : null);
@@ -211,6 +217,31 @@ export function DisplayPage() {
             );
           })}
         </div>
+        {chaveDoAgente && opcaoDoAgente && (
+          <div className="field">
+            <label htmlFor="agente-do-layout">Agente deste layout</label>
+            <select
+              id="agente-do-layout"
+              value={String(valores[chaveDoAgente] ?? "claude")}
+              disabled={!cfg.config || cfg.busy(chaveDoAgente)}
+              aria-busy={cfg.busy(chaveDoAgente)}
+              onChange={(e) => mudar("layout", { [chaveDoAgente]: e.target.value })}
+            >
+              {(opcaoDoAgente.choices ?? []).map((c) => (
+                <option key={String(c)} value={String(c)}>
+                  {c === "automatic" ? "Automático (o que mais precisa de você)" : (PROVIDER_NAMES[String(c)] ?? String(c))}
+                </option>
+              ))}
+            </select>
+            <p className="muted small" role="status">
+              {naTela ? `Na telinha agora: ${agenteNaTela(naTela)}. ` : ""}
+              {layoutAtual === "auto" || layoutAtual === "ombro"
+                ? "Os layouts Automático e Ombro usam a mesma escolha; o Clássico e o Minimal v2 têm a deles."
+                : "Vale só para este layout; os outros guardam a deles."}
+            </p>
+          </div>
+        )}
+        {layoutAtual === "multiagente" && <p className="muted small">O Multiagente mostra todos os agentes ligados.</p>}
         <Toggle
           label="Layout clássico deitado"
           description={
@@ -288,6 +319,23 @@ const LAYOUT_DESC: Record<string, string> = {
   multiagente: "Claude Code, Codex, Cursor e OpenCode juntos",
   classico: "O painel antigo, com GPU, rede e disco; em pé ou deitado",
 };
+
+/** A preferência de agente de cada layout de um agente só (config.py: CHAVE_DO_AGENTE). */
+const CHAVE_DO_AGENTE: Record<string, string> = {
+  auto: "agente_auto",
+  ombro: "agente_auto",
+  classico: "agente_classico",
+  "minimal-v2": "agente_minimal",
+};
+
+/** As condições que a tela do agente diz com outras palavras (ou que não são um estado do providers.list). */
+const NA_TELA: Record<string, string> = { desligado: "Desligado", sem_agente: "Sem sessões", desconhecido: "Sem notícias" };
+
+function agenteNaTela(a: NonNullable<DisplayStatus["agent"]>): string {
+  if (!a.effective) return "nenhum agente com sessão";
+  const estado = NA_TELA[a.condition] ?? PROVIDER_STATE[a.condition as keyof typeof PROVIDER_STATE]?.label;
+  return `${PROVIDER_NAMES[a.effective] ?? a.effective}${estado ? ` · ${estado}` : ""}`;
+}
 
 const HW_KEYS = ["usb", "revisao", "transporte"] as const;
 

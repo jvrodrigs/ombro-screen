@@ -457,6 +457,16 @@ mod tests {
     }
 
     #[test]
+    fn agente_de_cada_layout_passa_pela_ponte() {
+        for chave in ["agente_auto", "agente_classico", "agente_minimal"] {
+            for valor in ["automatic", "claude", "codex", "cursor", "opencode"] {
+                let m: Map<String, Value> = serde_json::from_value(json!({ chave: valor })).unwrap();
+                assert!(validate_changes(&m).is_ok(), "{chave} = {valor}");
+            }
+        }
+    }
+
+    #[test]
     fn cor_do_avatar_aceita_os_ids_do_catalogo_e_recusa_chaves_invalidas() {
         // os ids de verdade: avatars/catalog.json, na raiz do repositório
         let caminho = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../avatars/catalog.json");

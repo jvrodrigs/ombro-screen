@@ -91,9 +91,10 @@ class SemMovimentoProprio(unittest.TestCase):
         proprios = {n for n, v in vars(mascote.Mascote).items() if callable(v) and not n.startswith("__")}
         # o avatar com a cor do agente, a decisão de estado e a troca de pacote (que só mistura a pose do pacote de
         # antes com a do novo, com o misturar da biblioteca, e cruza os dois desenhos do oa.desenhar: ver test_animacoes)
-        # (+ a cor do corpo por avatar: definir_entradas, cor_atual, _aplicar e _cor_do_estado, só com uma entrada)
+        # (+ a cor do corpo por avatar: definir_entradas, cor_atual, _aplicar e _cor_do_estado, só com uma entrada;
+        # + esquecer_fonte, que só apaga a memória de atividade e reset quando o mascote passa a falar de outro agente)
         self.assertEqual(proprios, {"usar", "decidir", "usar_pacote", "momento_seguro", "parametros_atuais", "camada",
-                                    "definir_entradas", "cor_atual", "_aplicar", "_cor_do_estado"})
+                                    "definir_entradas", "cor_atual", "_aplicar", "_cor_do_estado", "esquecer_fonte"})
 
     def test_fora_de_uma_troca_de_pacote_a_pose_e_a_do_animador(self):
         m = mascote.Mascote(cor_fixa=(1, 2, 3))

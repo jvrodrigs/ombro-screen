@@ -27,14 +27,15 @@ from typing import Callable, Optional
 import psutil
 
 import avatares
-from apresentacao import uso_claude, uso_mascote
+from apresentacao import (claude_sem_dados, condicao_de_agora, escolher_automatico, marcar_sem_confirmacao, quadro_agente,
+                          uso_claude, uso_do_agente, uso_mascote, visao_agente)
 from coletores.claude import ColetorClaude
 from coletores.demo import Demo
 from coletores.hardware import ColetorHardware, Hardware
 from config import NOMES_LAYOUT, OmbroConfig, pasta_ombro
-from core.models import Activity, Attention
+from core.models import Activity, Attention, SnapshotStatus
 from core.monitor import Monitor
-from core.resumo import resumir
+from core.resumo import resumir, resumir_provider
 from layout_minimal_v2 import desenhar_minimal
 from layout_multiagente import SeletorDeVista, desenhar_multiagente
 from layout_ombro import desenhar_ombro
@@ -59,6 +60,7 @@ log_usb = logger("usb")
 
 INTERVALO_CLAUDE = 5.0  # segundos entre leituras dos arquivos do Claude Code (e dos eventos dos hooks)
 ESTATISTICAS_S = 60.0  # com --debug, um resumo do laço a cada minuto
+NOMES_AGENTE = {"claude": "Claude Code", "codex": "Codex", "cursor": "Cursor", "opencode": "OpenCode"}  # desligados
 DO_CLAUDE = ("alerta", "reset")  # estados que vêm dos limites do Claude: no multiagente, o mascote é o dele
 ANIMADOS = ("auto", "ombro", "minimal-v2", "multiagente")  # os layouts com o mascote (sempre 480x320)
 SEM_TELA_S = 1.0  # com a tela USB fora, um quadro por segundo: a prévia do app segue viva sem gastar à toa
@@ -184,6 +186,16 @@ class Aplicacao:
         self.mascote.definir_entradas(self.entradas_de_cor())
         self.movimento = MovimentoReduzido()  # o "reduzir movimento" do macOS, lido só se algum avatar usa o ciclo "rgb"
         self.sujeito_atual: tuple = (None, None)  # (agente, sessão) de quem o mascote está falando agora
+        # o agente do layout de um agente só: o efetivo (None: o automático sem candidato) e o que dele se sabe quando
+        # não é o Claude de sempre (apresentacao.VisaoAgente; None: o caminho de sempre do Claude)
+        self.agente_efetivo: Optional[str] = CLAUDE
+        self.visao_do_agente = None
+        self._info_agente: Optional[dict] = None
+        self.agente_publicado: Optional[dict] = None  # o do último quadro desenhado, para a IPC
+        self._fonte: Optional[str] = None  # de quem o mascote tem memória: um agente, "multi" ou "nenhum"
+        self._trocou_fonte = False
+        self._trabalhando_agente: set = set()  # sessões do agente efetivo trabalhando na última coleta
+        self._perdas_agente: Optional[int] = None
         if self.demo and cfg.demo_ciclo > 0:  # no ciclo de demonstração, o "concluído" dura um cenário, não 5 min
             self.mascote.duracao_concluido = cfg.demo_ciclo
         self.mascote.inicio = time.monotonic()
@@ -233,7 +245,7 @@ class Aplicacao:
         return self._ultimo_hw
 
     def ler_claude(self):
-        """Coleta todos os agentes (e os eventos dos hooks); devolve o que os layouts de sempre usam."""
+        """Coleta todos os agentes (e os eventos dos hooks); devolve o que o layout em uso lê (e o cloud)."""
         self.monitor.atualizar_todos()
         snap_claude = self.monitor.store.snapshot(CLAUDE)
         if self.multi:
@@ -246,7 +258,77 @@ class Aplicacao:
             self.uso_multi.sem_confirmacao = sumiu or perdas != self._sem_confirmacao
             self._sem_confirmacao = perdas
             self._trabalhando_oc = {sid for sid, a in agora_oc.items() if a is Activity.WORKING}
-        return uso_claude(snap_claude)
+        self.resolver_agente()
+        if self.multi:
+            return uso_claude(snap_claude)
+        if self.visao_do_agente is None:  # o Claude no desenho de sempre
+            u = marcar_sem_confirmacao(uso_claude(snap_claude), snap_claude, self._info_agente["condition"])
+        else:
+            u = uso_do_agente(self.visao_do_agente)
+        u.sem_confirmacao = self._sumiu_sem_fim()  # qualquer agente, o Claude inclusive
+        return u
+
+    # ---------- o agente do layout ----------
+    def resolver_agente(self) -> bool:
+        """Qual agente o layout em uso mostra agora, pelo que o StateStore sabe (sem coletar). Verdadeiro se a fonte do
+        mascote mudou: aí a memória de atividade e de reset da anterior é esquecida. Sem troca para o Claude quando o
+        escolhido está desligado, ausente ou fora do ar: a tela diz a condição dele."""
+        if self.multi:
+            fonte, self.visao_do_agente, self._info_agente = "multi", None, None
+        else:
+            escolha = self.cfg.agente_do_layout or CLAUDE  # o clássico, o Ombro e o Minimal sempre têm uma
+            ligados = dict(self.nomes)
+            store = self.monitor.store
+            efetivo = (escolher_automatico((pid, store.sessions(pid)) for pid in ligados) if escolha == "automatic"
+                       else escolha)
+            visao, estado = None, "sem_agente"
+            if efetivo is not None:
+                nome = ligados.get(efetivo) or NOMES_AGENTE[efetivo]
+                snap, sessoes = store.snapshot(efetivo), store.sessions(efetivo)
+                if efetivo == CLAUDE and efetivo in ligados:
+                    estado = condicao_de_agora(resumir_provider(efetivo, nome, snap, sessoes).estado, sessoes)
+                # o Claude ligado com dados segue no desenho de sempre (com tudo confirmado, os mesmos quadros)
+                if efetivo != CLAUDE or efetivo not in ligados or claude_sem_dados(estado, snap):
+                    p = self.monitor.registry.get(efetivo) if efetivo in ligados else None
+                    visao = visao_agente(efetivo, nome, efetivo in ligados, snap,
+                                         sessoes, p is None or p.capabilities.attention,
+                                         escolha == "automatic")
+                    estado = visao.estado
+            else:
+                visao = visao_agente(None, "", False, None, ())
+            self.agente_efetivo, self.visao_do_agente = efetivo, visao
+            self._info_agente = {"selected": escolha, "effective": efetivo, "condition": estado}
+            fonte = efetivo or "nenhum"
+        mudou = self._fonte is not None and fonte != self._fonte
+        # o avatar do agente novo entra já. Ao iniciar também, se o layout não é do Claude (o dele já é o inicial)
+        if mudou or (self._fonte is None and fonte not in (CLAUDE, "multi")):
+            self._trocou_fonte = True
+        if mudou:
+            self.mascote.esquecer_fonte()
+            self._trabalhando_agente, self._perdas_agente = set(), None
+        self._fonte = fonte
+        return mudou
+
+    def _sumiu_sem_fim(self) -> bool:
+        """Uma sessão do agente efetivo deixou de trabalhar sem um fim confirmado (sumiu, ficou desconhecida ou a
+        origem saiu do ar), ou a coleta dele falhou: isso não é "concluído"."""
+        pid = self.agente_efetivo
+        sessoes = {s.session_id: s for s in self.monitor.store.sessions(pid)} if pid else {}
+        snap = self.monitor.store.snapshot(pid) if pid else None
+        sumiu = any(s is None or s.disconnected or s.activity not in (Activity.WORKING, Activity.IDLE)
+                    for s in (sessoes.get(sid) for sid in self._trabalhando_agente))
+        perdas = snap.unconfirmed if snap is not None else None
+        perdeu = None not in (perdas, self._perdas_agente) and perdas != self._perdas_agente
+        self._perdas_agente = perdas
+        self._trabalhando_agente = {sid for sid, s in sessoes.items()
+                                    if s.activity is Activity.WORKING and not s.disconnected}
+        return sumiu or perdeu or snap is None or snap.status is SnapshotStatus.ERROR
+
+    def _extra_do_agente(self) -> dict:
+        """O argumento a mais dos desenhos quando o agente não é o Claude de sempre; senão nada."""
+        if self.multi or self.visao_do_agente is None:
+            return {}
+        return {"visao": quadro_agente(self.visao_do_agente, datetime.now())}
 
     # ---------- desenho ----------
     def desenhar_animado(self, h, uso, agora_mono):
@@ -254,8 +336,9 @@ class Aplicacao:
             vista, foco = self.seletor.escolher(self.resumo, agora_mono)
             return desenhar_multiagente(h, self.resumo, self.mascote, datetime.now(), agora_mono, vista, foco)
         if self.cfg.layout == "minimal-v2":
-            return desenhar_minimal(h, uso, self.mascote, datetime.now(), agora_mono, agente=CLAUDE)
-        return desenhar_ombro(h, uso, self.mascote, datetime.now(), agora_mono)
+            return desenhar_minimal(h, uso, self.mascote, datetime.now(), agora_mono,
+                                    agente=self.agente_efetivo or "agentes", **self._extra_do_agente())
+        return desenhar_ombro(h, uso, self.mascote, datetime.now(), agora_mono, **self._extra_do_agente())
 
     def sincronizar_movimento(self) -> None:
         """Atualiza o "reduzir movimento" do mascote (a leitura do macOS, guardada por alguns segundos: nada de consulta
@@ -264,6 +347,7 @@ class Aplicacao:
             self.mascote.movimento_reduzido = self.movimento.reduzido()
 
     def quadro(self, h, uso, agora_mono):
+        self.agente_publicado = self._info_agente
         try:
             if self.cfg.animado:
                 base = self.uso_multi if self.multi else uso  # no multiagente, o cloud reage a todos os agentes
@@ -275,7 +359,7 @@ class Aplicacao:
                 self.sincronizar_movimento()
                 return self.desenhar_animado(h, uso, agora_mono)
             self.trocar_pacote_se_seguro(agora_mono)  # sem o mascote na tela, os do app ainda trocam
-            return desenhar(h, uso, paisagem_=self.cfg.paisagem_efetiva)
+            return desenhar(h, uso, paisagem_=self.cfg.paisagem_efetiva, **self._extra_do_agente())
         except Exception:
             # Um erro no desenho é bug, não falha recuperável: registra com o contexto e fecha.
             log_render.critical("falha ao desenhar o quadro (layout %s, cloud %s); o Ombro vai fechar",
@@ -343,7 +427,8 @@ class Aplicacao:
                 if self._uso is None or inicio - self._ultimo_uso >= INTERVALO_CLAUDE or demo_ciclo:
                     self._uso, self._ultimo_uso = self.ler_claude(), inicio  # problemas na leitura vão para o log
                     self.coletado_em = datetime.now()
-                    self.atualizar_avatar(inicio)
+                    self.atualizar_avatar(inicio, ja=self._trocou_fonte)
+                    self._trocou_fonte = False
                     if self.ao_coletar is not None:
                         self.ao_coletar()
                 self.ultimo_hw = self.ler_hw()  # o ombrod publica CPU e RAM a partir desta leitura
@@ -423,6 +508,11 @@ class Aplicacao:
         if novo.layout != antes.layout:
             self._uso = None  # a próxima volta do laço coleta de novo (o multiagente precisa do resumo)
             log.info("layout: %s", NOMES_LAYOUT[novo.layout])
+        trocou_agente = False
+        if (novo.layout, novo.agente_auto, novo.agente_classico, novo.agente_minimal) != (
+                antes.layout, antes.agente_auto, antes.agente_classico, antes.agente_minimal):
+            self._uso = None  # o que o cloud lê é o do agente novo
+            trocou_agente = self.resolver_agente()
         if novo.cor_mascote != antes.cor_mascote:
             self.mascote.cor_fixa = novo.cor_mascote_rgb
             self.mascote.cor = self.mascote._cor_do_estado()  # sem cor fixa, volta à do agente (ou a uma sorteada)
@@ -438,7 +528,7 @@ class Aplicacao:
             # só as entradas de cor: nenhuma troca imediata de avatar (uma edição de outro id não corta a transição em
             # andamento); a do avatar desenhado e a do que entra no meio da troca são lidas na hora de desenhar
             self.mascote.definir_entradas(self.entradas_de_cor())
-        if (novo.avatares, novo.avatar_sorteio, novo.cor_modo, novo.layout, novo.vista, novo.foco) != (
+        if trocou_agente or (novo.avatares, novo.avatar_sorteio, novo.cor_modo, novo.layout, novo.vista, novo.foco) != (
                 antes.avatares, antes.avatar_sorteio, antes.cor_modo, antes.layout, antes.vista, antes.foco):
             self.atualizar_avatar(time.monotonic(), ja=True)  # o mascote troca sem esperar o estado mudar
         self._redesenhar = True
@@ -497,10 +587,13 @@ class Aplicacao:
         return max(lista, key=peso).session_id
 
     def sujeito(self) -> tuple:
-        """(agente, sessão) de quem o mascote fala. Nos layouts de um agente, o Claude. No multiagente: o Claude em
-        alerta e reset (são os limites dele); senão o mais urgente; senão o da visão em foco; senão o único que
-        trabalha (ou o único com sessões); senão ninguém (None: o avatar do Ombro)."""
-        if not self.multi or self.mascote.estado in DO_CLAUDE:
+        """(agente, sessão) de quem o mascote fala. Nos layouts de um agente, o agente do layout (None no automático sem
+        candidato: o avatar do Ombro). No multiagente: o Claude em alerta e reset (são os limites dele); senão o mais
+        urgente; senão o da visão em foco; senão o único que trabalha (ou o único com sessões); senão ninguém."""
+        if not self.multi:
+            pid = self.agente_efetivo
+            return (pid, self._sessao_relevante(pid)) if pid else (None, None)
+        if self.mascote.estado in DO_CLAUDE:
             return CLAUDE, self._sessao_relevante(CLAUDE)
         r = self.resumo
         if r is None:

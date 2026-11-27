@@ -123,6 +123,8 @@ Abre `http://localhost:5680` no navegador. Para salvar um quadro: `python3 tela.
 
 O layout do Ombro é o padrão e é sempre 480×320. O painel antigo (anéis, GPU, rede, disco) continua disponível com `--layout classico`; nele, `--paisagem` deita a tela.
 
+Esses layouts mostram o Claude Code por padrão; cada um pode mostrar o Codex, o Cursor, o OpenCode ou o agente que mais precisa de você (página **Tela** do app; ver [docs/multi-agent.md](docs/multi-agent.md#o-agente-dos-layouts-de-um-agente-só)).
+
 ### Layout Minimal v2
 
 ```bash
@@ -309,7 +311,7 @@ Tudo funciona sem ele. Se quiser deixar opções fixas sem repetir na linha de c
 }
 ```
 
-- As chaves têm o nome das opções da linha de comando, com `_` no lugar de `-`: `usb`, `revisao`, `porta`, `transporte`, `brilho`, `lib`, `paisagem`, `girar`, `sem_macmon`, `claude_dir`, `layout`, `intervalo`, `cor_mascote`, `cor_modo`, `porta_sim`, `nao_abrir` e `debug`; `pacote_animacao` (`vivo`, o padrão, ou `classico`) escolhe as animações do mascote ([docs/avatars.md](docs/avatars.md#pacote-de-animações)). Os avatares ficam num bloco: `"avatars": {"codex": "aleatorio", "random": "sessao"}` ([docs/avatars.md](docs/avatars.md)); a cor do corpo de cada avatar, por id, em `"cores_avatares": {"sereno": "#3D7A4F", "cubo": "rgb"}` (opcional; sem entrada valem `cor_mascote` e `cor_modo`: [docs/avatars.md](docs/avatars.md#cor-do-corpo-por-avatar)). `--demo`, `--demo-ciclo` e `--png` só valem na linha de comando.
+- As chaves têm o nome das opções da linha de comando, com `_` no lugar de `-`: `usb`, `revisao`, `porta`, `transporte`, `brilho`, `lib`, `paisagem`, `girar`, `sem_macmon`, `claude_dir`, `layout`, `agente_auto`, `agente_classico` e `agente_minimal` (o agente de cada layout: [docs/multi-agent.md](docs/multi-agent.md#o-agente-dos-layouts-de-um-agente-só); só no arquivo ou pelo app e `config set`), `intervalo`, `cor_mascote`, `cor_modo`, `porta_sim`, `nao_abrir` e `debug`; `pacote_animacao` (`vivo`, o padrão, ou `classico`) escolhe as animações do mascote ([docs/avatars.md](docs/avatars.md#pacote-de-animações)). Os avatares ficam num bloco: `"avatars": {"codex": "aleatorio", "random": "sessao"}` ([docs/avatars.md](docs/avatars.md)); a cor do corpo de cada avatar, por id, em `"cores_avatares": {"sereno": "#3D7A4F", "cubo": "rgb"}` (opcional; sem entrada valem `cor_mascote` e `cor_modo`: [docs/avatars.md](docs/avatars.md#cor-do-corpo-por-avatar)). `--demo`, `--demo-ciclo` e `--png` só valem na linha de comando.
 - **Precedência:** opção dada na linha de comando > arquivo > padrão. Uma opção que você não deu na linha de comando não apaga a do arquivo.
 - As opções de ligar e desligar têm a forma negativa, para a linha de comando desfazer o arquivo: `--no-usb`, `--no-paisagem`, `--no-girar`, `--no-sem-macmon`, `--no-nao-abrir`, `--no-debug`.
 - Outro arquivo: `--config /caminho/arquivo.json`. A pasta segue a variável `OMBRO_SCREEN_DIR`, a mesma do `uso.json` do `statusline_tap.py`.

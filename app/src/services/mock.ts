@@ -142,6 +142,10 @@ export const mockSchema: ConfigSchema = {
     { key: "girar", group: "display", type: "boolean", description: "girar a tela 180°", live: true, nullable: false },
     { key: "porta_sim", group: "display", type: "integer", description: "porta do simulador em localhost", live: false, nullable: false, min: 1024, max: 65535 },
     { key: "layout", group: "appearance", type: "enum", description: "o modelo de tela", live: true, nullable: false, choices: ["auto", "ombro", "classico", "minimal-v2", "multiagente"] },
+    ...["agente_auto", "agente_classico", "agente_minimal"].map((key) => ({
+      key, group: "appearance", type: "enum" as const, description: "o agente do layout", live: true, nullable: false,
+      choices: ["automatic", "claude", "codex", "cursor", "opencode"],
+    })),
     { key: "cor_mascote", group: "appearance", type: "color", description: "cor fixa do avatar (#RRGGBB; vale por cima do cor_modo)", live: true, nullable: true },
     { key: "cor_modo", group: "appearance", type: "enum", description: "cor do avatar: a do agente, ou sorteada a cada troca de estado", live: true, nullable: false, choices: ["agente", "sorteada"] },
     ...(["claude", "codex", "cursor", "opencode", "padrao"] as const).map((p) => ({
@@ -177,7 +181,7 @@ export function mockConfig(): ConfigInfo {
       debug: false, foco: null, girar: false, intervalo: null, intervalo_rotacao: 15,
       layout: "auto", paisagem: false, porta: "AUTO", porta_sim: 5680, providers: ["claude", "codex", "cursor", "opencode"],
       revisao: "A", rotacao: false, sem_macmon: false, transporte: "auto", usb: false, vista: "overview",
-      pacote_animacao: "vivo",
+      pacote_animacao: "vivo", agente_auto: "claude", agente_classico: "claude", agente_minimal: "claude",
     },
     providers_enabled: { claude: true, codex: true, cursor: true, opencode: true },
     editable: mockSchema.options.map((o) => o.key),
@@ -230,6 +234,19 @@ export function mockDoctor(): DoctorResult {
       { id: "display.connection", category: "display", status: "PASS", title: "Tela", message: "simulator: connected", action: null },
     ],
   };
+}
+
+/** Como o ombrod: o agente do layout em uso (o automático de mentira fica no Claude); null no multiagente. */
+function agenteDoMock(values: Record<string, unknown>) {
+  const chaves: Record<string, string> = {
+    auto: "agente_auto", ombro: "agente_auto", classico: "agente_classico", "minimal-v2": "agente_minimal",
+  };
+  const chave = chaves[String(values.layout)];
+  if (!chave) return null;
+  const selected = String(values[chave]);
+  const effective = (selected === "automatic" ? "claude" : selected) as ProviderId;
+  const condition = mockProviders().find((p) => p.id === effective)?.state ?? ("sem_sessoes" as const);
+  return { selected, effective, condition };
 }
 
 /** Um mock com estado (as mudanças de preferência ficam até recarregar), para usar a interface no navegador. */
@@ -321,6 +338,7 @@ export function createMockApi(): OmbroApi {
         width: config.values.layout === "classico" && config.values.paisagem !== true ? 320 : 480,
         height: config.values.layout === "classico" && config.values.paisagem !== true ? 480 : 320,
         layout: String(config.values.layout), frames: 1200, last_frame_at: iso(agora()), url: "http://localhost:5680",
+        agent: agenteDoMock(config.values),
         mascot: { avatar: "ombro-cloud", provider: "claude", state: "esperando", color: "#DF8559" },
       }),
     displayPreview: () => Promise.resolve({ available: false }),

@@ -66,7 +66,18 @@ def br(n: float, casas: int = 1) -> str:
     return f"{n:.{casas}f}".replace(".", ",")
 
 
-def tokens(n: int) -> str:
+def total_de_tokens(u: UsoClaude) -> int | None:
+    """Os tokens de hoje, ou None quando não há o dado e algo está sem confirmar (ver UsoClaude.sem_tokens)."""
+    return None if u.sem_tokens else u.tokens_entrada + u.tokens_saida
+
+
+def tokens_de_saida(u: UsoClaude) -> int | None:
+    return None if u.sem_tokens else u.tokens_saida
+
+
+def tokens(n: int | None) -> str:
+    if n is None:
+        return "—"
     if n >= 1_000_000_000:
         return br(n / 1e9) + "B"
     if n >= 1_000_000:
@@ -191,8 +202,8 @@ def bloco_uso(t: Tela, u: UsoClaude, agora: datetime):
     t.ret(12, y0, LARGURA - 12, y0 + 42, PAINEL, raio=8)
     sess, cor_sess = texto_sessoes(u, agora)
     colunas = [
-        ("TOKENS HOJE", tokens(u.tokens_entrada + u.tokens_saida), TEXTO),
-        ("SAÍDA", tokens(u.tokens_saida), TEXTO),
+        ("TOKENS HOJE", tokens(total_de_tokens(u)), TEXTO),
+        ("SAÍDA", tokens(tokens_de_saida(u)), TEXTO),
         ("SESSÕES", sess, cor_sess),
     ]
     for x, (rot, val, cor) in zip((24, 124, 192), colunas):
@@ -268,6 +279,14 @@ def aviso_uso(u: UsoClaude, agora: datetime) -> str:
 def texto_sessoes(u: UsoClaude, agora: datetime):
     if u.esperando and agora.second % 2 == 0:  # pisca quando alguém precisa de você
         return f"{u.esperando} espera você", AMBAR
+    if u.condicao == "sem_sessoes":  # o que falta confirmar (ver UsoClaude.condicao)
+        return "sem sessões", APAGADO
+    if u.condicao == "indisponivel":
+        return "coleta falhou", AMBAR
+    if u.condicao == "desconhecido":
+        if u.sem_noticias >= u.sessoes:
+            return f"{u.sem_noticias} sem notícias", APAGADO
+        return f"{u.sessoes} · {u.sem_noticias} s/ notícia", APAGADO
     return f"{u.sessoes}" + (f" · {u.trabalhando} ativ." if u.trabalhando else ""), TEXTO
 
 
@@ -286,11 +305,20 @@ def mosaico(h: Hardware, sufixo_disco: str = ""):
 
 
 # ---------- paisagem (480x320): uso à esquerda, hardware à direita ----------
-def paisagem(t: Tela, h: Hardware, u: UsoClaude, agora: datetime):
-    cabecalho(t, u, agora)
+def paisagem(t: Tela, h: Hardware, u: UsoClaude, agora: datetime, visao=None):
     div = 206  # divisória entre as colunas
-    t.linha(div, 36, div, t.h - 14, TRILHO)
+    if visao is None:
+        cabecalho(t, u, agora)
+        t.linha(div, 36, div, t.h - 14, TRILHO)
+        _coluna_claude(t, u, agora, div)
+    else:
+        _cabecalho_agente(t, visao, agora)
+        t.linha(div, 36, div, t.h - 14, TRILHO)
+        _coluna_agente(t, visao, 16, div - 14, 44)
+    _coluna_hardware(t, h, div)
 
+
+def _coluna_claude(t: Tela, u: UsoClaude, agora: datetime, div: float):
     # --- coluna Claude ---
     for cx, rotulo, j in ((58, "SESSÃO 5H", u.cinco_horas), (150, "SEMANA", u.semana)):
         anel_uso(t, cx, 86, 40, 7, j, 24)
@@ -302,8 +330,8 @@ def paisagem(t: Tela, h: Hardware, u: UsoClaude, agora: datetime):
 
     sess, cor_sess = texto_sessoes(u, agora)
     linhas = [
-        ("TOKENS HOJE", tokens(u.tokens_entrada + u.tokens_saida), TEXTO),
-        ("SAÍDA", tokens(u.tokens_saida), TEXTO),
+        ("TOKENS HOJE", tokens(total_de_tokens(u)), TEXTO),
+        ("SAÍDA", tokens(tokens_de_saida(u)), TEXTO),
         ("SESSÕES", sess, cor_sess),
     ]
     y0, alt = 182, 36
@@ -316,6 +344,8 @@ def paisagem(t: Tela, h: Hardware, u: UsoClaude, agora: datetime):
         tam = t.caber(val, max_w=96, tamanhos=(14, 12, 10))
         t.texto(div - 20, y + alt / 2, val, "Bold", tam, cor, ancora="rm")
 
+
+def _coluna_hardware(t: Tela, h: Hardware, div: float):
     # --- coluna hardware ---
     x0, x1 = div + 12, t.w - 12
     gx = x0 + 74  # início dos gráficos
@@ -348,14 +378,69 @@ def paisagem(t: Tela, h: Hardware, u: UsoClaude, agora: datetime):
         t.texto(x + 8, y + 22, val, "Bold", t.caber(val, max_w=w - 14, tamanhos=(13, 11, 9)), TEXTO)
 
 
-def desenhar(h: Hardware, u: UsoClaude, agora: datetime | None = None, paisagem_: bool = False) -> Image.Image:
+# ---------- outro agente (apresentacao.FixoAgente): o lugar dos limites do Claude diz a condição dele ----------
+TONS = {"erro": VERMELHO, "alerta": AMBAR, "ativo": CORAL, "ok": VERDE, "neutro": APAGADO}
+
+
+def _cortar(t: Tela, s: str, peso: str, tam: int, largura: float) -> str:
+    if t.largura(s, peso, tam) <= largura:
+        return s
+    while s and t.largura(s + "…", peso, tam) > largura:
+        s = s[:-1]
+    return s + "…"
+
+
+def _cabecalho_agente(t: Tela, v, agora: datetime) -> None:
+    nome = v.titulo.upper()
+    t.texto(16, 12, nome, "Bold", 13, CORAL)
+    t.texto(16 + t.largura(nome + " ", "Bold", 13), 12, f"· {v.modo}", "Regular", 13, APAGADO)
+    t.texto(t.w - 16, 12, f"{agora:%H:%M}", "Bold", 13, TEXTO, ancora="ra")
+
+
+def _coluna_agente(t: Tela, v, x0: float, x1: float, y: float) -> None:
+    """Condição, mensagem, até três sessões, o rodapé e o cartão de tokens e sessões, entre x0 e x1, a partir de y."""
+    w = x1 - x0
+
+    def inteiro(s: str, yy: float, cor) -> None:  # encolhe antes de cortar: na coluna deitada o texto é apertado
+        tam = t.caber(s, "Regular", w, tamanhos=(9, 8, 7))
+        t.texto(x0, yy, _cortar(t, s, "Regular", tam, w), "Regular", tam, cor)
+
+    t.texto(x0, y, _cortar(t, v.rotulo, "Bold", 17, w), "Bold", 17, TONS[v.tom])
+    inteiro(v.mensagem, y + 26, APAGADO)
+    for i, (projeto, estado, tom, _) in enumerate(v.linhas):
+        yy = y + 46 + 17 * i
+        tam = t.caber(estado, "Regular", w * .62, tamanhos=(10, 9, 8))
+        resto = w - t.largura(estado, "Regular", tam) - 8  # o estado vai inteiro; o projeto cede
+        t.texto(x0, yy, _cortar(t, projeto, "Bold", 10, resto), "Bold", 10, TEXTO)
+        t.texto(x1, yy, estado, "Regular", tam, TONS[tom], ancora="ra")
+    cor = APAGADO if v.tom_rodape in ("ok", "neutro") else TONS[v.tom_rodape]
+    inteiro(v.rodape, y + 104, cor)
+    y0, alt = y + 122, 28
+    t.ret(x0 - 4, y0, x1 + 4, y0 + alt * 3, PAINEL, raio=8)
+    for i, (rot, val) in enumerate((("TOKENS HOJE", v.tokens), ("SAÍDA", v.saida), ("SESSÕES", v.conta))):
+        yy = y0 + i * alt
+        if i:
+            t.linha(x0 + 6, yy, x1 - 6, yy, TRILHO)
+        t.texto(x0 + 6, yy + alt / 2, rot, "Bold", 8, FRACO, ancora="lm")
+        t.texto(x1 - 6, yy + alt / 2, val, "Bold", 12, TEXTO if val != "—" else FRACO, ancora="rm")
+
+
+def desenhar(h: Hardware, u: UsoClaude, agora: datetime | None = None, paisagem_: bool = False,
+             visao=None) -> Image.Image:
     agora = agora or datetime.now()
     if paisagem_:
         t = Tela(ALTURA, LARGURA)  # 480x320
-        paisagem(t, h, u, agora)
+        if visao is None:
+            paisagem(t, h, u, agora)
+        else:
+            paisagem(t, h, u, agora, visao)
     else:
         t = Tela()
-        cabecalho(t, u, agora)
-        bloco_uso(t, u, agora)
+        if visao is None:
+            cabecalho(t, u, agora)
+            bloco_uso(t, u, agora)
+        else:
+            _cabecalho_agente(t, visao, agora)
+            _coluna_agente(t, visao, 16, LARGURA - 16, 34)  # termina antes do hardware (y 246)
         bloco_hardware(t, h)
     return t.final()

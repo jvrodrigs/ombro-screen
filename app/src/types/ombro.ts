@@ -248,6 +248,8 @@ export interface DisplayStatus {
   connected_since?: string | null;
   last_error?: string | null;
   url?: string | null;
+  /** O agente do layout de um agente no último quadro desenhado; null no multiagente (ou antes do primeiro quadro). */
+  agent?: { selected: string; effective: ProviderId | null; condition: ProviderState | "desligado" | "sem_agente" } | null;
   /** Quem o mascote da telinha representa agora, com qual avatar, estado e cor. */
   mascot?: { avatar: string; provider: ProviderId | null; state: string; color: string; package?: string };
 }

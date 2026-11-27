@@ -27,9 +27,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 from coletores.claude import Janela, UsoClaude
 from coletores.hardware import Hardware
-from layout_ombro import _desde, _grafico_tokens, _reseta
+from layout_ombro import (NOTA_SEM_CONFIRMACAO, _desde, _grafico_tokens, _reseta, contagem_de_sessoes,
+                          sem_atividade_confirmada)
 from mascote import Mascote
-from render import PASTA_FONTES, S, Tela, aviso_uso, gb, tokens
+from render import PASTA_FONTES, S, Tela, aviso_uso, gb, tokens, tokens_de_saida, total_de_tokens
 
 LARGURA, ALTURA = 480, 320
 X0, X1 = 12, 468  # margens
@@ -148,6 +149,12 @@ ESTADOS = {
     "reset": ("RESETOU", Tema.LARANJA),
     "concluido": ("CONCLUÍDO", Tema.VERDE),
 }
+# o que falta confirmar (UsoClaude.condicao): vai no cabeçalho no lugar de um estado do cloud que afirmaria algo
+CABECALHO_SEM_CONFIRMACAO = {
+    "sem_sessoes": ("SEM SESSÕES", Tema.TERCIARIO),
+    "desconhecido": ("SEM NOTÍCIAS", Tema.TERCIARIO),
+    "indisponivel": ("INDISPONÍVEL", Tema.AMARELO),
+}
 
 
 # ---------- texto no tamanho real ----------
@@ -219,6 +226,7 @@ class Fixo:
     por_hora: tuple
     espera: Optional[str]  # "projeto espera há 12 min", ou None
     sistema: str  # "macOS 27.0 • 16 GB"
+    nota: str = ""  # o que falta confirmar, para a linha de baixo
 
 
 @lru_cache(maxsize=1)
@@ -240,14 +248,20 @@ def fixo(u: UsoClaude, estado: str, agora: datetime, agente: str, h: Optional[Ha
     janelas = tuple((_valido(j.pct), _reseta(j, agora)) if isinstance(j, Janela) else None for j in (u.cinco_horas, u.semana))
     passo = fonte("Regular", ROD_PX).getlength("M")
     espera = mensagem_espera(u, agora, int((X1 - X0) / passo) - 2) if u.esperando else None  # o tempo nunca é cortado
-    return Fixo(agente, estado, janelas, aviso_uso(u, agora), u.tokens_entrada + u.tokens_saida, u.tokens_saida, u.sessoes,
-                tuple(u.tokens_por_hora), espera, texto_sistema(h or Hardware(disponivel=False)))
+    if sem_atividade_confirmada(u, estado):
+        estado = u.condicao
+    nota = NOTA_SEM_CONFIRMACAO.get(u.condicao, "")
+    return Fixo(agente, estado, janelas, aviso_uso(u, agora), total_de_tokens(u), tokens_de_saida(u),
+                contagem_de_sessoes(u),
+                tuple(u.tokens_por_hora), espera, texto_sistema(h or Hardware(disponivel=False)),
+                nota[:1].upper() + nota[1:])
 
 
 def _cabecalho(d, f: Fixo) -> None:
     w = _texto(d, X0, CAB_Y, f"{f.agente.upper()}@OMBRO", 13, Tema.TEXTO, "Bold")
     _texto(d, X0 + w + 8, CAB_Y, "~ uso", 13, Tema.TERCIARIO)
-    rotulo, cor = ESTADOS.get(f.estado, (f.estado.upper(), Tema.SECUNDARIO))
+    rotulo, cor = (ESTADOS.get(f.estado) or CABECALHO_SEM_CONFIRMACAO.get(f.estado)
+                   or (f.estado.upper(), Tema.SECUNDARIO))
     wr = _texto(d, X1, CAB_Y, rotulo, 11, cor, "Bold", "rm")
     cx, r = X1 - wr - 9, 3.5  # o ponto colorido; o texto diz o estado mesmo sem cor
     d.ellipse((cx - r, CAB_Y - r, cx + r, CAB_Y + r), fill=cor)
@@ -312,9 +326,16 @@ def _colar_icone(img: Image.Image, nome: str, x: int, y_centro: int, cor) -> Non
     img.paste(ic, (x, y_centro - ic.height // 2), ic)
 
 
+def sufixo_das_sessoes(f) -> str:
+    """" ativa(s)" ao lado do número, só quando ele está confirmado."""
+    if getattr(f, "nota", ""):
+        return ""
+    return " ativa" if f.sessoes == 1 else (" ativas" if f.sessoes else "")
+
+
 def _estatisticas(img: Image.Image, d, f: Fixo) -> None:
     d.line(((X0, EST_DIV), (334, EST_DIV)), fill=Tema.DIVISOR)
-    sufixo = " ativa" if f.sessoes == 1 else (" ativas" if f.sessoes else "")
+    sufixo = sufixo_das_sessoes(f)
     colunas = ((X0, "tokens", "TOKENS HOJE", tokens(f.tokens_total), ""), (124, "saida", "SAÍDA", tokens(f.tokens_saida), ""),
                (236, "sessoes", "SESSÕES", str(f.sessoes), sufixo))
     meio = (EST_ROT + EST_VAL) // 2
@@ -356,6 +377,9 @@ def _rodape(d, f: Fixo) -> None:
     if f.espera:
         x, passo = _x_rodape(d, f.espera)
         _texto(d, x + 2 * passo, ROD_Y, f.espera, ROD_PX, Tema.AMARELO, "Medium")
+    elif f.nota:  # sem o ✓: não dá para afirmar que está tudo certo
+        x, passo = _x_rodape(d, f.nota)
+        _texto(d, x + 2 * passo, ROD_Y, f.nota, ROD_PX, Tema.SECUNDARIO)
     else:
         msg = "Nenhuma sessão aguardando"
         x, passo = _x_rodape(d, msg)
@@ -405,20 +429,81 @@ def _hardware(d, h: Hardware) -> tuple[int, int]:
 _ultimo_fixo: Optional[tuple] = None  # (Fixo, imagem) do último quadro
 
 
+# ---------- outro agente (apresentacao.FixoAgente): as mesmas regiões, só o que ele informa ----------
+TONS = {"erro": Tema.VERMELHO, "alerta": Tema.AMARELO, "ativo": Tema.LARANJA, "ok": Tema.VERDE,
+        "neutro": Tema.TERCIARIO}
+LARGURA_A_ESQUERDA = 322  # até a coluna do cloud
+
+
+def _cortar_px(s: str, peso: str, px: int, largura: float) -> str:
+    f = fonte(peso, px)
+    if f.getlength(s) <= largura:
+        return s
+    while s and f.getlength(s + "…") > largura:
+        s = s[:-1]
+    return s + "…"
+
+
+@dataclass(frozen=True)
+class FixoOutro:
+    v: object  # apresentacao.FixoAgente
+    sistema: str
+
+
+def _desenhar_agente(img: Image.Image, f: FixoOutro) -> None:
+    d, v = ImageDraw.Draw(img), f.v
+    w = _texto(d, X0, CAB_Y, f"{v.titulo.upper()}@OMBRO", 13, Tema.TEXTO, "Bold")
+    _texto(d, X0 + w + 8, CAB_Y, f"~ {v.modo}", 13, Tema.TERCIARIO)
+    rotulo, cor = v.rotulo.upper(), TONS[v.tom]
+    wr = _texto(d, X1, CAB_Y, rotulo, 11, cor, "Bold", "rm")
+    cx, r = X1 - wr - 9, 3.5
+    d.ellipse((cx - r, CAB_Y - r, cx + r, CAB_Y + r), fill=cor)
+    d.line(((X0, CAB_DIV), (X1, CAB_DIV)), fill=Tema.DIVISOR)
+    _texto(d, X0, 46, _cortar_px(v.mensagem, "Medium", 11, LARGURA_A_ESQUERDA), 11, Tema.SECUNDARIO, "Medium")
+    for i, (projeto, estado, tom, desde) in enumerate(v.linhas):
+        y = 70 + 20 * i
+        _texto(d, X0, y, _cortar_px(projeto, "Bold", 11, 100), 11, Tema.TEXTO, "Bold")
+        _texto(d, 120, y, _cortar_px(estado, "Medium", 11, 130), 11, TONS[tom], "Medium")
+        _texto(d, 334, y, desde, 10, Tema.TERCIARIO, ancora="rm")
+    _texto(d, X0, AVISO_Y, _cortar_px(v.resumo, "Regular", 10, LARGURA_A_ESQUERDA), 10, Tema.TERCIARIO)
+    d.line(((X0, EST_DIV), (334, EST_DIV)), fill=Tema.DIVISOR)
+    meio = (EST_ROT + EST_VAL) // 2
+    for i, (x, nome, titulo, valor) in enumerate(((X0, "tokens", "TOKENS HOJE", v.tokens), (124, "saida", "SAÍDA", v.saida),
+                                                  (236, "sessoes", "SESSÕES", v.conta))):
+        if i:
+            d.line(((x - 10, EST_DIV + 8), (x - 10, EST_VAL + 8)), fill=Tema.DIVISOR)
+        _colar_icone(img, nome, x, meio, Tema.SECUNDARIO)
+        _texto(d, x + ICONE + 5, EST_ROT, titulo, 10, Tema.TERCIARIO, "Medium")
+        _texto(d, x + ICONE + 5, EST_VAL, valor, 15, Tema.TEXTO if valor != "—" else Tema.TERCIARIO, "Bold")
+    _sistema(img, d, f)
+    _texto(d, X0, GRAF_ROT, "TOKENS/H", 11, Tema.SECUNDARIO, "Medium")
+    _texto(d, GRAF_X, GRAF_ROT, "não informado por este agente", 10, Tema.TERCIARIO)
+    d.line(((X0, ROD_DIV), (X1, ROD_DIV)), fill=Tema.DIVISOR)
+    x, passo = _x_rodape(d, v.rodape)
+    cor_rodape = Tema.SECUNDARIO if v.tom_rodape in ("ok", "neutro") else TONS[v.tom_rodape]
+    _texto(d, x + 2 * passo, ROD_Y, v.rodape, ROD_PX, cor_rodape, "Medium" if v.tom_rodape in ("alerta", "erro") else "Regular")
+
+
 def desenhar_minimal(h: Hardware, u: UsoClaude, mascote: Mascote, agora: datetime, agora_mono: float,
-                     agente: str = "claude", usar_cache: bool = True) -> Image.Image:
+                     agente: str = "claude", usar_cache: bool = True, visao=None) -> Image.Image:
     global _ultimo_fixo
-    f = fixo(u, mascote.estado, agora, agente, h)
+    f = (FixoOutro(visao, texto_sistema(h)) if visao is not None else fixo(u, mascote.estado, agora, agente, h))
     if usar_cache and _ultimo_fixo is not None and _ultimo_fixo[0] == f:
         img = _ultimo_fixo[1].copy()
     else:
         img = Image.new("RGB", (LARGURA, ALTURA), Tema.FUNDO)
-        _desenhar_fixo(img, f)
+        if visao is not None:
+            _desenhar_agente(img, f)
+        else:
+            _desenhar_fixo(img, f)
         if usar_cache:
             _ultimo_fixo = (f, img.copy())
     d = ImageDraw.Draw(img)
     _hardware(d, h)
-    if f.espera:
+    if visao is not None:
+        if visao.tom_rodape in ("alerta", "erro"):
+            _triangulo(d, visao.rodape, agora_mono)
+    elif f.espera:
         _triangulo(d, f.espera, agora_mono)
     cam = mascote.camada(agora_mono).resize((CLOUD_W, CLOUD_H), Image.LANCZOS)  # o cloud de sempre, menor
     img.paste(cam, (CLOUD_X, CLOUD_Y), cam)

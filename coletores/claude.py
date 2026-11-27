@@ -103,6 +103,11 @@ class UsoClaude:
     erros: list[str] = field(default_factory=list)
     falhas: list[str] = field(default_factory=list)  # etapas que falharam: "uso do plano", "tokens", "sessões"
     lista_sessoes: list[SessaoClaude] = field(default_factory=list)  # uma por sessão viva, na ordem dos arquivos
+    # o que falta confirmar nos layouts de um agente ("", "sem_sessoes", "desconhecido" ou "indisponivel"); com tudo
+    # confirmado fica vazio e as telas são as de sempre
+    condicao: str = ""
+    sem_noticias: int = 0  # quantas das sessões estão sem notícias
+    sem_tokens: bool = False  # com algo sem confirmar e sem dado de tokens: "—", não 0
 
 
 def _num(v) -> float | None:

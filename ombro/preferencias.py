@@ -24,8 +24,8 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
 
 import avatares
-from config import (AVATAR_CHAVES, LAYOUTS, PACOTES_ANIMACAO, PROVIDERS, REVISOES, TRANSPORTES, VERSAO, VISTAS,
-                    ConfigInvalida, validar, valor_cor_avatar)
+from config import (AGENTES_DE_LAYOUT, AVATAR_CHAVES, LAYOUTS, PACOTES_ANIMACAO, PROVIDERS, REVISOES, TRANSPORTES,
+                    VERSAO, VISTAS, ConfigInvalida, validar, valor_cor_avatar)
 
 from .arquivos import assinatura, gravar_atomico
 
@@ -69,6 +69,11 @@ ESQUEMA: Tuple[Opcao, ...] = (
     Opcao("porta_sim", "display", "integer", "porta do simulador em localhost", False, minimo=1024, maximo=65535),
     # o que aparece
     Opcao("layout", "appearance", "enum", "o modelo de tela", True, LAYOUTS),
+    # o agente de cada layout de um agente; cada um guarda o seu, e trocar de layout não muda os outros
+    *(Opcao(f"agente_{chave}", "appearance", "enum", f"o agente {nome}: um fixo, ou \"automatic\" (o que mais precisa "
+            "de você agora)", True, AGENTES_DE_LAYOUT)
+      for chave, nome in (("auto", "do layout do Ombro (auto e ombro)"), ("classico", "do layout clássico"),
+                          ("minimal", "do layout Minimal v2"))),
     Opcao("cor_mascote", "appearance", "color", "cor fixa do avatar (#RRGGBB; vale por cima do cor_modo; null: segue o cor_modo)",
           True, nulo=True),
     Opcao("cor_modo", "appearance", "enum", "cor do avatar: a do agente, ou sorteada a cada troca de estado", True,

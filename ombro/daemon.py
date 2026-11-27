@@ -333,6 +333,8 @@ class Daemon:
         d = dict(d)
         d.setdefault("brightness", self.cfg.brilho if d.get("kind") == "usb" else None)
         d["layout"] = (app.cfg if app else self.cfg).layout
+        # nos layouts de um agente, o do último quadro desenhado (o mesmo da prévia); null no multiagente
+        d["agent"] = getattr(app, "agente_publicado", None)
         d["last_frame_at"] = _iso(app.ultimo_quadro_em) if app else None
         sujeito = getattr(app, "sujeito_atual", None)
         if isinstance(sujeito, tuple):  # quem o mascote representa agora, e com qual avatar (v1: campo novo)

@@ -34,6 +34,9 @@ class Attention(str, Enum):
 
 
 INTEGRACOES = ("ok", "not_installed", "not_configured")  # a ferramenta está instalada? a integração está ligada?
+# desconectado, nunca conectou, coletando as sessões, versão sem suporte, instância não comprovada, origem sem
+# registro, origem em conflito, ou coleta incompleta
+CONDICOES = ("offline", "never", "collecting", "incompatible", "unverified", "unregistered", "conflict", "partial")
 
 
 class SnapshotStatus(str, Enum):
@@ -87,6 +90,11 @@ class AgentSession:
     started_at: Optional[datetime] = None
     status_since: Optional[datetime] = None  # desde quando está no status atual
     updated_at: Optional[datetime] = None  # última atualização vista na fonte
+    # a atenção foi recuperada numa releitura (não se viu o pedido acontecer): não é motivo para notificar
+    recovered: bool = False
+    # a fonte desta sessão não está no ar: atividade e atenção são o último estado conhecido, não o de agora (hoje, só
+    # o OpenCode, por origem)
+    disconnected: bool = False
 
     def __post_init__(self):
         _texto("provider_id", self.provider_id)
@@ -196,6 +204,13 @@ class ProviderSnapshot:
     failed: FrozenSet[str] = frozenset()
     errors: Tuple[str, ...] = ()  # mensagens curtas, sem conteúdo de arquivos
     integration: str = "ok"  # "not_installed" (a ferramenta não está aqui) ou "not_configured" (sem hooks do Ombro)
+    # o que a integração diz de si além disso (hoje só o OpenCode): None = nada a destacar
+    condition: Optional[str] = None  # um de CONDICOES
+    condition_detail: Optional[str] = None  # frase curta para quem lê, sem caminho nem conteúdo
+    version: Optional[str] = None  # a versão da ferramenta, quando a própria integração informa
+    # quantas vezes uma sessão deixou de trabalhar sem um fim confirmado (conexão perdida, recuperação): quem
+    # mostra "concluído" não deve fazê-lo por uma dessas
+    unconfirmed: int = 0
 
     def __post_init__(self):
         _texto("provider_id", self.provider_id)
@@ -206,6 +221,9 @@ class ProviderSnapshot:
         _definir(self, "errors", tuple(self.errors))
         if self.integration not in INTEGRACOES:
             raise ValueError(f"integration deve ser um de: {', '.join(INTEGRACOES)} (veio {self.integration!r})")
+        if self.condition is not None and self.condition not in CONDICOES:
+            raise ValueError(f"condition deve ser um de: {', '.join(CONDICOES)} (veio {self.condition!r})")
+        _inteiro("unconfirmed", self.unconfirmed)
         desconhecidas = self.failed - set(PARTES)
         if desconhecidas:
             raise ValueError(f"partes desconhecidas em failed: {sorted(desconhecidas)}")

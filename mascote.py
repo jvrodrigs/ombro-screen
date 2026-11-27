@@ -277,7 +277,8 @@ class Mascote(oa.Animador):
         # terminou: havia sessão trabalhando e agora nenhuma trabalha nem espera você
         # (de "esperando" direto para parada não conta: você cancelou ou fechou a sessão)
         ativo = u.trabalhando > 0
-        if self._havia_trabalho and not ativo and not u.esperando:
+        # (nem quando o trabalho sumiu sem um fim confirmado: conexão perdida não é "terminou")
+        if self._havia_trabalho and not ativo and not u.esperando and not getattr(u, "sem_confirmacao", False):
             self._terminou_em = agora
         self._havia_trabalho = ativo
         if u.esperando:

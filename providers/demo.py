@@ -1,4 +1,4 @@
-"""Codex e Cursor inventados, para o --demo mostrar o layout multiagente sem nenhum dos dois instalado.
+"""Codex, Cursor e OpenCode inventados, para o --demo mostrar o layout multiagente sem nenhum deles instalado.
 
 Mesmos ids, nomes e capacidades dos providers de verdade; as sessões vêm de cenários fixos. Com
 --demo-ciclo, trocam de cenário no mesmo ritmo do Claude de demonstração.
@@ -17,6 +17,7 @@ from core.providers import ProviderAdapter
 
 from .codex import CodexProvider
 from .cursor import CursorProvider
+from .opencode import OpenCodeProvider
 
 Cenario = Sequence[Tuple[str, str, A, T, int]]  # (id, projeto, atividade, atenção, minutos no estado)
 
@@ -29,6 +30,11 @@ CURSOR: Sequence[Cenario] = (
     (("demo-cursor-1", "site-docs", A.WORKING, T.UNKNOWN, 2),),
     (("demo-cursor-1", "site-docs", A.IDLE, T.UNKNOWN, 6),),
     (("demo-cursor-1", "site-docs", A.IDLE, T.ERROR, 1),),
+)
+OPENCODE: Sequence[Cenario] = (
+    (("demo-opencode-1", "mobile-app", A.WORKING, T.NONE, 2), ("demo-opencode-2", "cli", A.IDLE, T.NONE, 7)),
+    (("demo-opencode-1", "mobile-app", A.WORKING, T.NONE, 3),),
+    (("demo-opencode-1", "mobile-app", A.IDLE, T.NONE, 1),),
 )
 
 
@@ -52,3 +58,7 @@ def codex_demo(ciclo: float = 0) -> ProviderDemo:
 
 def cursor_demo(ciclo: float = 0) -> ProviderDemo:
     return ProviderDemo(CursorProvider, CURSOR, ciclo)
+
+
+def opencode_demo(ciclo: float = 0) -> ProviderDemo:
+    return ProviderDemo(OpenCodeProvider, OPENCODE, ciclo)

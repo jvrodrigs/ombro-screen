@@ -60,7 +60,7 @@ PBS_SHA256 = "f15ec3d15460dd66c2eb88639b152cd9040e7d1ece11e38bf89e8f53f0171e02" 
 MACOS_MIN = (13, 0)
 
 # O código do Ombro que vai no app (lista explícita: nada de testes, scripts, docs, .venv ou a biblioteca GPL).
-PASTAS = ["ombro", "core", "providers", "coletores", "fontes", "avatars"]
+PASTAS = ["ombro", "core", "providers", "coletores", "fontes", "avatars", "integrations"]
 ARQUIVOS = [
     "apresentacao.py", "avatares.py", "config.py", "layout_minimal_v2.py", "layout_multiagente.py", "layout_ombro.py",
     "logging_config.py", "mascote.py", "ombro_hook.py", "ombrod.py", "render.py", "saida.py", "statusline_tap.py",

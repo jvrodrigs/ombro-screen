@@ -175,14 +175,14 @@ class Configuracao(unittest.TestCase):
     def test_padroes(self):
         cfg = OmbroConfig()
         self.assertEqual((cfg.providers, cfg.vista, cfg.foco, cfg.rotacao, cfg.intervalo_rotacao),
-                         (("claude", "codex", "cursor"), "overview", None, False, 15.0))
+                         (("claude", "codex", "cursor", "opencode"), "overview", None, False, 15.0))
 
     def test_blocos_do_arquivo(self):
         arq = self.arquivo({"layout": "multiagente", "providers": {"codex": {"enabled": False}, "claude": {"enabled": True}},
                             "multi_agent": {"view": "focus", "focus_provider": "cursor", "auto_rotate": True, "rotate_interval": 20}})
         cfg, avisos = resolver({}, arq)
         self.assertEqual((cfg.layout, cfg.providers, cfg.vista, cfg.foco, cfg.rotacao, cfg.intervalo_rotacao),
-                         ("multiagente", ("claude", "cursor"), "focus", "cursor", True, 20.0))
+                         ("multiagente", ("claude", "cursor", "opencode"), "focus", "cursor", True, 20.0))
         self.assertEqual(avisos, [])
         cfg, _ = resolver({"vista": "attention"}, arq)  # a linha de comando vence
         self.assertEqual(cfg.vista, "attention")
@@ -200,7 +200,8 @@ class Configuracao(unittest.TestCase):
 
     def test_arquivo_antigo_continua_valendo(self):
         cfg, avisos = resolver({}, self.arquivo({"versao": 1, "layout": "minimal-v2", "brilho": 40}))
-        self.assertEqual((cfg.layout, cfg.brilho, cfg.providers), ("minimal-v2", 40, ("claude", "codex", "cursor")))
+        self.assertEqual((cfg.layout, cfg.brilho, cfg.providers),
+                         ("minimal-v2", 40, ("claude", "codex", "cursor", "opencode")))
         self.assertEqual(avisos, [])
         self.assertTrue(OmbroConfig(layout="multiagente").animado)
 

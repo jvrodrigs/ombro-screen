@@ -32,7 +32,7 @@ TRANSPORTES = ("auto", "usb", "serial")
 LAYOUTS = ("auto", "ombro", "classico", "minimal-v2", "multiagente")
 NOMES_LAYOUT = {"auto": "do Ombro", "ombro": "do Ombro", "classico": "clássico", "minimal-v2": "Minimal v2",
                 "multiagente": "multiagente"}
-PROVIDERS = ("claude", "codex", "cursor")  # na ordem em que aparecem na tela
+PROVIDERS = ("claude", "codex", "cursor", "opencode")  # na ordem em que aparecem na tela
 VISTAS = ("overview", "focus", "attention")  # visões do layout multiagente
 MIN_ROTACAO = 5.0  # segundos: trocar de visão mais rápido que isso deixa a tela instável
 SO_NA_LINHA_DE_COMANDO = ("demo", "demo_ciclo", "png", "arquivo")  # ações de uma vez, não preferências

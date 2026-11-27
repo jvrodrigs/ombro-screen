@@ -85,12 +85,12 @@ ESQUEMA: Tuple[Opcao, ...] = (
     Opcao("intervalo_rotacao", "multi_agent", "number", "segundos em cada visão da rotação", True, minimo=5, maximo=3600),
     # agentes
     *(Opcao(f"providers.{p}", "providers", "boolean", f"acompanhar o {nome}", False)
-      for p, nome in (("claude", "Claude Code"), ("codex", "Codex"), ("cursor", "Cursor"))),
+      for p, nome in (("claude", "Claude Code"), ("codex", "Codex"), ("cursor", "Cursor"), ("opencode", "OpenCode"))),
     # avatares: o de cada agente e o do Ombro (sem agente em foco); "padrao", "aleatorio" ou o id de um avatar
     *(Opcao(f"avatares.{p}", "avatars", "enum", f"avatar {nome}", True,
             avatares.ESPECIAIS + avatares.catalogo().ids())
       for p, nome in (("claude", "do Claude Code"), ("codex", "do Codex"), ("cursor", "do Cursor"),
-                      ("padrao", "do Ombro, quando nenhum agente está em foco"))),
+                      ("opencode", "do OpenCode"), ("padrao", "do Ombro, quando nenhum agente está em foco"))),
     # a cor do corpo de cada avatar, por id: "default" (a original), "rgb" (o ciclo) ou "#RRGGBB"; null remove a entrada
     # e o avatar volta a herdar cor_mascote/cor_modo. Só os avatares do catálogo (como em avatares.*)
     *(Opcao(f"cores_avatares.{aid}", "avatars", "string",

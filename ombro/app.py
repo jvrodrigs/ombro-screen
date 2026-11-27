@@ -44,7 +44,9 @@ from providers.claude import PROVIDER_ID as CLAUDE
 from providers.claude import ClaudeProvider, FonteDemo
 from providers.codex import CodexProvider
 from providers.cursor import CursorProvider
-from providers.demo import codex_demo, cursor_demo
+from providers.demo import codex_demo, cursor_demo, opencode_demo
+from providers.opencode import PROVIDER_ID as OPENCODE
+from providers.opencode import OpenCodeProvider
 from render import desenhar
 
 from .animacoes import Animacoes, Atividade, ler_aplicado
@@ -102,6 +104,7 @@ def montar_providers(cfg: OmbroConfig, demo) -> list:
         "claude": lambda: ClaudeProvider(FonteDemo(demo, cfg.demo_ciclo) if demo else ColetorClaude(cfg.claude_dir)),
         "codex": lambda: codex_demo(cfg.demo_ciclo) if demo else CodexProvider(),
         "cursor": lambda: cursor_demo(cfg.demo_ciclo) if demo else CursorProvider(),
+        "opencode": lambda: opencode_demo(cfg.demo_ciclo) if demo else OpenCodeProvider(),
     }
     return [feitos[pid]() for pid in cfg.providers]
 
@@ -172,6 +175,8 @@ class Aplicacao:
         self.nomes = [(p.provider_id, p.display_name) for p in self.monitor.registry]
         self.seletor = SeletorDeVista(cfg.vista, cfg.foco, cfg.rotacao, cfg.intervalo_rotacao)
         self.resumo, self.uso_multi = None, None
+        self._sem_confirmacao = 0  # a soma dos ProviderSnapshot.unconfirmed na última coleta
+        self._trabalhando_oc: set = set()  # sessões do OpenCode trabalhando na última coleta
         self._avisos_hw = SoQuandoMuda(log_hw)
         self._ultimo_hw = Hardware(disponivel=False)  # até a primeira leitura boa
         self.semente = random.getrandbits(32)  # o "aleatório ao iniciar": sorteado agora, o mesmo até reiniciar
@@ -234,6 +239,13 @@ class Aplicacao:
         if self.multi:
             self.resumo = resumir(self.monitor.store, self.nomes)
             self.uso_multi = uso_mascote(self.resumo, snap_claude)
+            perdas = sum(p.snapshot.unconfirmed for p in self.resumo.providers if p.snapshot is not None)
+            # sumiu sem fim confirmado (desconhecida, apagada, coleta com erro): não é "concluído"
+            agora_oc = {s.session_id: s.activity for s in self.monitor.store.sessions(OPENCODE)}
+            sumiu = any(agora_oc.get(sid) not in (Activity.WORKING, Activity.IDLE) for sid in self._trabalhando_oc)
+            self.uso_multi.sem_confirmacao = sumiu or perdas != self._sem_confirmacao
+            self._sem_confirmacao = perdas
+            self._trabalhando_oc = {sid for sid, a in agora_oc.items() if a is Activity.WORKING}
         return uso_claude(snap_claude)
 
     # ---------- desenho ----------
@@ -476,7 +488,7 @@ class Aplicacao:
     # ---------- o avatar do mascote ----------
     def _sessao_relevante(self, provider: str) -> Optional[str]:
         """A sessão que o mascote representa num agente: a que espera você, senão a que trabalha, senão a mais recente."""
-        lista = self.monitor.store.sessions(provider)
+        lista = [s for s in self.monitor.store.sessions(provider) if not s.disconnected]
         if not lista:
             return None
         def peso(s):

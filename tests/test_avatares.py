@@ -21,7 +21,7 @@ class Catalogo(unittest.TestCase):
     def test_carrega_todos_e_os_padroes(self):
         c = avatares.catalogo()
         self.assertEqual(c.ids(), IDS)
-        self.assertEqual(c.por_agente, {"claude": "ombro-cloud", "codex": "orbita", "cursor": "cubo"})
+        self.assertEqual(c.por_agente, {"claude": "ombro-cloud", "codex": "orbita", "cursor": "cubo", "opencode": "nova"})
         self.assertEqual(c.padrao, "ombro-cloud")
         self.assertEqual(c.sorteaveis(), tuple(sorted(IDS)))
         for p, cor in c.cor_agente.items():

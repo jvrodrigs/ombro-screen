@@ -12,7 +12,7 @@ describe("catálogo de avatares", () => {
     const c = catalog();
     expect(c.invalid).toEqual([]);
     expect(c.avatars.map((a) => a.id)).toEqual(IDS); // os nove de antes primeiro, na mesma ordem
-    expect(c.providerDefault).toEqual({ claude: "ombro-cloud", codex: "orbita", cursor: "cubo" });
+    expect(c.providerDefault).toEqual({ claude: "ombro-cloud", codex: "orbita", cursor: "cubo", opencode: "nova" });
     expect(c.defaultId).toBe("ombro-cloud");
     expect(c.pool).toEqual([...IDS].sort());
   });

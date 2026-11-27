@@ -4,9 +4,10 @@ import { sessionState, STATE_LABEL } from "./state";
 import { useMascotState } from "./useMascotState";
 import type { ProviderInfo, SessionStatus } from "../../types/ombro";
 
-const SEM_DADOS = new Set(["nao_instalado", "nao_configurado", "indisponivel", "desconhecido"]);
+const SEM_DADOS = new Set(["nao_instalado", "nao_configurado", "indisponivel", "desconhecido", "incompativel", "conflito", "coletando", "sem_plugin", "nao_verificado", "desconectado"]);
 
-type ProviderLike = Pick<ProviderInfo, "id" | "avatar" | "name"> & Partial<Pick<ProviderInfo, "state" | "working" | "waiting" | "errors" | "quotas" | "enabled">>;
+type ProviderLike = Pick<ProviderInfo, "id" | "avatar" | "name"> &
+  Partial<Pick<ProviderInfo, "state" | "working" | "waiting" | "errors" | "quotas" | "enabled" | "unconfirmed" | "collection">>;
 
 /**
  * O avatar de um agente: o que o ombrod está usando (providers.list[].avatar), ou o padrão do catálogo. Animado

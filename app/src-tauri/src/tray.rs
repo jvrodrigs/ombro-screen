@@ -11,10 +11,18 @@ use tauri::{AppHandle, Wry};
 pub struct Tray {
     pub icon: TrayIcon<Wry>,
     header: MenuItem<Wry>,
-    providers: [MenuItem<Wry>; 3],
+    providers: [MenuItem<Wry>; AGENTES.len()],
     display: MenuItem<Wry>,
     quit: MenuItem<Wry>,
 }
+
+/// Os agentes do menu, na ordem da tela: (id no providers.list, nome enquanto o ombrod não responde).
+const AGENTES: [(&str, &str); 4] = [
+    ("claude", "Claude Code"),
+    ("codex", "Codex"),
+    ("cursor", "Cursor"),
+    ("opencode", "OpenCode"),
+];
 
 pub const OPEN: &str = "open";
 pub const SETTINGS: &str = "settings";
@@ -26,6 +34,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Tray> {
         MenuItem::with_id(app, "p0", "Claude Code", false, None::<&str>)?,
         MenuItem::with_id(app, "p1", "Codex", false, None::<&str>)?,
         MenuItem::with_id(app, "p2", "Cursor", false, None::<&str>)?,
+        MenuItem::with_id(app, "p3", "OpenCode", false, None::<&str>)?,
     ];
     let display = MenuItem::with_id(app, "d", "Tela: —", false, None::<&str>)?;
     let open = MenuItem::with_id(app, OPEN, "Abrir o Ombro", true, None::<&str>)?;
@@ -40,6 +49,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Tray> {
             &providers[0],
             &providers[1],
             &providers[2],
+            &providers[3],
             &display,
             &sep()?,
             &open,
@@ -68,7 +78,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Tray> {
 /// Os textos do menu para um retrato (separado do Tauri para dar para testar).
 pub struct Texts {
     pub header: String,
-    pub providers: [String; 3],
+    pub providers: [String; AGENTES.len()],
     pub display: String,
     pub quit: String,
     pub badge: Option<String>,
@@ -76,6 +86,23 @@ pub struct Texts {
 
 fn n(v: Option<&Value>) -> u64 {
     v.and_then(Value::as_u64).unwrap_or(0)
+}
+
+/// O que a integração diz de si (hoje, o OpenCode) quando isso vale mais que a contagem de sessões.
+fn aviso_da_condicao(p: &Value) -> Option<&'static str> {
+    let ativas = n(p.get("working")) + n(p.get("waiting"));
+    if p.get("state").and_then(Value::as_str) == Some("desconectado") {
+        return Some("desconectado");
+    }
+    match p.get("condition").and_then(Value::as_str)? {
+        "incompatible" if ativas == 0 => Some("versão sem suporte"),
+        "conflict" if ativas == 0 => Some("origem em conflito"),
+        "unverified" if ativas == 0 => Some("não comprovado"),
+        "never" if n(p.get("sessions")) == 0 => Some("nunca conectou"),
+        "unregistered" if n(p.get("sessions")) == 0 => Some("origem sem registro"),
+        "collecting" if n(p.get("sessions")) == 0 => Some("lendo sessões"),
+        _ => None,
+    }
 }
 
 pub fn texts(snap: &Snapshot) -> Texts {
@@ -93,15 +120,15 @@ pub fn texts(snap: &Snapshot) -> Texts {
         _ => "Ombro: serviço parado".to_string(),
     };
 
-    let mut providers = ["Claude Code".to_string(), "Codex".to_string(), "Cursor".to_string()];
+    let mut providers = AGENTES.map(|(_, nome)| nome.to_string());
     if let Some(list) = snap
         .providers
         .as_ref()
         .and_then(|p| p.get("providers"))
         .and_then(Value::as_array)
     {
-        for (i, id) in ["claude", "codex", "cursor"].iter().enumerate() {
-            let Some(p) = list.iter().find(|p| p.get("id").and_then(Value::as_str) == Some(id)) else {
+        for (i, (id, _)) in AGENTES.iter().enumerate() {
+            let Some(p) = list.iter().find(|p| p.get("id").and_then(Value::as_str) == Some(*id)) else {
                 continue;
             };
             let nome = p
@@ -113,6 +140,8 @@ pub fn texts(snap: &Snapshot) -> Texts {
                 "desligado".to_string()
             } else if p.get("installed").and_then(Value::as_bool) == Some(false) {
                 "não instalado".to_string()
+            } else if let Some(aviso) = aviso_da_condicao(p) {
+                aviso.to_string()
             } else {
                 let (w, a, s) = (n(p.get("working")), n(p.get("waiting")), n(p.get("sessions")));
                 let mut partes = Vec::new();
@@ -204,7 +233,8 @@ mod tests {
             providers: Some(json!({"providers": [
                 {"id": "claude", "name": "Claude Code", "enabled": true, "installed": true, "working": 2, "waiting": 1, "sessions": 3},
                 {"id": "codex", "name": "Codex", "enabled": true, "installed": false},
-                {"id": "cursor", "enabled": false}
+                {"id": "cursor", "enabled": false},
+                {"id": "opencode", "name": "OpenCode", "enabled": true, "installed": true, "condition": "incompatible"}
             ]})),
             ..Default::default()
         };
@@ -213,9 +243,35 @@ mod tests {
         assert_eq!(t.providers[0], "Claude Code — 2 trabalhando · 1 esperando");
         assert_eq!(t.providers[1], "Codex — não instalado");
         assert_eq!(t.providers[2], "Cursor — desligado");
+        assert_eq!(t.providers[3], "OpenCode — versão sem suporte");
         assert_eq!(t.display, "Tela: só a prévia (sem USB)");
         assert_eq!(t.quit, "Sair do Ombro (o monitoramento para)");
         assert_eq!(t.badge.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn opencode_desconectado() {
+        let linha = |p: Value| {
+            let snap = Snapshot {
+                providers: Some(json!({"providers": [p]})),
+                ..Default::default()
+            };
+            texts(&snap).providers[3].clone()
+        };
+        let base = |estado: &str, condicao: Value, sessoes: u64| {
+            json!({"id": "opencode", "name": "OpenCode", "enabled": true, "installed": true, "state": estado,
+                   "condition": condicao, "sessions": sessoes, "disconnected_sessions": 2})
+        };
+        assert_eq!(
+            linha(base("desconectado", json!("offline"), 0)),
+            "OpenCode — desconectado"
+        );
+        assert_eq!(
+            linha(base("desconectado", json!("unregistered"), 0)),
+            "OpenCode — desconectado"
+        );
+        // uma origem fora do ar e outra no ar: o menu fala das sessões de agora
+        assert_eq!(linha(base("ocioso", Value::Null, 1)), "OpenCode — 1 sessão");
     }
 
     #[test]

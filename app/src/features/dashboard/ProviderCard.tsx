@@ -86,6 +86,9 @@ export function ProviderCard({ p, onConfigure, now = new Date() }: { p: Provider
 
       {!p.enabled && <p className="muted">O Ombro não está acompanhando este agente (Ajustes da tela).</p>}
       {p.enabled && p.installed === false && <p className="muted">Não encontrado neste Mac.</p>}
+      {p.enabled && p.condition_detail && p.condition !== "collecting" && (
+        <p className={p.condition === "offline" ? "muted small" : "tone-warning small"}>{p.condition_detail}</p>
+      )}
       {p.enabled && p.installed !== false && p.integration === "not_configured" && (
         <div className="stack">
           <p className="secondary">Instalado, mas sem a integração do Ombro: as sessões não aparecem.</p>
@@ -104,6 +107,11 @@ export function ProviderCard({ p, onConfigure, now = new Date() }: { p: Provider
             <span className="secondary">{(p.sessions ?? 0) === 1 ? "sessão" : "sessões"}</span>
             {partes.length > 0 && <span className="secondary"> · {partes.join(" · ")}</span>}
           </p>
+          {!!p.disconnected_sessions && (
+            <p className="muted small">
+              {pluralize(p.disconnected_sessions, "sessão desconectada", "sessões desconectadas")} · último estado conhecido
+            </p>
+          )}
 
           {caps.has("quota_windows") ? (
             p.quotas && p.quotas.windows.length > 0 ? (

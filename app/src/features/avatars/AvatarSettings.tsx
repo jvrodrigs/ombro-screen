@@ -15,6 +15,7 @@ const SLOTS: { slot: AvatarSlot; label: string; hint: string }[] = [
   { slot: "claude", label: "Claude Code", hint: "Nos layouts do Ombro e Minimal v2, e no multiagente" },
   { slot: "codex", label: "Codex", hint: "No multiagente, quando é a vez do Codex" },
   { slot: "cursor", label: "Cursor", hint: "No multiagente, quando é a vez do Cursor" },
+  { slot: "opencode", label: "OpenCode", hint: "No multiagente, quando é a vez do OpenCode" },
   { slot: "padrao", label: "Ombro", hint: "Quando nenhum agente está em foco no multiagente" },
 ];
 

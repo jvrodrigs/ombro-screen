@@ -46,6 +46,20 @@ export interface Memory {
   /** Até quando (ms) o concluído vale, se nada mais forte aparecer; null = não terminou nada. Como o _terminou_em +
    * DURACAO_CONCLUIDO da telinha. Separado do reset: um não apaga o outro quando chegam juntos. */
   doneUntil: number | null;
+  /** Quantas vezes o agente já deixou de ver uma sessão trabalhando sem um fim confirmado (só quem informa). */
+  unconfirmed?: number;
+}
+
+export type Retrato = Pick<ProviderInfo, "state" | "working" | "waiting" | "errors" | "quotas"> &
+  Partial<Pick<ProviderInfo, "unconfirmed" | "collection">>;
+
+// estados em que não se sabe como o trabalho acabou
+const SEM_CONFIRMACAO = new Set(["desconhecido", "indisponivel", "incompativel", "conflito", "coletando", "sem_plugin", "nao_verificado", "desconectado"]);
+
+/** O trabalho sumiu sem um fim confirmado? Vale para quem publica o contador (o OpenCode), como na telinha. */
+function semFim(prev: Memory, p: Retrato): boolean {
+  if (p.unconfirmed === undefined) return false;
+  return p.unconfirmed !== (prev.unconfirmed ?? p.unconfirmed) || p.collection === "error" || SEM_CONFIRMACAO.has(p.state ?? "");
 }
 
 export const EMPTY_MEMORY: Memory = { base: "ocioso", working: false, resets: {}, resetUntil: null, doneUntil: null };
@@ -53,7 +67,7 @@ export const EMPTY_MEMORY: Memory = { base: "ocioso", working: false, resets: {}
 const vigente = (ate: number | null, now: number) => (ate !== null && ate > now ? ate : null);
 
 /** Um passo: do que foi lembrado e do retrato novo, o que lembrar agora. */
-export function step(prev: Memory, p: Pick<ProviderInfo, "state" | "working" | "waiting" | "errors" | "quotas">, now: number): Memory {
+export function step(prev: Memory, p: Retrato, now: number): Memory {
   const base = baseState(p);
   // só as janelas do retrato: uma janela (ou a fonte inteira) que some é esquecida, e a volta dela não é reset; assim
   // um reset antigo não reaparece depois de uma reconexão (a telinha faz o mesmo, ver Mascote.decidir)
@@ -72,10 +86,10 @@ export function step(prev: Memory, p: Pick<ProviderInfo, "state" | "working" | "
   // partir de agora, mesmo com um reset por cima: o concluído aparece quando o reset acaba
   const working = base === "trabalhando" || (p.working ?? 0) > 0;
   let doneUntil = vigente(prev.doneUntil, now);
-  if (prev.working && !working && !p.waiting && base === "ocioso") doneUntil = now + DONE_MS;
+  if (prev.working && !working && !p.waiting && base === "ocioso" && !semFim(prev, p)) doneUntil = now + DONE_MS;
   // voltou a trabalhar, a esperar ou chegou perto do limite: o concluído acaba (os estados de base mandam)
   if (base !== "ocioso") doneUntil = null;
-  return { base, working, resets, resetUntil, doneUntil };
+  return { base, working, resets, resetUntil, doneUntil, unconfirmed: p.unconfirmed };
 }
 
 /** reset (por cima de tudo, RESET_MS) > o estado de base, com o concluído no lugar do ocioso enquanto vale. */

@@ -214,6 +214,7 @@ pub enum Provider {
     Claude,
     Codex,
     Cursor,
+    Opencode,
 }
 
 impl Provider {
@@ -222,6 +223,7 @@ impl Provider {
             Provider::Claude => "claude",
             Provider::Codex => "codex",
             Provider::Cursor => "cursor",
+            Provider::Opencode => "opencode",
         }
     }
 }
@@ -554,7 +556,7 @@ mod real {
         // a CLI pelo Backend (só leitura e dry-run: nada é gravado)
         let b = Backend::locate(None).unwrap();
         let l = b.integrations_list().unwrap();
-        assert_eq!(l["result"]["integrations"].as_array().unwrap().len(), 3);
+        assert_eq!(l["result"]["integrations"].as_array().unwrap().len(), 4);
         let d = b.doctor().unwrap();
         assert_eq!(d["result"]["schema"], "ombro.doctor");
         assert!(b.doctor_report().unwrap().contains("Ombro"));

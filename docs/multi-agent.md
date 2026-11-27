@@ -1,7 +1,9 @@
 # Vários agentes no Ombro
 
-O Ombro acompanha o **Claude Code**, o **OpenAI Codex** e o **Cursor** ao mesmo tempo, cada um por um
-*provider* isolado: uma falha no Codex não afeta o Claude, e o Ombro funciona com um, dois ou os três.
+O Ombro acompanha o **Claude Code**, o **OpenAI Codex**, o **Cursor** e o **OpenCode** ao mesmo tempo, cada um
+por um *provider* isolado: uma falha num não afeta os outros, e o Ombro funciona com um ou com os quatro. O
+OpenCode entra por um plugin, não por hooks: ver [docs/providers/opencode.md](providers/opencode.md). Com quatro
+agentes, as linhas da visão geral ficam mais juntas; com até três, a tela é a de sempre.
 
 ```
 Claude Code ─ arquivos locais + hooks (opcional) ─┐
@@ -67,7 +69,8 @@ O cloud do layout multiagente reage a todos os agentes; nos layouts de sempre, s
 
 Estados de um agente, todos com texto (não só cor): trabalhando, ocioso, aguarda você, aguarda aprovação,
 parou com erro, limite no fim, sem notícias, sem sessões, **não configurado** (instalado, sem os hooks do
-Ombro), **indisponível** (a coleta falhou) e **não instalado** (não aparece na tela).
+Ombro), **indisponível** (a coleta falhou) e **não instalado** (não aparece na tela). Só do OpenCode: **versão
+sem suporte**, **origem em conflito**, **não comprovado**, **lendo sessões**, **sem o plugin** (nunca conectou) e **desconectado** (as sessões aparecem como "último: …").
 
 ## Configuração
 
@@ -82,4 +85,4 @@ Tudo opcional, em `~/.ombro-screen/config.json`:
 }
 ```
 
-Por padrão os três providers ficam ligados; um que não está instalado não aparece e não custa nada.
+Por padrão os quatro providers ficam ligados; um que não está instalado não aparece e não custa nada.

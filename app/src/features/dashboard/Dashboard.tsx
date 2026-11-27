@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Hand, RefreshCw } from "lucide-react";
 import { Badge, Card, Empty, PageHeader, Button, UsageBar } from "../../components/ui";
 import { useOmbro } from "../../hooks/useOmbro";
-import { DASH, PROVIDER_NAMES, SESSION_STATUS, ago, bytes, percent } from "../../lib/format";
+import { DASH, PROVIDER_NAMES, ago, bytes, percent, sessionBadge } from "../../lib/format";
 import type { DaemonStatus, Session } from "../../types/ombro";
 import { ProviderCard } from "./ProviderCard";
 import { SessionAvatar } from "../avatars/ProviderAvatar";
@@ -39,11 +39,11 @@ export function SessionList({ sessions, now }: { sessions: Session[]; now: Date 
   return (
     <ul className="session-list">
       {sessions.map((s) => {
-        const st = SESSION_STATUS[s.status] ?? SESSION_STATUS.unknown;
+        const st = sessionBadge(s);
         return (
           <li key={`${s.provider}:${s.session_id}`}>
             <span className="session-project">
-              <SessionAvatar provider={provs.get(s.provider)} sessionId={s.session_id} status={s.status} mode={modo} />
+              <SessionAvatar provider={provs.get(s.provider)} sessionId={s.session_id} status={s.disconnected ? "unknown" : s.status} mode={modo} />
               {s.project ?? "projeto sem nome"}
             </span>
             <span className="muted">{PROVIDER_NAMES[s.provider] ?? s.provider}</span>
@@ -62,8 +62,10 @@ export function Dashboard() {
   const [girando, setGirando] = useState(false);
   const st = snapshot?.status;
   const provs = snapshot?.providers?.providers ?? [];
-  const sessoes = [...(snapshot?.sessions?.sessions ?? [])].sort((a, b) => (ORDEM[a.status] ?? 9) - (ORDEM[b.status] ?? 9));
-  const urgentes = sessoes.filter((s) => URGENTES.has(s.status));
+  // primeiro o que é de agora; o histórico de uma fonte fora do ar vem depois e não pede você
+  const peso = (s: Session) => (s.disconnected ? 10 : 0) + (ORDEM[s.status] ?? 9);
+  const sessoes = [...(snapshot?.sessions?.sessions ?? [])].sort((a, b) => peso(a) - peso(b));
+  const urgentes = sessoes.filter((s) => URGENTES.has(s.status) && !s.disconnected);
   const trabalhando = provs.reduce((n, p) => n + (p.working ?? 0), 0);
   const tela = displayText(st);
   const sys = st?.system;
@@ -130,7 +132,7 @@ export function Dashboard() {
           <SessionList sessions={sessoes} now={now} />
         ) : (
           <Empty icon={<Hand size={22} />} title="Nenhuma sessão aberta">
-            Quando você usar o Claude Code, o Codex ou o Cursor, as sessões aparecem aqui.
+            Quando você usar o Claude Code, o Codex, o Cursor ou o OpenCode, as sessões aparecem aqui.
           </Empty>
         )}
       </Card>

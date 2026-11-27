@@ -38,6 +38,14 @@ from render import aviso_uso, tokens
 LARGURA, ALTURA = 480, 320
 COL_ESTADO, COL_DIREITA = 112, 330  # colunas das linhas de agente
 DETALHE_MAX = 36  # caracteres que cabem na linha de detalhe (10 px)
+# as linhas da visão geral: (primeira, passo, nome, detalhe, divisória), conforme quantos agentes aparecem. Com até
+# três, as medidas de sempre; com quatro, linhas mais juntas para o resumo (y 166) continuar no lugar
+LINHAS_GERAL = {3: (36, 42, 11, 27, 39), 4: (33, 32, 8, 21, 28)}
+DETALHE_DA_CONDICAO = {"incompativel": "atualize o OpenCode (2.4.2 ou mais)", "conflito": "veja o Diagnóstico no app",
+                       "coletando": "lendo as sessões abertas", "sem_plugin": "ferramenta fechada ou sem o plugin",
+                       "nao_verificado": "instância não comprovada: nada lido"}
+# o estado de uma sessão cuja fonte saiu do ar: sempre com "último", nunca como se fosse o de agora
+ULTIMO = {Attention.ERROR: "último: erro", Activity.IDLE: "último: ocioso"}
 
 ROTULOS = {  # estado agregado -> (texto, cor, forma do marcador); o texto diz o estado mesmo sem cor
     "erro": ("parou com erro", Tema.VERMELHO, "triangulo"),
@@ -51,6 +59,12 @@ ROTULOS = {  # estado agregado -> (texto, cor, forma do marcador); o texto diz o
     "nao_configurado": ("não configurado", Tema.TERCIARIO, "anel"),
     "indisponivel": ("indisponível", Tema.AMARELO, "anel"),
     "nao_instalado": ("não instalado", Tema.TERCIARIO, "anel"),
+    "incompativel": ("versão sem suporte", Tema.AMARELO, "anel"),
+    "conflito": ("origem em conflito", Tema.AMARELO, "anel"),
+    "coletando": ("lendo sessões", Tema.TERCIARIO, "anel"),
+    "sem_plugin": ("sem o plugin", Tema.TERCIARIO, "anel"),
+    "nao_verificado": ("não comprovado", Tema.AMARELO, "anel"),
+    "desconectado": ("desconectado", Tema.TERCIARIO, "anel"),
 }
 MOTIVOS = {"erro": "parou com erro", "aprovacao": "aguarda aprovação", "aguardando": "aguarda você",
            "alerta": "limite de uso no fim"}
@@ -65,6 +79,8 @@ def _plural(n: int, um: str, varios: str) -> str:
 
 
 def estado_sessao(s: AgentSession) -> Tuple[str, tuple]:
+    if s.disconnected:
+        return ULTIMO.get(s.attention) or ULTIMO.get(s.activity) or "sem notícias", Tema.TERCIARIO
     if s.attention is Attention.ERROR:
         return "parou com erro", Tema.VERMELHO
     if s.attention is Attention.WAITING_APPROVAL:
@@ -154,8 +170,20 @@ def _urgencia(resumo: ResumoGlobal) -> Tuple[str, tuple]:
 
 def _detalhe(p: ResumoProvider, agora: datetime) -> str:
     snap = p.snapshot
+    if p.estado == "desconectado":
+        antigas = snap.sessions if snap else ()
+        erros = sum(1 for s in antigas if s.attention is Attention.ERROR)
+        if erros:
+            return f"último conhecido: {erros} com erro"
+        if any(s.activity is Activity.IDLE for s in antigas):
+            return "último conhecido: ocioso"
+        return "último estado: sem notícias" if antigas else "OpenCode fechado ou sem o plugin"
+    if p.estado == "sem_sessoes" and p.desconectadas:
+        return f"{p.desconectadas} de origem desconectada"
+    if p.estado in DETALHE_DA_CONDICAO:
+        return DETALHE_DA_CONDICAO[p.estado]
     if p.estado == "nao_configurado":
-        return "hooks do Ombro não configurados"
+        return "plugin do Ombro não configurado" if p.provider_id == "opencode" else "hooks do Ombro não configurados"
     if p.estado == "indisponivel":
         return "a coleta falhou; veja o log"
     if p.estado == "nao_instalado":
@@ -169,7 +197,7 @@ def _detalhe(p: ResumoProvider, agora: datetime) -> str:
         partes.append(f"{tokens(snap.usage.total_tokens)} hoje")
     if partes:
         return " · ".join(partes)
-    sessoes = [s for s in (snap.sessions if snap else ()) if s.status_since or s.updated_at]
+    sessoes = [s for s in (snap.sessions if snap else ()) if (s.status_since or s.updated_at) and not s.disconnected]
     if sessoes:  # a sessão que mudou de estado por último, e há quanto tempo está assim
         s = max(sessoes, key=lambda x: x.status_since or x.updated_at)
         return f"{s.project or 'sessão'} · {_desde(s.status_since or s.updated_at, agora)}"
@@ -185,7 +213,8 @@ def _linhas_atividade(resumo: ResumoGlobal, agora: datetime, excluir=None, n: in
             urg = {Attention.ERROR: 0, Attention.WAITING_APPROVAL: 1, Attention.WAITING_USER: 2}.get(s.attention, 3)
             quando = s.status_since or s.updated_at or datetime.min
             sessoes.append((urg, -quando.timestamp() if quando != datetime.min else 0, p, s))
-    sessoes.sort(key=lambda x: (x[0], x[1], x[2].provider_id, x[3].session_id))
+    # primeiro o que é de agora; o histórico de uma fonte fora do ar vem depois
+    sessoes.sort(key=lambda x: (x[3].disconnected, x[0], x[1], x[2].provider_id, x[3].session_id))
     linhas = []
     for _, _, p, s in sessoes[:n]:
         rotulo, cor = estado_sessao(s)
@@ -225,9 +254,11 @@ def _sistema_e_atividade(resumo: ResumoGlobal, h_texto: str, agora: datetime, ex
     itens.append(Texto(X0, 256, titulo, 11, Tema.SECUNDARIO, "Medium"))
     if not linhas:
         itens.append(Texto(COL_ESTADO - 8, 256, "nenhuma sessão aberta", 10, Tema.TERCIARIO))
+    # o nome mais comprido (OPENCODE) empurra a coluna do projeto; com os três de sempre, ela fica onde sempre esteve
+    projeto_x = COL_ESTADO + (54 if any(len(linha[0]) > 6 for linha in linhas) else 44)
     for i, (prov, proj, rotulo, cor, desde) in enumerate(linhas):
         y = 256 + 18 * i
-        itens += [Texto(COL_ESTADO - 8, y, prov, 10, Tema.SECUNDARIO, "Bold"), Texto(COL_ESTADO + 44, y, proj, 10, Tema.TEXTO),
+        itens += [Texto(COL_ESTADO - 8, y, prov, 10, Tema.SECUNDARIO, "Bold"), Texto(projeto_x, y, proj, 10, Tema.TEXTO),
                   Texto(COL_ESTADO + 152, y, rotulo, 10, cor, "Medium"), Texto(X1, y, desde, 10, Tema.TERCIARIO, ancora="rm")]
     return itens
 
@@ -241,19 +272,22 @@ def _plano_overview(resumo: ResumoGlobal, h_texto: str, agora: datetime) -> list
     else:
         direita, cor, forma = "NENHUM ATIVO", Tema.TERCIARIO, "anel"
     itens = _cabecalho("OMBRO", "~ agentes", direita, cor, forma)
-    visiveis = [p for p in resumo.providers if p.estado != "nao_instalado"][:3]
+    visiveis = [p for p in resumo.providers if p.estado != "nao_instalado"][:4]
     if not visiveis:
         itens.append(Texto(170, 96, "Nenhum agente encontrado", 12, Tema.TERCIARIO, ancora="mm"))
     for i, p in enumerate(visiveis):
-        y0 = 36 + 42 * i
+        primeira, passo, nome_y, detalhe_y, divisoria_y = LINHAS_GERAL[4 if len(visiveis) == 4 else 3]
+        y0 = primeira + passo * i
         rotulo, cor_p, forma_p = ROTULOS[p.estado]
-        itens += [Texto(X0, y0 + 11, p.provider_id.upper(), 13, Tema.TEXTO, "Bold"),
-                  Marcador(forma_p, COL_ESTADO - 8, y0 + 11, cor_p), Texto(COL_ESTADO, y0 + 11, rotulo, 11, cor_p, "Medium"),
-                  Texto(COL_ESTADO, y0 + 27, _cortar(_detalhe(p, agora), DETALHE_MAX), 10, Tema.TERCIARIO)]
-        if p.sessoes:
-            itens.append(Texto(COL_DIREITA, y0 + 11, _plural(p.sessoes, "sessão", "sessões"), 11, Tema.SECUNDARIO, ancora="rm"))
+        itens += [Texto(X0, y0 + nome_y, p.provider_id.upper(), 13, Tema.TEXTO, "Bold"),
+                  Marcador(forma_p, COL_ESTADO - 8, y0 + nome_y, cor_p), Texto(COL_ESTADO, y0 + nome_y, rotulo, 11, cor_p, "Medium"),
+                  Texto(COL_ESTADO, y0 + detalhe_y, _cortar(_detalhe(p, agora), DETALHE_MAX), 10, Tema.TERCIARIO)]
+        if p.sessoes or p.desconectadas:
+            quantas = (_plural(p.sessoes, "sessão", "sessões") if p.sessoes
+                       else _plural(p.desconectadas, "conhecida", "conhecidas"))
+            itens.append(Texto(COL_DIREITA, y0 + nome_y, quantas, 11, Tema.SECUNDARIO, ancora="rm"))
         if i < len(visiveis) - 1:
-            itens.append(Linha(X0, y0 + 39, 334, y0 + 39))
+            itens.append(Linha(X0, y0 + divisoria_y, 334, y0 + divisoria_y))
     resumo_txt = (f"{_plural(resumo.total_sessoes, 'sessão', 'sessões')} · {resumo.trabalhando} trabalhando · "
                   f"{resumo.aguardando} aguardando") if resumo.total_sessoes else ""
     if resumo_txt:
@@ -282,7 +316,8 @@ def _plano_focus(resumo: ResumoGlobal, pid: str, h_texto: str, agora: datetime) 
         itens.append(Bloco("estatisticas", ((m.input_tokens or 0) + (m.output_tokens or 0), m.output_tokens or 0, p.sessoes)))
     if not (tem_quota or tem_uso):
         itens.append(Texto(X0, 46, f"SESSÕES ({p.sessoes})" if p.sessoes else "SESSÕES", 11, Tema.SECUNDARIO, "Medium"))
-        sessoes = sorted(snap.sessions if snap else (), key=lambda s: (s.status_since or datetime.min), reverse=True)
+        sessoes = sorted(snap.sessions if snap else (), key=lambda s: (not s.disconnected, s.status_since or datetime.min),
+                         reverse=True)
         if not sessoes:
             itens.append(Texto(X0, 70, _detalhe(p, agora) if p.estado != "sem_sessoes" else "nenhuma sessão aberta", 11, Tema.TERCIARIO))
         for i, s in enumerate(sessoes[:4]):

@@ -44,6 +44,7 @@ const PREF_NAMES: Record<string, string> = {
   "providers.claude": "Claude Code",
   "providers.codex": "Codex",
   "providers.cursor": "Cursor",
+  "providers.opencode": "OpenCode",
 };
 
 /**
@@ -284,7 +285,7 @@ const LAYOUT_DESC: Record<string, string> = {
   auto: "O padrão (hoje, o layout do Ombro)",
   ombro: "O padrão: uso, tokens, sistema e o cloud",
   "minimal-v2": "O mesmo conteúdo, mais limpo, com CPU e RAM em barras",
-  multiagente: "Claude Code, Codex e Cursor lado a lado",
+  multiagente: "Claude Code, Codex, Cursor e OpenCode juntos",
   classico: "O painel antigo, com GPU, rede e disco; em pé ou deitado",
 };
 

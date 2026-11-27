@@ -72,7 +72,7 @@ function Welcome({ onNext }: { onNext: () => void }) {
           <Lock size={14} aria-hidden /> Tudo local: sem conta, sem nuvem, sem telemetria.
         </li>
         <li>
-          <Check size={14} aria-hidden /> Claude Code, Codex e Cursor, um de cada vez ou juntos.
+          <Check size={14} aria-hidden /> Claude Code, Codex, Cursor e OpenCode, um de cada vez ou juntos.
         </li>
         <li>
           <MonitorSmartphone size={14} aria-hidden /> Sem a telinha USB, a prévia mostra o mesmo que ela mostraria.
@@ -169,7 +169,9 @@ function AgentsStep() {
   };
 
   const linha = (c: IntegrationCheck) => {
-    const pode = c.instalado && c.state !== "configured" && c.state !== "conflict" && c.state !== "invalid";
+    // o OpenCode pede um passo seu (colar o trecho): fica na página Agentes, não neste lote
+    const plugin = c.provider === "opencode";
+    const pode = !plugin && c.instalado && c.state !== "configured" && c.state !== "conflict" && c.state !== "invalid";
     return (
       <li key={c.provider} className="agent-pick">
         <label className={pode ? "" : "disabled"}>
@@ -190,6 +192,8 @@ function AgentsStep() {
           <Badge tone="muted">Não encontrado</Badge>
         ) : c.state === "configured" ? (
           <Badge tone="green">Já integrado</Badge>
+        ) : plugin ? (
+          <Badge tone="neutral">Plugin: configure em Agentes</Badge>
         ) : c.provider === "claude" ? (
           <Badge tone="neutral">Funciona sem hooks</Badge>
         ) : (

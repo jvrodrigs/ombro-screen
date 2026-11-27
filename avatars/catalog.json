@@ -5,7 +5,8 @@
   "providers": {
     "claude": { "avatar": "ombro-cloud", "color": "#DF8559" },
     "codex": { "avatar": "orbita", "color": "#83B596" },
-    "cursor": { "avatar": "cubo", "color": "#79A9D8" }
+    "cursor": { "avatar": "cubo", "color": "#79A9D8" },
+    "opencode": { "avatar": "nova", "color": "#B79AE6" }
   },
   "avatars": [
     {

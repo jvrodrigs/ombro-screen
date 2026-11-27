@@ -23,7 +23,7 @@ from .caixa import CaixaDeEventos
 from .events import EventBus, registrar_no_log
 from .models import ProviderSnapshot
 from .persistence import StateDB
-from .providers import ProviderAdapter, ProviderRegistry
+from .providers import EventosNaoGravados, ProviderAdapter, ProviderRegistry
 from .state import StateStore
 
 log = logger("estado")
@@ -73,6 +73,7 @@ class Monitor:
         por_provider: dict = {}
         for ev in eventos:
             por_provider.setdefault(ev.provider, []).append(ev)
+        adiados: set = set()
         for pid, evs in por_provider.items():
             p = self.registry.get(pid) if pid in self.registry else None
             if p is None or not hasattr(p, "receber"):
@@ -82,11 +83,15 @@ class Monitor:
                 log.info("eventos dos hooks do %s chegando", p.display_name or pid)
             try:
                 p.receber(evs)
+            except EventosNaoGravados:  # os dele esperam; o provider já registrou o porquê
+                adiados.update(id(ev) for ev in evs)
             except Exception as e:  # noqa: BLE001 - um provider com defeito não pode travar os outros
                 if self._avisos.registrar(f"receber:{pid}", logging.ERROR, "%s não conseguiu aplicar eventos (%s: %s)",
                                           pid, type(e).__name__, e):
                     log.debug("detalhes", exc_info=True)
-        self.caixa.confirmar(eventos)
+        self.caixa.confirmar(ev for ev in eventos if id(ev) not in adiados)
+        if adiados:
+            self.caixa.reler(ev for ev in eventos if id(ev) in adiados)
         return len(eventos)
 
     def atualizar_todos(self) -> None:

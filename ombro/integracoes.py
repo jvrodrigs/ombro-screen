@@ -41,6 +41,7 @@ from typing import Dict, List, Optional, Tuple
 
 from logging_config import curto, logger
 
+from . import integracao_opencode
 from .arquivos import ArquivoMudou, assinatura, destino_real, gravar_atomico
 from .caminhos import garantir_pasta_privada, pasta_backups
 
@@ -478,7 +479,21 @@ def _aplicar(alvo: Alvo, leitura: Leitura, novo: dict, acao: str, dry_run: bool,
     return r
 
 
-def instalar(provider: str, dry_run: bool = False, python: Optional[str] = None) -> Resultado:
+OPENCODE = "opencode"  # não usa hooks nem tem arquivo editado pelo Ombro: ver ombro/integracao_opencode.py
+TODOS = ("claude", "codex", "cursor", OPENCODE)
+
+
+def analise_de(provider: str, python: Optional[str] = None) -> dict:
+    if provider == OPENCODE:
+        return integracao_opencode.analisar()
+    return analisar(ALVOS[provider], python).como_dict()
+
+
+def instalar(provider: str, dry_run: bool = False, python: Optional[str] = None, nova: bool = False) -> Resultado:
+    if provider == OPENCODE:
+        return integracao_opencode.instalar(dry_run, nova)
+    if nova:
+        raise ErroIntegracao("--new-origin vale só para o opencode")
     alvo = ALVOS[provider]
     if not HOOK.exists():
         raise ErroIntegracao(f"{curto(HOOK)} não existe; rode a partir da pasta do Ombro")
@@ -494,6 +509,8 @@ def instalar(provider: str, dry_run: bool = False, python: Optional[str] = None)
 
 
 def remover(provider: str, dry_run: bool = False) -> Resultado:
+    if provider == OPENCODE:
+        return integracao_opencode.remover(dry_run)
     alvo = ALVOS[provider]
     with _TravaDeIntegracoes():
         try:
@@ -514,6 +531,8 @@ def remover(provider: str, dry_run: bool = False) -> Resultado:
 
 def restaurar(provider: str, dry_run: bool = False) -> Resultado:
     """Volta o arquivo do agente para o último backup. O estado atual vira um backup antes (dá para desfazer)."""
+    if provider == OPENCODE:
+        return integracao_opencode.restaurar(dry_run)
     alvo = ALVOS[provider]
     lista = backups(provider)
     if not lista:
@@ -557,6 +576,13 @@ def restaurar(provider: str, dry_run: bool = False) -> Resultado:
 def _imprimir_analise(a: dict) -> None:
     nomes = {"configured": "configurada", "partial": "parcial", "not_configured": "não configurada",
              "conflict": "conflito", "invalid": "arquivo inválido"}
+    if a["provider"] == OPENCODE:
+        print(f"OpenCode: {nomes[a['state']]}" + (" (esperando o plugin aparecer)" if a["state"] == "partial" else ""))
+        print(f"  arquivo:      {a['file']}{'' if a['existe'] else ' (não existe)'}")
+        print(f"  instalado:    {'sim' if a['instalado'] else 'não encontrado'}")
+        if a["trecho"]:
+            print("  trecho para a configuração do OpenCode:\n" + a["trecho"])
+        return
     print(f"{ALVOS[a['provider']].nome}: {nomes[a['state']]}")
     print(f"  arquivo:      {a['file']}{'' if a['existe'] else ' (não existe)'}")
     print(f"  instalado:    {'sim' if a['instalado'] else 'não encontrado'}")
@@ -577,12 +603,12 @@ def _imprimir_analise(a: dict) -> None:
 def comando(args) -> int:
     acao, provider = args.acao, args.provider
     if acao in ("check", "install", "uninstall", "rollback") and provider is None:
-        print(f"integrations {acao} precisa do agente: claude, codex ou cursor", file=sys.stderr)
+        print(f"integrations {acao} precisa do agente: claude, codex, cursor ou opencode", file=sys.stderr)
         return 2
     try:
         if acao in ("list", "check"):
-            alvos = [provider] if provider else list(ALVOS)
-            analises = [analisar(ALVOS[p], args.python).como_dict() for p in alvos]
+            alvos = [provider] if provider else list(TODOS)
+            analises = [analise_de(p, args.python) for p in alvos]
             if args.json:
                 print(json.dumps({"integrations": analises}, ensure_ascii=False, indent=2))
             else:
@@ -591,7 +617,7 @@ def comando(args) -> int:
                         print()
                     _imprimir_analise(a)
             return 0 if all(a["state"] in ("configured", "not_configured") for a in analises) or acao == "list" else 1
-        fn = {"install": lambda: instalar(provider, args.dry_run, args.python),
+        fn = {"install": lambda: instalar(provider, args.dry_run, args.python, getattr(args, "new_origin", False)),
               "uninstall": lambda: remover(provider, args.dry_run),
               "rollback": lambda: restaurar(provider, args.dry_run)}[acao]
         r = fn()
@@ -603,6 +629,16 @@ def comando(args) -> int:
         return 1
     if args.json:
         print(json.dumps({"ok": True, **r.como_dict()}, ensure_ascii=False, indent=2))
+        return 0
+    if provider == OPENCODE:
+        if not r.mudou:
+            print(f"OpenCode: nada a mudar em {r.arquivo}")
+        else:
+            print(f"OpenCode: {'o que mudaria (nada foi gravado)' if r.dry_run else 'feito'} em {r.arquivo}")
+        if r.diff:
+            print("\ntrecho para a configuração do OpenCode:\n" + r.diff)
+        if r.nota:
+            print(f"  {r.nota}")
         return 0
     nome = ALVOS[provider].nome
     verbo = {"install": "instalada", "uninstall": "removida", "rollback": "restaurada do backup"}[acao]

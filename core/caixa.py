@@ -18,10 +18,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 from logging_config import SoQuandoMuda, curto, logger
 
@@ -42,6 +42,8 @@ class EventoLocal:
     project: Optional[str] = None
     detail: Optional[str] = None
     arquivo: Optional[Path] = None  # de onde veio (para apagar depois de aplicar)
+    # campos extras de quem precisa de mais que o básico (o plugin do OpenCode); cada provider valida o que usa
+    extra: Optional[dict] = field(default=None, compare=False)
 
     @property
     def chave(self):
@@ -58,10 +60,11 @@ def _ler(arq: Path) -> Optional[EventoLocal]:
     ts = d.get("ts")
     if not all(isinstance(c, str) and 0 < len(c) <= 128 for c in campos) or isinstance(ts, bool) or not isinstance(ts, int):
         return None
-    projeto, detalhe = d.get("project"), d.get("detail")
+    projeto, detalhe, extra = d.get("project"), d.get("detail"), d.get("x")
     return EventoLocal(*campos, quando=datetime.fromtimestamp(ts / 1000),
                        project=projeto[:80] if isinstance(projeto, str) and projeto else None,
-                       detail=detalhe[:32] if isinstance(detalhe, str) and detalhe else None, arquivo=arq)
+                       detail=detalhe[:32] if isinstance(detalhe, str) and detalhe else None, arquivo=arq,
+                       extra=extra if isinstance(extra, dict) else None)
 
 
 class CaixaDeEventos:
@@ -69,7 +72,8 @@ class CaixaDeEventos:
         self.pasta = Path(pasta)
         self._relogio = relogio
         self._mtime: Optional[float] = None
-        self._pendente = False  # sobrou arquivo da última leitura (mais de MAX_POR_LEITURA)
+        self._pendente = False  # sobrou arquivo da última leitura (mais de MAX_POR_LEITURA, ou sem confirmar)
+        self._esperando: Dict[str, str] = {}  # arquivo sem confirmar -> provider
         self._avisos = SoQuandoMuda(log)
         self.lidos = self.descartados = 0  # contadores, para o log de depuração e o benchmark
 
@@ -90,9 +94,15 @@ class CaixaDeEventos:
             self._avisos.registrar("pasta", logging.WARNING, "não consegui listar a pasta de eventos (%s)", e)
             return []
         self._avisos.resolver("pasta")
-        self._pendente = len(nomes) > MAX_POR_LEITURA
+        # quem ficou sem confirmar tenta de novo, os mais antigos primeiro, sem ocupar a vez dos outros
+        presentes = set(nomes)
+        self._esperando = {n: p for n, p in self._esperando.items() if n in presentes}
+        de_novo = [n for n in nomes if n in self._esperando][:MAX_POR_LEITURA]
+        novos = [n for n in nomes if n not in self._esperando]
+        segurar = set(self._esperando.values()) if len(self._esperando) > len(de_novo) else set()
+        self._pendente = len(novos) > MAX_POR_LEITURA or bool(self._esperando)
         eventos, limite = [], self._relogio() - MAX_IDADE
-        for nome in nomes[:MAX_POR_LEITURA]:  # os nomes começam pelo horário: ordem de chegada
+        for nome in sorted(de_novo + novos[:MAX_POR_LEITURA]):  # os nomes começam pelo horário: ordem de chegada
             arq = self.pasta / nome
             try:
                 ev = _ler(arq)
@@ -105,16 +115,27 @@ class CaixaDeEventos:
                 self._apagar(arq)
                 self.descartados += 1
                 continue
+            if ev.provider in segurar and nome not in self._esperando:
+                self._esperando[nome] = ev.provider  # há mais antigos dele na frente: este espera, para manter a ordem
+                continue
             eventos.append(ev)
         self.lidos += len(eventos)
         if eventos:
             log.debug("%d evento(s) de hooks em %s", len(eventos), curto(self.pasta))
         return eventos
 
+    def reler(self, eventos: Iterable[EventoLocal]) -> None:
+        """Estes ficaram sem confirmar: voltam numa próxima leitura, mesmo sem arquivo novo."""
+        for ev in eventos:
+            if ev.arquivo is not None:
+                self._esperando[ev.arquivo.name] = ev.provider
+        self._pendente = True
+
     def confirmar(self, eventos: Iterable[EventoLocal]) -> None:
         """Os eventos foram aplicados: os arquivos podem sair."""
         for ev in eventos:
             if ev.arquivo is not None:
+                self._esperando.pop(ev.arquivo.name, None)
                 self._apagar(ev.arquivo)
 
     @staticmethod

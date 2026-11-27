@@ -344,13 +344,18 @@ Os avisos saem no terminal (ou, no LaunchAgent, em `~/Library/Logs/ombro-screen.
 | `macmon falhou` ou `macmon parou` | O Ombro segue com o psutil; reinstale com `brew install macmon` se quiser GPU e temperatura. |
 | `falha ao desenhar o quadro ... o Ombro vai fechar` | É um bug: abra uma issue com o trecho do log (rode com `--debug` para ter o traceback). |
 
-## 9. Vários agentes: Claude Code, Codex e Cursor
+## 9. Vários agentes: Claude Code, Codex, Cursor e OpenCode
 
 <p align="center">
   <img src="docs/multiagente.png" width="760" alt="O layout multiagente: visão geral e atenção, com dados de demonstração">
 </p>
 
-O Ombro acompanha os três ao mesmo tempo, cada um isolado: funciona com um, dois ou os três instalados.
+O Ombro acompanha os quatro ao mesmo tempo, cada um isolado: funciona com qualquer um deles instalado.
+
+O **OpenCode** (2.4.2 ou mais novo) entra por um plugin que você liga, com
+`python3 -m ombro integrations install opencode`; ele mostra sessões, atividade, espera, permissão, erro e
+conclusão, sem tokens nem limites, e diz "desconhecido" quando não dá para confirmar:
+[docs/providers/opencode.md](docs/providers/opencode.md). A tabela abaixo compara os outros três.
 
 ```bash
 python3 tela.py --layout multiagente               # visão geral (no simulador; acrescente --usb para a tela)
@@ -361,7 +366,7 @@ O Claude Code funciona sem configurar nada. Codex e Cursor precisam dos **hooks 
 instalados quando você pede (o Ombro nunca mexe nas suas configurações sozinho):
 
 ```bash
-python3 -m ombro integrations list                      # o estado dos três
+python3 -m ombro integrations list                      # o estado de cada um
 python3 -m ombro integrations install codex --dry-run   # o que mudaria no ~/.codex/hooks.json
 python3 -m ombro integrations install codex             # com backup; desfaz com: integrations rollback codex
 ```

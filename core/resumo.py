@@ -17,7 +17,12 @@ LIMITE_QUOTA = 90.0  # % de uma janela de uso a partir do qual é alerta (o mesm
 
 # estado agregado de um provider, do mais urgente para o menos
 ESTADOS = ("erro", "aprovacao", "aguardando", "alerta", "trabalhando", "ocioso", "desconhecido", "sem_sessoes",
-           "nao_configurado", "indisponivel", "nao_instalado")
+           "nao_configurado", "indisponivel", "nao_instalado", "incompativel", "conflito", "nao_verificado", "coletando",
+           "sem_plugin", "desconectado")
+# a condição da integração (ProviderSnapshot.condition) -> estado, quando não há atividade confirmada a mostrar
+DA_CONDICAO = {"incompatible": "incompativel", "conflict": "conflito", "unverified": "nao_verificado",
+               "collecting": "coletando", "offline": "desconectado", "never": "sem_plugin",
+               "unregistered": "nao_configurado"}
 URGENCIA = {Attention.ERROR: 0, Attention.WAITING_APPROVAL: 1, Attention.WAITING_USER: 2}
 
 
@@ -26,12 +31,13 @@ class ResumoProvider:
     provider_id: str
     nome: str
     estado: str  # um de ESTADOS
-    sessoes: int = 0
+    sessoes: int = 0  # as de agora: as de uma fonte fora do ar contam em `desconectadas`
     trabalhando: int = 0
     aguardando: int = 0  # resposta ou aprovação
     erros: int = 0
     quota_max: Optional[float] = None  # a janela de uso mais cheia, se o provider informa
     snapshot: Optional[ProviderSnapshot] = None
+    desconectadas: int = 0  # sessões com só o último estado conhecido
 
     @property
     def ativo(self) -> bool:
@@ -73,10 +79,11 @@ def _quota_max(snap: Optional[ProviderSnapshot]) -> Optional[float]:
 def resumir_provider(provider_id: str, nome: str, snap: Optional[ProviderSnapshot],
                      sessoes: Iterable[AgentSession]) -> ResumoProvider:
     sessoes = list(sessoes)
-    trabalhando = sum(1 for s in sessoes if s.activity is Activity.WORKING)
-    aprovacao = sum(1 for s in sessoes if s.attention is Attention.WAITING_APPROVAL)
-    aguardando = sum(1 for s in sessoes if s.attention in (Attention.WAITING_USER, Attention.WAITING_APPROVAL))
-    erros = sum(1 for s in sessoes if s.attention is Attention.ERROR)
+    atuais = [s for s in sessoes if not s.disconnected]  # o histórico de uma fonte fora do ar não é estado de agora
+    trabalhando = sum(1 for s in atuais if s.activity is Activity.WORKING)
+    aprovacao = sum(1 for s in atuais if s.attention is Attention.WAITING_APPROVAL)
+    aguardando = sum(1 for s in atuais if s.attention in (Attention.WAITING_USER, Attention.WAITING_APPROVAL))
+    erros = sum(1 for s in atuais if s.attention is Attention.ERROR)
     quota = _quota_max(snap)
     if snap is not None and snap.integration == "not_installed" and not sessoes:
         estado = "nao_instalado"
@@ -84,6 +91,10 @@ def resumir_provider(provider_id: str, nome: str, snap: Optional[ProviderSnapsho
         estado = "nao_configurado"
     elif snap is None or (snap.status is SnapshotStatus.ERROR and not sessoes):
         estado = "indisponivel"
+    elif snap.condition in ("incompatible", "conflict", "unverified") and not trabalhando and not aguardando:
+        estado = DA_CONDICAO[snap.condition]
+    elif snap.condition == "offline" or (snap.condition == "unregistered" and sessoes and not atuais):
+        estado = "desconectado"
     elif erros:
         estado = "erro"
     elif aprovacao:
@@ -94,20 +105,24 @@ def resumir_provider(provider_id: str, nome: str, snap: Optional[ProviderSnapsho
         estado = "alerta"
     elif trabalhando:
         estado = "trabalhando"
-    elif not sessoes:
+    elif (snap.condition in ("collecting", "never", "unregistered")
+          and not any(s.activity is not Activity.UNKNOWN for s in atuais)):
+        estado = DA_CONDICAO[snap.condition]
+    elif not atuais:
         estado = "sem_sessoes"
-    elif any(s.activity is Activity.IDLE for s in sessoes):
+    elif any(s.activity is Activity.IDLE for s in atuais):
         estado = "ocioso"
     else:
         estado = "desconhecido"
-    return ResumoProvider(provider_id, nome, estado, len(sessoes), trabalhando, aguardando, erros, quota, snap)
+    return ResumoProvider(provider_id, nome, estado, len(atuais), trabalhando, aguardando, erros, quota, snap,
+                          len(sessoes) - len(atuais))
 
 
 def _mais_urgente(provs: Iterable[ResumoProvider], sessoes_por: dict) -> Optional[Urgente]:
     candidatas = []
     for p in provs:
         for s in sessoes_por.get(p.provider_id, ()):
-            if s.attention in URGENCIA:
+            if s.attention in URGENCIA and not s.disconnected:
                 desde = s.status_since or s.updated_at or datetime.max
                 candidatas.append((URGENCIA[s.attention], desde, p.provider_id, s.session_id, p, s))
     if candidatas:

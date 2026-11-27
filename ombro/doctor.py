@@ -397,7 +397,59 @@ def agentes(amb: Ambiente, daemon: Optional[dict]) -> List[Verificacao]:
         v.append(Verificacao(f"provider.{pid}", "providers", st, nome, msg, acao, detalhes))
         if p.get("enabled"):
             v.extend(_coletas(pid, nome, p))
+    p = vivos.get("opencode", {})
+    v.append(_opencode(p))
+    if p.get("enabled"):
+        v.extend(_coletas("opencode", "OpenCode", p))
     return v
+
+
+def _opencode(p: dict) -> Verificacao:
+    """O OpenCode é conferido pelo que o plugin conta: o doctor não roda o binário nem lê a configuração dele."""
+    from .integracao_opencode import analisar
+
+    a = analisar()
+    versao, condicao, desconhecidas = p.get("version"), p.get("condition"), p.get("unknown_sessions") or 0
+    detalhes = {"installed": a["instalado"], "version": versao, "integration": a["state"], "condition": condicao,
+                "enabled": p.get("enabled"), "capabilities": p.get("capabilities"), "unknown_sessions": desconhecidas,
+                "last_event_at": p.get("last_event_at"), "collection": p.get("collection")}
+    base = f"{versao or 'versão desconhecida'}; "
+    instalar = "python3 -m ombro integrations install opencode"
+    perdidas = f"; {desconhecidas} sessão(ões) com estado desconhecido" if desconhecidas else ""
+    if p.get("enabled") is False:
+        st, msg, acao = SKIP, "desligado nas preferências", None
+    elif a["state"] == "invalid":
+        st, msg, acao = FAIL, str(a["erro"]), None
+    elif condicao in ("incompatible", "conflict", "unverified"):
+        st, msg = FAIL, base + str(p.get("condition_detail"))
+        acao = {"incompatible": "atualize o OpenCode à mão", "conflict": instalar + " --new-origin",
+                "unverified": "confira a versão e onde o OpenCode guarda o banco"}[condicao]
+    elif condicao == "unregistered":
+        st, msg, acao = WARN, base + str(p.get("condition_detail")), instalar
+    elif a["state"] == "not_configured":
+        if not a["instalado"]:
+            st, msg, acao = SKIP, "não instalado", None
+        else:
+            st, msg, acao = WARN, "integração não configurada (sem o plugin, o Ombro não vê as sessões)", instalar
+    elif not p:
+        st, msg, acao = WARN, "configurado; sem o ombrod não dá para saber se o plugin conectou", "python3 ombrod.py"
+    elif p.get("collection") == "error":
+        st, msg, acao = FAIL, base + "a coleta está falhando no ombrod" + perdidas, "veja o log do ombrod"
+    elif condicao == "never" or a["state"] == "partial":
+        st, msg, acao = (WARN, "configurado, mas o plugin nunca conectou",
+                         "python3 -m ombro integrations check opencode")
+    elif condicao == "offline":
+        st, msg, acao = WARN, "desconectado (o OpenCode está fechado ou sem o plugin)" + perdidas, None
+    elif condicao == "partial":
+        st, msg, acao = WARN, base + str(p.get("condition_detail")) + perdidas, None
+    elif p.get("disconnected_sessions"):
+        st, msg, acao = (WARN, base + f"conectado; {p['disconnected_sessions']} sessão(ões) de uma origem desconectada "
+                         "(último estado conhecido)", None)
+    elif desconhecidas:
+        st, msg, acao = WARN, base + "conectado, recuperando" + perdidas + " até o próximo evento", None
+    else:
+        st, msg, acao = PASS, base + "saudável: o plugin está conectado", None
+    return Verificacao("provider.opencode", "providers", st, "OpenCode", msg, acao, detalhes)
 
 
 def _idade(segundos: Optional[int]) -> str:

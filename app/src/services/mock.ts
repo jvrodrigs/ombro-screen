@@ -57,6 +57,14 @@ export function mockProviders(): ProviderInfo[] {
       last_collected_at: iso(agora()), last_event_at: null, quotas: null, usage: null,
       avatar: { avatar: "cubo", color: "#79A9D8", choice: "padrao" },
     },
+    {
+      id: "opencode", name: "OpenCode", enabled: true, capabilities: ["attention", "events", "sessions"],
+      installed: true, integration: "ok", collection: "ok", state: "sem_sessoes", condition: null, condition_detail: null,
+      version: "2.4.2", unconfirmed: 0,
+      sessions: 0, working: 0, waiting: 0, errors: 0, quota_max_percent: null, stale_parts: [], recovered: false,
+      last_collected_at: iso(agora()), last_event_at: null, quotas: null, usage: null,
+      avatar: { avatar: "nova", color: "#B79AE6", choice: "padrao" },
+    },
   ];
 }
 
@@ -136,7 +144,7 @@ export const mockSchema: ConfigSchema = {
     { key: "layout", group: "appearance", type: "enum", description: "o modelo de tela", live: true, nullable: false, choices: ["auto", "ombro", "classico", "minimal-v2", "multiagente"] },
     { key: "cor_mascote", group: "appearance", type: "color", description: "cor fixa do avatar (#RRGGBB; vale por cima do cor_modo)", live: true, nullable: true },
     { key: "cor_modo", group: "appearance", type: "enum", description: "cor do avatar: a do agente, ou sorteada a cada troca de estado", live: true, nullable: false, choices: ["agente", "sorteada"] },
-    ...(["claude", "codex", "cursor", "padrao"] as const).map((p) => ({
+    ...(["claude", "codex", "cursor", "opencode", "padrao"] as const).map((p) => ({
       key: `avatares.${p}`, group: "avatars", type: "enum" as const, description: `avatar ${p}`, live: true, nullable: false,
       choices: ["padrao", "aleatorio", "ombro-cloud", "sereno", "orbita", "cubo", "scout", "pixel", "chevron", "maestro", "nova"],
     })),
@@ -148,12 +156,13 @@ export const mockSchema: ConfigSchema = {
     { key: "pacote_animacao", group: "appearance", type: "enum", description: "o pacote de animações do mascote, no app e na telinha", live: true, nullable: false, choices: ["vivo", "classico"] },
     { key: "intervalo", group: "appearance", type: "number", description: "segundos entre quadros (null: o padrão do layout)", live: true, nullable: true, min: 0.05, max: 10 },
     { key: "vista", group: "multi_agent", type: "enum", description: "visão do layout multiagente", live: true, nullable: false, choices: ["overview", "focus", "attention"] },
-    { key: "foco", group: "multi_agent", type: "enum", description: "o agente da visão focus", live: true, nullable: true, choices: ["claude", "codex", "cursor"] },
+    { key: "foco", group: "multi_agent", type: "enum", description: "o agente da visão focus", live: true, nullable: true, choices: ["claude", "codex", "cursor", "opencode"] },
     { key: "rotacao", group: "multi_agent", type: "boolean", description: "alternar sozinho entre a visão geral e cada agente", live: true, nullable: false },
     { key: "intervalo_rotacao", group: "multi_agent", type: "number", description: "segundos em cada visão da rotação", live: true, nullable: false, min: 5, max: 3600 },
     { key: "providers.claude", group: "providers", type: "boolean", description: "acompanhar o Claude Code", live: false, nullable: false },
     { key: "providers.codex", group: "providers", type: "boolean", description: "acompanhar o Codex", live: false, nullable: false },
     { key: "providers.cursor", group: "providers", type: "boolean", description: "acompanhar o Cursor", live: false, nullable: false },
+    { key: "providers.opencode", group: "providers", type: "boolean", description: "acompanhar o OpenCode", live: false, nullable: false },
     { key: "sem_macmon", group: "hardware", type: "boolean", description: "não usar o macmon (só psutil: sem GPU e temperatura)", live: false, nullable: false },
     { key: "debug", group: "diagnostics", type: "boolean", description: "logs detalhados (nível DEBUG)", live: false, nullable: false },
   ],
@@ -164,13 +173,13 @@ export function mockConfig(): ConfigInfo {
     file: "~/.ombro-screen/config.json", file_exists: false,
     values: {
       brilho: 30, cor_mascote: null, cor_modo: "agente", avatar_sorteio: "inicio",
-      avatares: { claude: "padrao", codex: "padrao", cursor: "padrao", padrao: "padrao" }, cores_avatares: {},
+      avatares: { claude: "padrao", codex: "padrao", cursor: "padrao", opencode: "padrao", padrao: "padrao" }, cores_avatares: {},
       debug: false, foco: null, girar: false, intervalo: null, intervalo_rotacao: 15,
-      layout: "auto", paisagem: false, porta: "AUTO", porta_sim: 5680, providers: ["claude", "codex", "cursor"],
+      layout: "auto", paisagem: false, porta: "AUTO", porta_sim: 5680, providers: ["claude", "codex", "cursor", "opencode"],
       revisao: "A", rotacao: false, sem_macmon: false, transporte: "auto", usb: false, vista: "overview",
       pacote_animacao: "vivo",
     },
-    providers_enabled: { claude: true, codex: true, cursor: true },
+    providers_enabled: { claude: true, codex: true, cursor: true, opencode: true },
     editable: mockSchema.options.map((o) => o.key),
     live: mockSchema.options.filter((o) => o.live).map((o) => o.key),
     layouts_live: ["auto", "ombro", "classico", "minimal-v2", "multiagente"],
@@ -194,6 +203,7 @@ export function mockIntegrations(): IntegrationCheck[] {
     base("claude", "~/.claude/settings.json", claude, claude, true),
     base("codex", "~/.codex/hooks.json", codex, codex, true),
     base("cursor", "~/.cursor/hooks.json", cursor, [], true),
+    { ...base("opencode", "~/.ombro-screen/opencode/integration.json", ["plugin"], [], true), trecho: null },
   ];
 }
 

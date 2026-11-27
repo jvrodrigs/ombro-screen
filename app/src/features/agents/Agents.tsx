@@ -33,7 +33,11 @@ const PURPOSE: Record<ProviderId, string> = {
     "O Claude Code já funciona sem hooks (o Ombro lê os arquivos locais). Os hooks acrescentam quando uma sessão pede aprovação ou para com erro.",
   codex: "Sem os hooks, o Ombro não vê as sessões do Codex. Depois de instalar, confie nos hooks no Codex (/hooks).",
   cursor: "Sem os hooks, o Ombro não vê as sessões do Cursor. O Cursor recarrega o hooks.json sozinho.",
+  opencode:
+    "O OpenCode (2.4.2 ou mais novo) avisa o Ombro por um plugin que você liga: o Ombro gera a origem e mostra o trecho; quem cola na configuração do OpenCode é você. Só saem ids, horários, o tipo do evento e o nome da pasta.",
 };
+
+const ESPERANDO_PLUGIN = { label: "Esperando o plugin", tone: "warning" } as const;
 
 type Op = "install" | "uninstall" | "rollback";
 const OP_TEXT: Record<Op, { title: (n: string) => string; confirm: string; done: string }> = {
@@ -147,7 +151,8 @@ export function Agents() {
         {PROVIDER_IDS.map((id) => {
           const c: IntegrationCheck | undefined = checks.get(id);
           const p = provs.get(id);
-          const integ = c ? INTEGRATION[c.state] : null;
+          const plugin = id === "opencode"; // integrado por um plugin que você liga, não por hooks que o Ombro grava
+          const integ = c ? (plugin && c.state === "partial" ? ESPERANDO_PLUGIN : INTEGRATION[c.state]) : null;
           // o switch mostra o que está gravado (o que você escolheu); se ainda não está em uso, o aviso acima diz
           const gravado = config.pending[`providers.${id}`];
           const ligado = typeof gravado === "boolean" ? gravado : (config.config?.providers_enabled?.[id] ?? p?.enabled ?? true);
@@ -169,8 +174,10 @@ export function Agents() {
                 <KeyValues
                   items={[
                     ["Instalado", c ? (c.instalado ? "Sim" : "Não encontrado neste Mac") : "—"],
-                    ["Versão", doctor.loading && !doctor.data ? "conferindo…" : (versoes.get(id) ?? "—")],
-                    ["Hooks", c ? `${c.presentes.length} de ${c.eventos.length} eventos` : "—"],
+                    ["Versão", plugin ? (p?.version ?? "—") : doctor.loading && !doctor.data ? "conferindo…" : (versoes.get(id) ?? "—")],
+                    plugin
+                      ? ["Plugin", c ? (c.presentes.length ? "Já apareceu" : "Ainda não apareceu") : "—"]
+                      : ["Hooks", c ? `${c.presentes.length} de ${c.eventos.length} eventos` : "—"],
                     ["Arquivo", <span className="mono selectable">{c?.file ?? "—"}</span>],
                     ["Sessões agora", p?.enabled ? String(p.sessions ?? 0) : "—"],
                     ["Última atualização", p?.enabled ? ago(p.last_event_at ?? p.last_collected_at) : "—"],
@@ -200,13 +207,26 @@ export function Agents() {
                     </Notice>
                   )}
                   {desatualizada && <Notice tone="warning">Algumas entradas apontam para outro caminho ou eventos antigos: repare para atualizar.</Notice>}
+                  {p?.enabled && p.condition_detail && (
+                    <Notice tone={p.condition === "incompatible" || p.condition === "conflict" || p.condition === "unverified" ? "critical" : "info"}>
+                      {p.condition_detail}
+                    </Notice>
+                  )}
+                  {plugin && c?.trecho && (
+                    <>
+                      <p className="secondary small">Trecho para a configuração do OpenCode (o Ombro não a edita):</p>
+                      <pre className="code selectable" aria-label="Trecho para o OpenCode">
+                        {c.trecho}
+                      </pre>
+                    </>
+                  )}
                   <div className="row">
                     {c && c.state === "not_configured" && (
                       <Button variant="primary" disabled={!c.instalado || !!info?.location_problem} onClick={() => abrir(id, "install")}>
                         Instalar integração
                       </Button>
                     )}
-                    {c && (c.state === "partial" || desatualizada) && (
+                    {c && !plugin && (c.state === "partial" || desatualizada) && (
                       <Button variant="primary" disabled={!!info?.location_problem} onClick={() => abrir(id, "install")}>
                         Reparar integração
                       </Button>
@@ -221,7 +241,7 @@ export function Agents() {
                         Remover
                       </Button>
                     )}
-                    {c && c.existe && (
+                    {c && c.existe && !plugin && (
                       <Button variant="ghost" onClick={() => abrir(id, "rollback")}>
                         Desfazer última mudança
                       </Button>
@@ -281,6 +301,13 @@ function FlowBody({ flow, nome }: { flow: Flow; nome: string }) {
   if (flow.stage === "error") return <Notice tone="critical" title="Nada foi alterado">{flow.error}</Notice>;
   if (flow.stage === "done" && flow.result) {
     const r = flow.result;
+    if (flow.provider === "opencode" && flow.op === "install")
+      return (
+        <>
+          <Notice tone="success" title="Origem pronta; falta colar o trecho">{r.note}</Notice>
+          <pre className="code selectable" aria-label="Trecho para o OpenCode">{r.diff}</pre>
+        </>
+      );
     return (
       <>
         <Notice tone="success" title={r.changed ? OP_TEXT[flow.op].done : "Nada a mudar"}>
@@ -298,6 +325,25 @@ function FlowBody({ flow, nome }: { flow: Flow; nome: string }) {
   if (!flow.preview) return <Spinner label="Calculando o que muda (nada é gravado)" />;
   const p = flow.preview;
   if (!p.changed) return <Notice tone="info" title="Nada a mudar">{p.file} já está assim.</Notice>;
+  if (flow.provider === "opencode")
+    return flow.op === "install" ? (
+      <>
+        <p>
+          O Ombro vai criar uma <strong>origem</strong> em <span className="mono">{p.file}</span> e mostrar o trecho que você cola
+          na configuração do OpenCode (2.4.2 ou mais novo). O Ombro não lê nem edita essa configuração.
+        </p>
+        <ul>
+          <li>O plugin avisa só: ids, horários, o tipo do evento, ids de pedidos abertos e o nome da pasta do projeto.</li>
+          <li>Nunca título, prompt, resposta, comando, conteúdo, caminho completo ou credencial. Sem rede.</li>
+        </ul>
+        <pre className="code selectable" aria-label="Trecho para o OpenCode">{p.diff}</pre>
+      </>
+    ) : (
+      <p>
+        O Ombro revoga a origem (<span className="mono">{p.file}</span>) e não aceita mais nada dela, mesmo com o plugin ligado.
+        Tire também o trecho da configuração do OpenCode.
+      </p>
+    );
   return (
     <>
       {flow.op === "install" && (

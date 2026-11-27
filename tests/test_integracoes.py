@@ -318,7 +318,8 @@ class CLI(Base):
         c, out, _ = self.rodar("integrations", "list", "--json")
         self.assertEqual(c, 0)
         self.assertEqual({i["provider"]: i["state"] for i in json.loads(out)["integrations"]},
-                         {"claude": "not_configured", "codex": "not_configured", "cursor": "not_configured"})
+                         {"claude": "not_configured", "codex": "not_configured", "cursor": "not_configured",
+                          "opencode": "not_configured"})
         c, out, _ = self.rodar("integrations", "install", "claude", "--python", PY, "--dry-run")
         self.assertIn("nada foi gravado", out)
         self.assertFalse(self.arq("claude").exists())

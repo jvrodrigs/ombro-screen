@@ -266,7 +266,8 @@ class Saude(Temporaria):
         self.assertEqual(sorted(r["restart_required"]), ["providers.codex", "usb"])
         dados = json.loads((self.pasta / "config.json").read_text())
         self.assertEqual((dados["usb"], dados["providers"]["codex"]["enabled"]), (True, False))
-        self.assertEqual(d.m_config_get({})["providers_enabled"], {"claude": True, "codex": True, "cursor": True})
+        self.assertEqual(d.m_config_get({})["providers_enabled"],
+                         {"claude": True, "codex": True, "cursor": True, "opencode": True})
         self.assertEqual(d.m_config_schema({})["version"], 1)
 
     def test_estado_da_sessao(self):
@@ -326,7 +327,7 @@ class Preferencias(Temporaria):
                          {"claude": {"enabled": True}, "codex": {"enabled": False}, "cursor": {"enabled": False}})
         from config import ler_arquivo
 
-        self.assertEqual(ler_arquivo(arq)[0]["providers"], ("claude",))  # o tela.py e o ombrod leem igual
+        self.assertEqual(ler_arquivo(arq)[0]["providers"], ("claude", "opencode"))  # o tela.py e o ombrod leem igual
 
     def test_esquema_completo_e_seguro(self):
         from config import PERSISTENTES
@@ -435,7 +436,7 @@ class ProcessoInteiro(Temporaria):
                 break
             time.sleep(0.1)
         provs = {x["id"]: x for x in ipc.chamar("providers.list", caminho=sock)["providers"]}
-        self.assertEqual(list(provs), ["claude", "codex", "cursor"])
+        self.assertEqual(list(provs), ["claude", "codex", "cursor", "opencode"])
         self.assertEqual([w["id"] for w in provs["claude"]["quotas"]["windows"]], ["5h", "7d"])  # o demo do Claude tem limites
         self.assertIsNotNone(provs["claude"]["usage"]["total_tokens"])
         self.assertIsNone(provs["codex"]["quotas"])  # o Codex não informa limites: nada inventado

@@ -76,7 +76,7 @@ class Preferencia(Temporaria):
         self.assertEqual((cfg.brilho, cfg.layout, cfg.cor_mascote, cfg.cor_modo, cfg.girar),
                          (40, "multiagente", "#3D7A4F", "sorteada", True))
         self.assertEqual((cfg.avatar("codex"), cfg.avatar("padrao"), cfg.avatar_sorteio), ("orbita", "sereno", "sessao"))
-        self.assertEqual((cfg.providers, cfg.vista, cfg.foco), (("claude", "codex"), "focus", "codex"))
+        self.assertEqual((cfg.providers, cfg.vista, cfg.foco), (("claude", "codex", "opencode"), "focus", "codex"))
 
     def test_classico_no_arquivo(self):
         cfg, avisos = resolver({}, self.arquivo({"pacote_animacao": "classico"}))

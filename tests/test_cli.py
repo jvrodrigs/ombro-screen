@@ -104,7 +104,7 @@ class ComDaemon(unittest.TestCase):
         self.assertIn("v1", out)
         codigo, out, _ = rodar("status", "--json")
         st = json.loads(out)
-        self.assertEqual(st["providers"]["configured"], 3)
+        self.assertEqual(st["providers"]["configured"], 4)
         self.assertGreater(st["sessions"], 0)
 
     def test_providers_e_sessions(self):

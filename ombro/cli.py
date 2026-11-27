@@ -4,7 +4,7 @@
   python3 -m ombro display brightness 40 [--persist]      python3 -m ombro display layout multiagente
   python3 -m ombro display preview quadro.png             o último quadro da tela, sem desenhar de novo
   python3 -m ombro config set brilho 40                   uma preferência (allowlist em ombro/preferencias.py)
-  python3 -m ombro integrations list | check | install | uninstall | rollback [claude|codex|cursor] [--dry-run]
+  python3 -m ombro integrations list | check | install | uninstall | rollback [claude|codex|cursor|opencode] [--dry-run]
   python3 -m ombro service install | start | stop | restart | status | uninstall | migrate | rollback
   python3 -m ombro doctor [--json] [--report] [--output arquivo]
 
@@ -31,7 +31,7 @@ from .ipc import PROTOCOLO, ClienteIPC, DaemonIndisponivel, ErroIPC
 SEM_DAEMON = 3  # código de saída quando o ombrod não está rodando
 NAO_RODANDO = "O ombrod não está rodando."
 DICA = "Inicie com: python3 ombrod.py   (ou instale o serviço: python3 -m ombro service install)"
-NOMES = {"claude": "Claude", "codex": "Codex", "cursor": "Cursor"}
+NOMES = {"claude": "Claude", "codex": "Codex", "cursor": "Cursor", "opencode": "OpenCode"}
 
 
 class Falha(Exception):
@@ -364,6 +364,8 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("provider", nargs="?", choices=tuple(NOMES))
     s.add_argument("--dry-run", action="store_true", help="mostrar o que mudaria, sem gravar nada")
     s.add_argument("--python", help="o python que os hooks vão usar (padrão: este)")
+    s.add_argument("--new-origin", action="store_true",
+                   help="install opencode: registrar outra origem (outra instalação, uma cópia ou um banco trocado)")
 
     s = novo("service", cmd_service, "o LaunchAgent do ombrod (macOS)")
     s.add_argument("acao", choices=("install", "uninstall", "start", "stop", "restart", "status", "migrate", "rollback"))

@@ -59,7 +59,7 @@ def argumentos(argv=None, prog: str | None = None, descricao: str | None = None)
     p.add_argument("--claude-dir", help="pasta de configuração do Claude Code (padrão: ~/.claude)")
     p.add_argument("--layout", choices=LAYOUTS,
                    help="ombro (480x320 deitada, com o cloud; é o padrão), minimal-v2 (o mesmo conteúdo, mais limpo, "
-                        "com CPU e RAM em barras), multiagente (Claude Code, Codex e Cursor juntos) "
+                        "com CPU e RAM em barras), multiagente (Claude Code, Codex, Cursor e OpenCode juntos) "
                         "ou classico (o painel antigo, que respeita --paisagem)")
     p.add_argument("--vista", choices=VISTAS, help="no layout multiagente: overview (padrão), focus ou attention")
     p.add_argument("--foco", choices=PROVIDERS, help="no layout multiagente, com --vista focus: qual agente")

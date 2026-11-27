@@ -3,8 +3,13 @@
 O Ombro só instala hooks quando você pede. `status`, `doctor` e o próprio `ombrod` nunca mexem nas
 configurações dos agentes.
 
+O **OpenCode** é diferente: não usa hooks e o Ombro não lê nem edita a configuração dele. `install opencode`
+só registra uma origem na pasta do Ombro e mostra o trecho que você cola; `--new-origin` registra outra,
+`uninstall` as revoga em definitivo e não há `rollback`. Ver
+[docs/providers/opencode.md](providers/opencode.md).
+
 ```bash
-python3 -m ombro integrations list                     # o estado dos três
+python3 -m ombro integrations list                     # o estado dos quatro
 python3 -m ombro integrations check codex              # detalhes de um
 python3 -m ombro integrations install claude --dry-run # mostra a diferença, sem gravar
 python3 -m ombro integrations install claude

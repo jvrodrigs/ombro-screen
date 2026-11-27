@@ -288,6 +288,13 @@ class Daemon:
                 "integration": snap.integration if snap else None,
                 "collection": st.status.value if st and st.status else None,
                 "state": r.estado, "sessions": r.sessoes, "working": r.trabalhando, "waiting": r.aguardando,
+                "condition": snap.condition if snap else None,  # o que a integração diz de si (hoje, o OpenCode)
+                "condition_detail": snap.condition_detail if snap else None,
+                "version": snap.version if snap else None,
+                # só quem conta as perdas publica o contador: o app não comemora um "concluído" por uma delas
+                **({"unconfirmed": snap.unconfirmed, "disconnected_sessions": r.desconectadas,
+                    "unknown_sessions": sum(s.activity is Activity.UNKNOWN and not s.disconnected for s in lista)}
+                   if snap and pid == "opencode" else {}),
                 "errors": r.erros, "quota_max_percent": r.quota_max,
                 "stale_parts": sorted(st.partes_velhas) if st else [],
                 "recovered": bool(st and st.recuperado),
@@ -301,6 +308,10 @@ class Daemon:
                     "provider": pid, "session_id": s.session_id, "project": s.project,
                     "status": status_da_sessao(s), "activity": s.activity.value, "attention": s.attention.value,
                     "started_at": _iso(s.started_at), "status_since": _iso(s.status_since), "updated_at": _iso(s.updated_at),
+                    # a espera veio de uma releitura: o app mostra, mas não notifica
+                    **({"recovered": True} if s.recovered else {}),
+                    # a fonte saiu do ar: o status é o último conhecido, não o de agora
+                    **({"disconnected": True} if s.disconnected else {}),
                 })
         self.publicado = {"providers": provs, "sessions": sessoes, "collected_at": _iso(app.coletado_em),
                           "avatar_ombro": avs.get("padrao"), "avatar_sorteio": app.cfg.avatar_sorteio}
@@ -362,6 +373,10 @@ class Daemon:
                 saude, estado = "unavailable", "not_configured"
             elif p.get("collection") == "error":
                 saude, estado = "degraded", "error"
+            elif p.get("condition") in ("incompatible", "conflict", "unverified", "partial"):
+                saude, estado = "degraded", p["condition"]
+            elif p.get("condition") in ("offline", "never", "unregistered"):
+                saude, estado = "unavailable", p["condition"]  # a ferramenta fechada não é um problema do Ombro
             elif p.get("collection") == "partial":
                 saude, estado = "degraded", "partial"
             else:
@@ -405,7 +420,7 @@ class Daemon:
 
     def m_status(self, _p) -> dict:
         provs = self.publicado["providers"]
-        sessoes = self.publicado["sessions"]
+        sessoes = [s for s in self.publicado["sessions"] if not s.get("disconnected")]  # só o que é de agora
         saude = self.saude()
         d = self._display()
         return {

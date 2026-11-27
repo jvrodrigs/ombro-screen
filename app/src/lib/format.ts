@@ -1,5 +1,5 @@
 // Formatação e rótulos em português. Valor ausente vira "—": nunca um 0 inventado.
-import type { ProviderInfo, ProviderState, SessionStatus } from "../types/ombro";
+import type { ProviderInfo, ProviderState, SessionStatus, Session } from "../types/ombro";
 
 export const DASH = "—";
 
@@ -98,6 +98,12 @@ export const PROVIDER_STATE: Record<ProviderState, { label: string; tone: Tone }
   nao_configurado: { label: "Integração não instalada", tone: "neutral" },
   indisponivel: { label: "Indisponível", tone: "critical" },
   desconhecido: { label: "Sem dados", tone: "muted" },
+  incompativel: { label: "Versão sem suporte", tone: "critical" },
+  conflito: { label: "Origem em conflito", tone: "critical" },
+  coletando: { label: "Lendo sessões", tone: "neutral" },
+  sem_plugin: { label: "Sem o plugin", tone: "muted" },
+  nao_verificado: { label: "Não comprovado", tone: "critical" },
+  desconectado: { label: "Desconectado", tone: "muted" },
 };
 
 export const SESSION_STATUS: Record<SessionStatus, { label: string; tone: Tone }> = {
@@ -109,7 +115,14 @@ export const SESSION_STATUS: Record<SessionStatus, { label: string; tone: Tone }
   unknown: { label: "sem status", tone: "muted" },
 };
 
-export const PROVIDER_NAMES: Record<string, string> = { claude: "Claude Code", codex: "Codex", cursor: "Cursor" };
+/** O selo de uma sessão: com a fonte fora do ar, o que se sabia aparece como "último", nunca como o de agora. */
+export function sessionBadge(s: Pick<Session, "status" | "disconnected">): { label: string; tone: Tone } {
+  const base = SESSION_STATUS[s.status] ?? SESSION_STATUS.unknown;
+  if (!s.disconnected) return base;
+  return { label: s.status === "unknown" ? base.label : `último: ${base.label}`, tone: "muted" };
+}
+
+export const PROVIDER_NAMES: Record<string, string> = { claude: "Claude Code", codex: "Codex", cursor: "Cursor", opencode: "OpenCode" };
 
 export function providerName(p: Pick<ProviderInfo, "id" | "name">): string {
   return p.name ?? PROVIDER_NAMES[p.id] ?? p.id;

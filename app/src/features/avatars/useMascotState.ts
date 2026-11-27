@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { ProviderInfo } from "../../types/ombro";
-import { current, EMPTY_MEMORY, nextChange, step, type MascotState, type Memory } from "./state";
+import { current, EMPTY_MEMORY, nextChange, step, type MascotState, type Memory, type Retrato } from "./state";
 
 /** O estado do mascote de um agente, acompanhando os retratos do ombrod (com concluído e reset, como a telinha). */
-export function useMascotState(p: Pick<ProviderInfo, "state" | "working" | "waiting" | "errors" | "quotas">): MascotState {
+export function useMascotState(p: Retrato): MascotState {
   const mem = useRef<Memory>(EMPTY_MEMORY);
   const primeiro = useRef(true);
   const [, refazer] = useState(0);
-  const chave = `${p.state}|${p.working}|${p.waiting}|${p.errors}|${(p.quotas?.windows ?? []).map((w) => `${w.id}=${w.resets_at}`).join(",")}`;
+  const chave = `${p.state}|${p.working}|${p.waiting}|${p.errors}|${p.unconfirmed}|${p.collection}|${(p.quotas?.windows ?? []).map((w) => `${w.id}=${w.resets_at}`).join(",")}`;
 
   // o passo é feito durante o render quando o retrato muda (um ref, sem render a mais)
   const ultimaChave = useRef<string | null>(null);

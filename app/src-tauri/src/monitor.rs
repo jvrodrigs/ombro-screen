@@ -191,7 +191,11 @@ impl Notifier {
                 let id = s.get("session_id").and_then(Value::as_str).unwrap_or("").to_string();
                 let st = s.get("status").and_then(Value::as_str).unwrap_or("unknown").to_string();
                 let antes = self.last.get(&(prov.clone(), id.clone()));
-                if self.primed && antes != Some(&st) {
+                // uma espera que veio de uma releitura (não se viu o pedido acontecer) aparece, mas não notifica
+                let recuperada = s.get("recovered").and_then(Value::as_bool) == Some(true);
+                // nem o que é só o último estado de uma fonte fora do ar
+                let historica = recuperada || s.get("disconnected").and_then(Value::as_bool) == Some(true);
+                if self.primed && !historica && antes != Some(&st) {
                     let nome = nomes.get(&prov).cloned().unwrap_or_else(|| prov.clone());
                     let n = match st.as_str() {
                         "waiting" => Some((
@@ -285,6 +289,51 @@ mod tests {
         );
         // o mesmo estado de novo: nada
         assert!(n.process(&snap(esperando), t0 + Duration::from_secs(40)).is_empty());
+    }
+
+    #[test]
+    fn recuperacao_e_desconhecido_nao_notificam() {
+        let mut n = Notifier::default();
+        let t0 = Instant::now();
+        let s = |st: &str, rec: bool| json!([{"provider": "opencode", "session_id": "o:s", "status": st, "recovered": rec}]);
+        n.process(&snap(s("working", false)), t0);
+        assert!(
+            n.process(&snap(s("unknown", false)), t0 + Duration::from_secs(20))
+                .is_empty()
+        );
+        assert!(
+            n.process(&snap(s("approval", true)), t0 + Duration::from_secs(40))
+                .is_empty(),
+            "veio de uma releitura"
+        );
+        assert!(
+            n.process(&snap(s("idle", false)), t0 + Duration::from_secs(60))
+                .is_empty()
+        );
+        assert_eq!(
+            n.process(&snap(s("approval", false)), t0 + Duration::from_secs(80))
+                .len(),
+            1,
+            "um pedido visto acontecer notifica"
+        );
+    }
+
+    #[test]
+    fn fonte_fora_do_ar_nao_notifica_nem_ao_voltar() {
+        let mut n = Notifier::default();
+        let t0 = Instant::now();
+        let s = |st: &str, fora: bool| json!([{"provider": "opencode", "session_id": "o:s", "status": st, "disconnected": fora}]);
+        n.process(&snap(s("working", false)), t0);
+        assert!(
+            n.process(&snap(s("error", true)), t0 + Duration::from_secs(20))
+                .is_empty(),
+            "um erro que só se conhece de antes não notifica"
+        );
+        assert!(
+            n.process(&snap(s("error", false)), t0 + Duration::from_secs(40))
+                .is_empty(),
+            "voltar a fonte não repete o mesmo erro"
+        );
     }
 
     #[test]

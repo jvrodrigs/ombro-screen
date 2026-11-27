@@ -82,14 +82,14 @@ export function Appearance() {
               disabled={!config.config || salvando === "cor"}
               onChange={mudarModoCor}
               options={[
-                { value: "agente", label: "Do agente", title: "Claude laranja, Codex verde, Cursor azul" },
+                { value: "agente", label: "Do agente", title: "Claude laranja, Codex verde, Cursor azul, OpenCode lilás" },
                 { value: "sorteada", label: "Sorteada", title: "Uma cor nova a cada troca de estado" },
                 { value: "fixa", label: "Fixa", title: "Sempre a mesma cor" },
               ]}
             />
             <p className="muted small" style={{ marginTop: 8 }}>
               {modoCor === "agente"
-                ? "Cada agente com a sua cor: o Claude laranja, o Codex verde e o Cursor azul."
+                ? "Cada agente com a sua cor: o Claude laranja, o Codex verde, o Cursor azul e o OpenCode lilás."
                 : modoCor === "sorteada"
                   ? "A cada troca de estado, o avatar ganha uma cor sorteada (legível no fundo escuro)."
                   : "A mesma cor para todos os avatares."}

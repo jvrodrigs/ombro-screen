@@ -2,8 +2,8 @@
 // doctor) e o que o lado Rust do app acrescenta (Snapshot, DaemonState, AppInfo). Campos desconhecidos são
 // ignorados; campos que o backend não informa são `null`, e a interface nunca os troca por zero.
 
-export type ProviderId = "claude" | "codex" | "cursor";
-export const PROVIDER_IDS: ProviderId[] = ["claude", "codex", "cursor"];
+export type ProviderId = "claude" | "codex" | "cursor" | "opencode";
+export const PROVIDER_IDS: ProviderId[] = ["claude", "codex", "cursor", "opencode"];
 
 export type ErrorKind =
   | "daemon_unavailable"
@@ -113,9 +113,25 @@ export type ProviderState =
   | "trabalhando"
   | "sem_sessoes"
   | "ocioso"
-  | "desconhecido";
+  | "desconhecido"
+  | "incompativel"
+  | "conflito"
+  | "coletando"
+  | "sem_plugin"
+  | "nao_verificado"
+  | "desconectado";
 
 export interface ProviderInfo {
+  /** O que a integração diz de si (hoje, só o OpenCode). */
+  condition?: "offline" | "never" | "collecting" | "incompatible" | "unverified" | "unregistered" | "conflict" | "partial" | null;
+  /** Quantas sessões estão com estado desconhecido (só o OpenCode publica). */
+  unknown_sessions?: number;
+  /** Sessões cuja origem saiu do ar: só o último estado conhecido, fora das contagens de agora (só o OpenCode). */
+  disconnected_sessions?: number;
+  condition_detail?: string | null;
+  version?: string | null;
+  /** Sessões que deixaram de trabalhar sem um fim confirmado (só quem conta isso publica). */
+  unconfirmed?: number;
   id: ProviderId;
   name?: string;
   enabled: boolean;
@@ -158,6 +174,10 @@ export interface Session {
   started_at: string | null;
   status_since: string | null;
   updated_at: string | null;
+  /** A espera veio de uma releitura: aparece, mas não notifica. */
+  recovered?: boolean;
+  /** A fonte saiu do ar: o status é o último conhecido, não o de agora (hoje, só o OpenCode). */
+  disconnected?: boolean;
 }
 
 export interface HealthComponent {
@@ -312,6 +332,8 @@ export interface IntegrationCheck {
   hook_existe: boolean;
   erro: string | null;
   state: IntegrationState;
+  /** Só o OpenCode: o trecho que você cola na configuração dele (o Ombro não a edita). */
+  trecho?: string | null;
 }
 
 export type IntegrationAction = "check" | "install" | "uninstall" | "rollback";

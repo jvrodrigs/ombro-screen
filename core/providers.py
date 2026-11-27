@@ -24,6 +24,10 @@ log = logger("providers")
 _ID = re.compile(r"[a-z][a-z0-9_-]{0,31}")
 
 
+class EventosNaoGravados(Exception):
+    """Um provider não conseguiu guardar o que precisa lembrar: os eventos dele ficam na caixa para outra vez."""
+
+
 @dataclass(frozen=True)
 class ProviderCapabilities:
     """O que um provider consegue informar. Falso = não informa (e não é zero nem vazio)."""
